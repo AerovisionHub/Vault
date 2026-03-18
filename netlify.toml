@@ -2,6 +2,17 @@
   publish = "."
   functions = "functions"
 
+# SPA routing
+[[redirects]]
+  from = "/industry"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/about"
+  to = "/index.html"
+  status = 200
+
 [[redirects]]
   from = "/.netlify/functions/*"
   to = "/.netlify/functions/:splat"
