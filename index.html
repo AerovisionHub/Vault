@@ -1496,7 +1496,9 @@ async function loadHomeNews() {
       el.innerHTML = '<p style="color:var(--muted);font-family:var(--mono);font-size:12px;padding:16px 0;grid-column:1/-1;">No news available right now.</p>';
       return;
     }
-    const items = data.items.slice(0, 8);
+    // Sort by date descending (newest first)
+    data.items.sort((a, b) => new Date(b.pubDate || 0) - new Date(a.pubDate || 0));
+    const items = data.items.slice(0, 10);
     el.innerHTML = items.map(item => {
       const dashIdx = item.title?.lastIndexOf(' - ') ?? -1;
       const title = dashIdx > 0 ? item.title.slice(0, dashIdx) : item.title;
@@ -1607,7 +1609,8 @@ function renderBankDetail(d) {
           <span class="inst-meta-item">Est. <strong>${(inst.ESTYMD ? (()=>{ const m=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; const s=String(inst.ESTYMD); const parts=s.split('/'); if(parts.length===3){ const mo=parseInt(parts[0],10)-1; return (mo>=0?m[mo]+' ':'')+parts[2]; } const mo=parseInt(s.slice(4,6),10)-1; const yr=s.slice(0,4); return (mo>=0?m[mo]+' ':'')+yr; })() : '—')}</strong></span>
           <span class="inst-meta-item">As of <strong>${inst.REPDTE || '—'}</strong></span>
           ${inst.WEBADDR ? `<span class="inst-meta-item"><a href="https://${inst.WEBADDR}" target="_blank" style="color:var(--accent)">${inst.WEBADDR}</a></span>` : ''}
-          ${inst.HCTMULT ? `<span class="inst-meta-item"><span style="font-family:var(--mono);font-size:11px;padding:3px 8px;background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.3);border-radius:6px;color:#fbbf24;letter-spacing:0.05em;">&#9654; ${inst.HCTMULT}</span></span>` : ''}
+          ${inst.INSTCAT ? `<span class="inst-meta-item"><span style="font-family:var(--mono);font-size:11px;padding:3px 8px;background:rgba(77,184,255,0.1);border:1px solid rgba(77,184,255,0.25);border-radius:6px;color:var(--accent);letter-spacing:0.05em;">${decodeInstcat(inst.INSTCAT).label}</span></span>` : ''}
+          ${(()=>{ const o = getOwnershipLabel(inst); return o ? `<span class="inst-meta-item"><span style="font-family:var(--mono);font-size:11px;padding:3px 8px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.25);border-radius:6px;color:#fbbf24;letter-spacing:0.05em;">${o}</span></span>` : ''; })()}
         </div>
       </div>
       <button class="back-btn" id="backBtn">← Back</button>
@@ -1709,7 +1712,8 @@ function renderBankDetail(d) {
         <tr><td>FDIC Insurance Date</td><td>${inst.INSDATE || '—'}</td></tr>
         <tr><td>Address</td><td>${inst.ADDRESS || '—'}, ${inst.CITY}, ${inst.STALP} ${inst.ZIP || ''}</td></tr>
         <tr><td>State</td><td>${inst.STNAME || inst.STALP}</td></tr>
-        <tr><td>Institution Category</td><td>${inst.INSTCAT || '—'}</td></tr>
+        <tr><td>Institution Type</td><td>${decodeInstcat(inst.INSTCAT).label}</td></tr>
+        <tr><td>Ownership</td><td>${getOwnershipLabel(inst) || '—'}</td></tr>
         <tr><td>Report Date</td><td>${inst.REPDTE || '—'}</td></tr>
       </table>
     </div>
@@ -1992,7 +1996,49 @@ async function loadDetail(id, type) {
 }
 
 
-// ── Recent News ──────────────────────────────────────────────────────────────
+// ── Institution Category Decoder ─────────────────────────────────────────────
+function decodeInstcat(instcat) {
+  // FDIC INSTCAT codes:
+  // 1 = Federal Reserve member (state-chartered, not Fed member) — actually:
+  // FDIC definitions: 1=National member bank, 2=State member bank, 3=State nonmember bank,
+  // 4=Savings institution (Fed member), 5=Savings institution (nonmember),
+  // 6=OCC-chartered federal savings bank, 0=other
+  // In practice the values vary; map the most common ones:
+  const map = {
+    '0': { label: 'Other', badge: 'neutral' },
+    '1': { label: 'National Member Bank', badge: 'neutral' },
+    '2': { label: 'State Member Bank', badge: 'neutral' },
+    '3': { label: 'State Non-Member Bank', badge: 'neutral' },
+    '4': { label: 'Savings Institution (Fed Member)', badge: 'neutral' },
+    '5': { label: 'Savings Institution (Non-Member)', badge: 'neutral' },
+    '6': { label: 'Federal Savings Bank', badge: 'neutral' },
+    // Broader FDIC INSTCAT values used in BankFind:
+    // N = national bank, SM = state member, NM = state nonmember, SA = savings assoc, SB = savings bank
+    'N':  { label: 'National Bank', badge: 'neutral' },
+    'SM': { label: 'State Member Bank', badge: 'neutral' },
+    'NM': { label: 'State Non-Member Bank', badge: 'neutral' },
+    'SA': { label: 'Savings Association', badge: 'neutral' },
+    'SB': { label: 'Savings Bank', badge: 'neutral' },
+    'OI': { label: 'OCC Insured', badge: 'neutral' },
+  };
+  const key = String(instcat ?? '').trim();
+  return map[key] || { label: key || '—', badge: 'neutral' };
+}
+
+// HCTMULT: 1 = part of a bank holding company (often publicly traded parent possible)
+// SC field: stock charter indicator. We derive public/private from HCTMULT + NAMEHCR
+function getOwnershipLabel(inst) {
+  if (!inst) return null;
+  const hc = inst.HCTMULT;
+  const hcName = inst.NAMEHCR;
+  if (hc === 1 || hc === '1') {
+    return hcName ? `Holding Company: ${hcName}` : 'Part of Bank Holding Company';
+  }
+  if (hc === 0 || hc === '0') return 'Independent (No Holding Company)';
+  return null;
+}
+
+// ── Recent News ───────────────────────────────────────────────────────────────
 async function fetchNews(institutionName, city, state) {
   // Google News RSS via rss2json.com proxy (CORS-open, free tier 10k req/day)
   // Key fixes vs prior version:
@@ -2025,7 +2071,10 @@ async function fetchNews(institutionName, city, state) {
 
       const pool = relevant.length >= 2 ? relevant : data.items;
 
-      return pool.slice(0, 5).map(item => {
+      // Sort by date descending (newest first) before slicing
+      pool.sort((a, b) => new Date(b.pubDate || 0) - new Date(a.pubDate || 0));
+
+      return pool.slice(0, 10).map(item => {
         // Extract source from "Title - Source Name" suffix
         const dashIdx = item.title?.lastIndexOf(' - ') ?? -1;
         const title = dashIdx > 0 ? item.title.slice(0, dashIdx) : item.title;
