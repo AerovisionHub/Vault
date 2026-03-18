@@ -1273,7 +1273,7 @@ function renderCUChart(cu) {
 
 // ── Render functions ──────────────────────────────────────────────────────────
 
-let state = { view: 'search', query: '', instType: 'bank', results: [], loading: false, error: null, detail: null };
+let state; window._vaultState = state = { view: 'search', query: '', instType: 'bank', results: [], loading: false, error: null, detail: null };
 
 function showHome() { state = { view: 'search', query: '', instType: state.instType, results: [], loading: false, error: null, detail: null }; render(); }
 // ── URL routing ──────────────────────────────────────────────────────────────
@@ -1335,7 +1335,7 @@ function pathToView(path) {
 
 function render() {
   const app = document.getElementById('app');
-  if (state.view === 'search') app.innerHTML = renderSearch();
+  if (state.view === 'home' || state.view === 'search') app.innerHTML = renderSearch();
   else if (state.view === 'results') app.innerHTML = renderResults();
   else if (state.view === 'detail') app.innerHTML = renderDetail();
   else if (state.view === 'about') app.innerHTML = renderAbout();
