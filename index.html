@@ -7,7 +7,42 @@
 <meta name="description" content="Free financial intelligence on every U.S. bank and credit union. Search assets, deposits, capital ratios, ROA/ROE, and peer benchmarks. No login. No paywall.">
 <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
 <meta name="keywords" content="bank financial data, credit union intelligence, FDIC data, NCUA data, community bank assets, credit union members, ROA ROE banking">
-<link rel="canonical" href="https://vaultbot.ai">
+<link rel="canonical" href="https://vaultbot.ai" id="canonical-tag">
+<script>
+// SEO: set correct meta synchronously before first paint
+(function() {
+  var path = location.pathname;
+  var meta = {
+    '/industry': {
+      title: 'U.S. Banking Industry Analytics — Vault',
+      desc:  'Fifty years of FDIC data: new bank charters, failures, branch concentration, and deposit trends. Free industry intelligence from Vault by iDENTIFY.',
+      url:   'https://vaultbot.ai/industry'
+    },
+    '/about': {
+      title: 'About Vault — Built with AI by iDENTIFY',
+      desc:  'Vault was built entirely with Claude AI. Free bank and credit union intelligence powered by FDIC BankFind and NCUA public data. No login, no paywall.',
+      url:   'https://vaultbot.ai/about'
+    }
+  };
+  var m = meta[path];
+  if (m) {
+    document.title = m.title;
+    document.getElementById('canonical-tag').href = m.url;
+    var desc = document.querySelector('meta[name="description"]');
+    if (desc) desc.content = m.desc;
+    var ogTitle = document.querySelector('meta[property="og:title"]');
+    if (ogTitle) ogTitle.content = m.title;
+    var ogDesc = document.querySelector('meta[property="og:description"]');
+    if (ogDesc) ogDesc.content = m.desc;
+    var ogUrl = document.querySelector('meta[property="og:url"]');
+    if (ogUrl) ogUrl.content = m.url;
+    var twTitle = document.querySelector('meta[name="twitter:title"]');
+    if (twTitle) twTitle.content = m.title;
+    var twDesc = document.querySelector('meta[name="twitter:description"]');
+    if (twDesc) twDesc.content = m.desc;
+  }
+})();
+</script>
 
 <!-- Open Graph -->
 <meta property="og:type" content="website">
@@ -1241,8 +1276,62 @@ function renderCUChart(cu) {
 let state = { view: 'search', query: '', instType: 'bank', results: [], loading: false, error: null, detail: null };
 
 function showHome() { state = { view: 'search', query: '', instType: state.instType, results: [], loading: false, error: null, detail: null }; render(); }
-function showIndustry() { state.view = 'industry'; render(); }
-function showAbout() { state.view = 'about'; render(); }
+// ── URL routing ──────────────────────────────────────────────────────────────
+const PAGE_META = {
+  home: {
+    title: 'Vault — Bank & Credit Union Explorer',
+    desc:  'Free financial intelligence on every U.S. bank and credit union. Search assets, deposits, capital ratios, ROA/ROE, and peer benchmarks. No login. No paywall.',
+    canonical: 'https://vaultbot.ai/'
+  },
+  industry: {
+    title: 'U.S. Banking Industry Analytics — Vault',
+    desc:  'Fifty years of FDIC data: new bank charters, failures, branch concentration, and deposit trends. Free industry intelligence from Vault by iDENTIFY.',
+    canonical: 'https://vaultbot.ai/industry'
+  },
+  about: {
+    title: 'About Vault — Built with AI by iDENTIFY',
+    desc:  'Vault was built entirely with Claude AI. Free bank and credit union intelligence powered by FDIC BankFind and NCUA public data. No login, no paywall.',
+    canonical: 'https://vaultbot.ai/about'
+  }
+};
+
+function setPageMeta(view) {
+  const m = PAGE_META[view] || PAGE_META.home;
+  document.title = m.title;
+  document.querySelector('meta[name="description"]')?.setAttribute('content', m.desc);
+  document.querySelector('link[rel="canonical"]')?.setAttribute('href', m.canonical);
+  document.querySelector('meta[property="og:title"]')?.setAttribute('content', m.title);
+  document.querySelector('meta[property="og:description"]')?.setAttribute('content', m.desc);
+  document.querySelector('meta[property="og:url"]')?.setAttribute('content', m.canonical);
+  document.querySelector('meta[name="twitter:title"]')?.setAttribute('content', m.title);
+  document.querySelector('meta[name="twitter:description"]')?.setAttribute('content', m.desc);
+}
+
+function navigate(path, view) {
+  window.history.pushState({ view }, '', path);
+  state.view = view;
+  setPageMeta(view);
+  render();
+  window.scrollTo(0, 0);
+}
+
+function showHome()     { navigate('/', 'home'); }
+function showIndustry() { navigate('/industry', 'industry'); }
+function showAbout()    { navigate('/about', 'about'); }
+
+// Handle browser back/forward
+window.addEventListener('popstate', (e) => {
+  const view = e.state?.view || pathToView(location.pathname);
+  state.view = view;
+  setPageMeta(view);
+  render();
+});
+
+function pathToView(path) {
+  if (path.startsWith('/industry')) return 'industry';
+  if (path.startsWith('/about'))    return 'about';
+  return 'home';
+}
 
 function render() {
   const app = document.getElementById('app');
@@ -2395,22 +2484,22 @@ function renderAbout() {
       <div class="ai-section-label">// Session overview</div>
       <div class="ai-stat-grid">
         <div class="ai-stat-card">
-          <div class="ai-stat-val" style="color:#7c6ef5">~25 hrs</div>
+          <div class="ai-stat-val" style="color:#7c6ef5">~30 hrs</div>
           <div class="ai-stat-label">Total session time</div>
-          <div class="ai-stat-sub">Across 4 conversations</div>
+          <div class="ai-stat-sub">Across 5 conversations</div>
         </div>
         <div class="ai-stat-card">
-          <div class="ai-stat-val">130+</div>
+          <div class="ai-stat-val">160+</div>
           <div class="ai-stat-label">Messages exchanged</div>
           <div class="ai-stat-sub">Human + Claude turns</div>
         </div>
         <div class="ai-stat-card">
-          <div class="ai-stat-val">33</div>
+          <div class="ai-stat-val">35</div>
           <div class="ai-stat-label">Production deploys</div>
-          <div class="ai-stat-sub">To vaultbot.ai — all 33 successful</div>
+          <div class="ai-stat-sub">To vaultbot.ai — all successful</div>
         </div>
         <div class="ai-stat-card">
-          <div class="ai-stat-val" style="color:#34d399">42</div>
+          <div class="ai-stat-val" style="color:#34d399">46</div>
           <div class="ai-stat-label">Features shipped</div>
           <div class="ai-stat-sub">Zero to production</div>
         </div>
@@ -2420,22 +2509,22 @@ function renderAbout() {
       <div class="ai-section-label">// Claude's workload</div>
       <div class="ai-stat-grid">
         <div class="ai-stat-card">
-          <div class="ai-stat-val">300+</div>
+          <div class="ai-stat-val">400+</div>
           <div class="ai-stat-label">Tool calls executed</div>
           <div class="ai-stat-sub">API, browser, bash, file</div>
         </div>
         <div class="ai-stat-card">
-          <div class="ai-stat-val">2,237</div>
+          <div class="ai-stat-val">2,691</div>
           <div class="ai-stat-label">Lines of code</div>
           <div class="ai-stat-sub">Single-file app</div>
         </div>
         <div class="ai-stat-card">
-          <div class="ai-stat-val">108 KB</div>
+          <div class="ai-stat-val">137 KB</div>
           <div class="ai-stat-label">Final file size</div>
           <div class="ai-stat-sub">HTML + JS + CSS</div>
         </div>
         <div class="ai-stat-card">
-          <div class="ai-stat-val">~600K</div>
+          <div class="ai-stat-val">~800K</div>
           <div class="ai-stat-label">Tokens processed</div>
           <div class="ai-stat-sub">Estimated</div>
         </div>
@@ -2445,17 +2534,17 @@ function renderAbout() {
       <div class="ai-section-label">// Estimated energy &amp; carbon</div>
       <div class="ai-energy-row">
         <div class="ai-energy-card">
-          <div class="ai-energy-val">~0.6 kWh</div>
+          <div class="ai-energy-val">~0.75 kWh</div>
           <div class="ai-energy-label">Estimated energy used</div>
           <div class="ai-energy-sub">Claude inference + your device</div>
         </div>
         <div class="ai-energy-card">
-          <div class="ai-energy-val">~240g CO₂</div>
+          <div class="ai-energy-val">~300g CO₂</div>
           <div class="ai-energy-label">Carbon equivalent</div>
           <div class="ai-energy-sub">US avg grid, 0.4 kg/kWh</div>
         </div>
         <div class="ai-energy-card ai-energy-highlight">
-          <div class="ai-energy-val">≈ 3 cups of coffee</div>
+          <div class="ai-energy-val">≈ 4 cups of coffee</div>
           <div class="ai-energy-label">Human-readable equivalent</div>
           <div class="ai-energy-sub">Drip coffee ≈ 0.025 kWh each</div>
         </div>
@@ -2523,6 +2612,8 @@ function renderAbout() {
             <div class="ai-feature-item ai-done">Improved color contrast + UX polish</div>
             <div class="ai-feature-item ai-done">robots.txt + sitemap.xml + JSON-LD schema</div>
             <div class="ai-feature-item ai-done">Google Search Console submitted</div>
+            <div class="ai-feature-item ai-done">Industry analytics — Charter, Branch, Deposit reports</div>
+            <div class="ai-feature-item ai-done">GitHub CI/CD pipeline — auto-deploy on push</div>
           </div>
         </div>
         <div class="ai-feature-col">
@@ -2685,7 +2776,16 @@ async function submitLead() {
 })();
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-render();
+// Boot from URL path
+const _bootView = pathToView(location.pathname);
+state.view = _bootView;
+setPageMeta(_bootView);
+if (_bootView === 'industry') {
+  render();
+  setTimeout(drawIndustryCharts, 100);
+} else {
+  render();
+}
 </script>
 </body>
 </html>

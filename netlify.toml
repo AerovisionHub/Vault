@@ -2,7 +2,7 @@
   publish = "."
   functions = "functions"
 
-# SPA routing
+# SPA routing — send all paths to index.html
 [[redirects]]
   from = "/industry"
   to = "/index.html"
