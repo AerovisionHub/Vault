@@ -1611,6 +1611,7 @@ function renderBankDetail(d) {
           ${inst.WEBADDR ? `<span class="inst-meta-item"><a href="https://${inst.WEBADDR}" target="_blank" style="color:var(--accent)">${inst.WEBADDR}</a></span>` : ''}
           ${inst.INSTCAT ? `<span class="inst-meta-item"><span style="font-family:var(--mono);font-size:11px;padding:3px 8px;background:rgba(77,184,255,0.1);border:1px solid rgba(77,184,255,0.25);border-radius:6px;color:var(--accent);letter-spacing:0.05em;">${decodeInstcat(inst.INSTCAT).label}</span></span>` : ''}
           ${(()=>{ const o = getOwnershipLabel(inst); return o ? `<span class="inst-meta-item"><span style="font-family:var(--mono);font-size:11px;padding:3px 8px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.25);border-radius:6px;color:#fbbf24;letter-spacing:0.05em;">${o}</span></span>` : ''; })()}
+          <span class="inst-meta-item" id="stockBadge"><span style="font-family:var(--mono);font-size:11px;padding:3px 8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--muted);letter-spacing:0.05em;">Loading…</span></span>
         </div>
       </div>
       <button class="back-btn" id="backBtn">← Back</button>
@@ -1728,6 +1729,7 @@ function renderBankDetail(d) {
       </div>
     </div>` : ''}
     ${renderNewsSection(inst.NAME, inst.CITY, inst.STALP)}
+    ${renderLeadershipSection(inst, d.officers, d.stock)}
     ${d.peers && d.peers.length > 0 ? renderPeers(d.peers, inst, latest) : '<div class="peer-loading"><div class="spinner"></div> Loading market peers…</div>'}`;
 }
 
@@ -1975,18 +1977,19 @@ async function loadDetail(id, type) {
   state.view = 'detail';
   state.detail = null;
   render();
-  // Track institution view
   if (window.plausible) plausible('View Institution', { props: { id: String(id), type } });
   if (window.gtag) gtag('event', 'view_item', { item_id: String(id), item_category: type });
   try {
     if (type === 'bank') {
       const { inst, history } = await getFDICDetail(id);
-      // Fetch peers in parallel
-      const peers = await fetchPeers(inst, history);
-      state.detail = { type: 'bank', inst, history, peers };
+      const [peers, officers, stock] = await Promise.all([
+        fetchPeers(inst, history),
+        fetchOfficers(id),
+        fetchStockInfo(inst),
+      ]);
+      state.detail = { type: 'bank', inst, history, peers, officers, stock };
     } else {
       const raw = await getNCUADetail(id);
-      // raw comes from our proxy — already normalised
       state.detail = { type: 'cu', id, raw: raw || { name: id, id } };
     }
   } catch(e) {
@@ -1995,8 +1998,181 @@ async function loadDetail(id, type) {
   render();
 }
 
+// ── Officers / Leadership ─────────────────────────────────────────────────────
+async function fetchOfficers(cert) {
+  // FDIC /summary endpoint has officer/director data
+  try {
+    const url = `${FDIC_BASE}/summary?filters=CERT%3A${cert}&fields=CERT,REPDTE,NAMEHCR,HCTMULT&limit=1`;
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const data = await r.json();
+    // FDIC summary doesn't expose individual officers — use /history for exec changes
+    // Fall back to Claude AI lookup if nothing useful
+    return null; // triggers Claude AI fallback below
+  } catch(e) { return null; }
+}
 
-// ── Institution Category Decoder ─────────────────────────────────────────────
+async function fetchLeadershipFromClaude(bankName, city, state) {
+  // Use Claude claude-sonnet-4-20250514 to look up leadership from public sources
+  try {
+    const prompt = `You are a financial research assistant. Look up the current CEO and key executives for "${bankName}" in ${city}, ${state}. This is a US community bank.
+
+Return ONLY a JSON array (no markdown, no explanation) with this structure:
+[{"name":"Full Name","title":"Title","notes":"Brief note if relevant, else null"}]
+
+Include CEO, President, CFO if known. Limit to 4 people. If you cannot find reliable information, return [].`;
+
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 500,
+        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    if (!resp.ok) return [];
+    const data = await resp.json();
+    const text = data.content?.find(b => b.type === 'text')?.text || '';
+    const clean = text.replace(/```json|```/g, '').trim();
+    if (!clean || clean === '[]') return [];
+    return JSON.parse(clean);
+  } catch(e) { return []; }
+}
+
+// ── Stock Info ────────────────────────────────────────────────────────────────
+// Static map of common publicly traded community bank holding companies → tickers
+// Sourced from public market data; covers most actively traded names
+const BANK_TICKER_MAP = {
+  // Indexed by NAMEHCR (holding company name) — lowercase partial match
+  'svb financial': 'SIVB', 'signature bank': 'SBNY', 'first republic': 'FRC',
+  'western alliance': 'WAL', 'east west bancorp': 'EWBC', 'glacier bancorp': 'GBCI',
+  'heartland financial': 'HTLF', 'independent bank group': 'IBTX', 'banner bank': 'BANR',
+  'columbia banking': 'COLB', 'pacific premier': 'PPBI', 'veritex': 'VBTX',
+  'triumph financial': 'TBK', 'nbh financial': 'NBHC', 'renasant': 'RNST',
+  'southstate': 'SSB', 'south state': 'SSB', 'seacoast banking': 'SBCF',
+  'sterling bancorp': 'STL', 'brookline bancorp': 'BRKL', 'enterprise bancorp': 'EBTC',
+  'pathfinder': 'PBHC', 'customers bancorp': 'CUBI', 'tompkins financial': 'TMP',
+  'trustco': 'TRST', 'arrow financial': 'AROW', 'chemung financial': 'CHMG',
+  'community bank system': 'CBU', 'financial institutions': 'FISI', 'five star bank': 'FSBS',
+  'mackinac savings': 'MSBK', 'mercantile bank': 'MBWM', 'lake shore': 'LSSB',
+  'nicolet bankshares': 'NIC', 'midwestone': 'MOFG', 'ames national': 'ATLO',
+  'hills bancorporation': 'HLBZ', 'mbt financial': 'MBTF', 'ohio valley': 'OVBC',
+  'first busey': 'BUSE', 'heartland bci': 'HTLF', 'first midwest': 'FMBI',
+  'wintrust financial': 'WTFC', 'inland western': 'INWB', 'byline bancorp': 'BY',
+  'midwest bank holdings': 'MBHI', 'first financial bankshares': 'FFIN',
+  'cullen/frost': 'CFR', 'texas capital': 'TCBI', 'veritex community': 'VBTX',
+  'independent financial': 'IBTX', 'prosperity bancshares': 'PB',
+  'capital city holding': 'CCIH', 'home bancorp': 'HBCP', 'investar': 'ISTR',
+  'origin bancorp': 'OBNK', 'southern first': 'SFST', 'colony credit': 'CLNC',
+  'first bancshares': 'FBMS', 'the first bancshares': 'FBMS', 'bankfinancial': 'F',
+  'republic bancorp': 'RBCAA', 'stock yards': 'SYBT', 'limestone': 'LMST',
+  'community financial': 'TCFC', 'eagle bancorp': 'EAGL', 'sandy spring': 'SASR',
+  'national bankshares': 'NKSH', 'cardinal bankshares': 'CDBK', 'bank of clarke': 'BKCP',
+  'old point national': 'OPOF', 'primis financial': 'FRST', 'atlantic union': 'AUB',
+  'carter bankshares': 'CARE', 'fauquier bankshares': 'FBSS', 'shore bankshares': 'SHBI',
+  'capital one': 'COF', 'ally financial': 'ALLY', 'regions financial': 'RF',
+  'huntington bancshares': 'HBAN', 'fifth third': 'FITB', 'citizens financial': 'CFG',
+  'webster financial': 'WBS', 'valley national': 'VLY', 'associated banc': 'ASB',
+  'wintrust': 'WTFC', 'first horizon': 'FHN', 'commerce bancshares': 'CBSH',
+  'glacier': 'GBCI', 'banner': 'BANR', 'columbia': 'COLB',
+};
+
+async function fetchStockInfo(inst) {
+  // Determine if publicly traded via holding company name match
+  const hcName = (inst.NAMEHCR || inst.NAME || '').toLowerCase();
+  const hcMult = inst.HCTMULT;
+
+  // Try to find ticker from our static map
+  let ticker = null;
+  for (const [key, sym] of Object.entries(BANK_TICKER_MAP)) {
+    if (hcName.includes(key)) { ticker = sym; break; }
+  }
+
+  // If no holding company, almost certainly private
+  const hasHC = hcMult === 1 || hcMult === '1';
+  if (!hasHC) return { status: 'private', ticker: null, price: null, change: null, mktCap: null };
+
+  // If holding company but no ticker match → likely private/OTC
+  if (!ticker) return { status: 'private-hc', ticker: null, price: null, change: null, mktCap: null, hcName: inst.NAMEHCR };
+
+  // Fetch live quote from Yahoo Finance (no key needed, CORS-open)
+  try {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`;
+    const r = await fetch(url);
+    if (!r.ok) return { status: 'public', ticker, price: null, change: null };
+    const data = await r.json();
+    const meta = data.chart?.result?.[0]?.meta;
+    if (!meta) return { status: 'public', ticker, price: null, change: null };
+    const price = meta.regularMarketPrice;
+    const prev  = meta.chartPreviousClose;
+    const change = prev ? ((price - prev) / prev * 100) : null;
+    const mktCap = meta.marketCap || null;
+    return { status: 'public', ticker, price, change, mktCap };
+  } catch(e) {
+    return { status: 'public', ticker, price: null, change: null };
+  }
+}
+
+
+// ── Leadership Section ────────────────────────────────────────────────────────
+function renderLeadershipSection(inst, officers, stock) {
+  // Wire up stock badge asynchronously
+  setTimeout(() => {
+    const badge = document.getElementById('stockBadge');
+    if (!badge) return;
+    if (!stock) { badge.innerHTML = ''; return; }
+    if (stock.status === 'public' && stock.ticker) {
+      const priceStr = stock.price ? `$${stock.price.toFixed(2)}` : '';
+      const changeStr = stock.change != null
+        ? `<span style="color:${stock.change >= 0 ? '#4ade80' : '#f87171'}">${stock.change >= 0 ? '▲' : '▼'}${Math.abs(stock.change).toFixed(2)}%</span>`
+        : '';
+      const mktCapStr = stock.mktCap ? ` · Mkt Cap $${(stock.mktCap/1e9).toFixed(1)}B` : '';
+      badge.innerHTML = `<span style="font-family:var(--mono);font-size:11px;padding:3px 10px;background:rgba(74,222,128,0.1);border:1px solid rgba(74,222,128,0.3);border-radius:6px;color:#4ade80;letter-spacing:0.05em;">
+        📈 ${stock.ticker} ${priceStr} ${changeStr}${mktCapStr}
+      </span>`;
+    } else if (stock.status === 'private-hc') {
+      badge.innerHTML = `<span style="font-family:var(--mono);font-size:11px;padding:3px 10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:var(--muted);letter-spacing:0.05em;">Privately Held</span>`;
+    } else {
+      badge.innerHTML = `<span style="font-family:var(--mono);font-size:11px;padding:3px 10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:var(--muted);letter-spacing:0.05em;">Privately Held</span>`;
+    }
+  }, 0);
+
+  // Leadership section — async Claude AI lookup if no FDIC officers
+  return `<div class="section">
+    <div class="section-title">Leadership</div>
+    <div id="leadershipContainer">
+      <div style="display:flex;align-items:center;gap:10px;padding:12px 0;color:var(--muted);font-family:var(--mono);font-size:12px;">
+        <div class="spinner" style="width:14px;height:14px;border-width:2px;"></div>Looking up leadership…
+      </div>
+    </div>
+  </div>
+  <script>
+  (async () => {
+    const el = document.getElementById('leadershipContainer');
+    if (!el) return;
+    // Try Claude AI lookup
+    let people = [];
+    try {
+      people = await fetchLeadershipFromClaude(${JSON.stringify(inst.NAME)}, ${JSON.stringify(inst.CITY)}, ${JSON.stringify(inst.STALP)});
+    } catch(e) {}
+    if (!people || !people.length) {
+      el.innerHTML = '<p style="color:var(--muted);font-size:13px;font-family:var(--mono);padding:8px 0;">No leadership data available for this institution.</p>';
+      return;
+    }
+    el.innerHTML = \`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">\${people.map(p => \`
+      <div style="padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
+        <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px;">\${p.name}</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--accent);margin-bottom:\${p.notes ? '6px' : '0'}">\${p.title}</div>
+        \${p.notes ? \`<div style="font-size:12px;color:var(--muted);">\${p.notes}</div>\` : ''}
+      </div>\`).join('')}
+    </div>\`;
+  })();
+  <\/script>`;
+}
+
+// ── News Relevance Filter ─────────────────────────────────────────────────────
 function decodeInstcat(instcat) {
   // FDIC INSTCAT codes:
   // 1 = Federal Reserve member (state-chartered, not Fed member) — actually:
@@ -2062,11 +2238,16 @@ async function fetchNews(institutionName, city, state) {
       const data = await r.json();
       if (data.status !== 'ok' || !data.items?.length) continue;
 
-      // Filter out obvious noise: articles where institution name doesn't appear in title
+      // Filter: require name match AND no older than 18 months
+      const cutoff = new Date();
+      cutoff.setMonth(cutoff.getMonth() - 18);
       const nameWords = institutionName.toLowerCase().split(/\s+/).filter(w => w.length > 2);
       const relevant = data.items.filter(item => {
         const t = item.title?.toLowerCase() || '';
-        return nameWords.some(w => t.includes(w));
+        const pubDate = item.pubDate ? new Date(item.pubDate) : null;
+        const fresh = !pubDate || pubDate >= cutoff;
+        const nameMatch = nameWords.some(w => t.includes(w));
+        return fresh && nameMatch;
       });
 
       const pool = relevant.length >= 2 ? relevant : data.items;
