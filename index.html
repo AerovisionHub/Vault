@@ -2139,7 +2139,30 @@ function renderLeadershipSection(inst, officers, stock) {
     }
   }, 0);
 
-  // Leadership section — async Claude AI lookup if no FDIC officers
+  // Leadership section — async Claude AI lookup, setTimeout pattern (safe for innerHTML injection)
+  const bankName = inst.NAME;
+  const bankCity = inst.CITY;
+  const bankState = inst.STALP;
+  setTimeout(async () => {
+    const el = document.getElementById('leadershipContainer');
+    if (!el) return;
+    let people = [];
+    try {
+      people = await fetchLeadershipFromClaude(bankName, bankCity, bankState);
+    } catch(e) {}
+    if (!people || !people.length) {
+      el.innerHTML = '<p style="color:var(--muted);font-size:13px;font-family:var(--mono);padding:8px 0;">No leadership data available for this institution.</p>';
+      return;
+    }
+    el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">${people.map(p => `
+      <div style="padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
+        <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px;">${p.name}</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--accent);margin-bottom:${p.notes ? '6px' : '0'}">${p.title}</div>
+        ${p.notes ? `<div style="font-size:12px;color:var(--muted);">${p.notes}</div>` : ''}
+      </div>`).join('')}
+    </div>`;
+  }, 0);
+
   return `<div class="section">
     <div class="section-title">Leadership</div>
     <div id="leadershipContainer">
@@ -2147,29 +2170,7 @@ function renderLeadershipSection(inst, officers, stock) {
         <div class="spinner" style="width:14px;height:14px;border-width:2px;"></div>Looking up leadership…
       </div>
     </div>
-  </div>
-  <script>
-  (async () => {
-    const el = document.getElementById('leadershipContainer');
-    if (!el) return;
-    // Try Claude AI lookup
-    let people = [];
-    try {
-      people = await fetchLeadershipFromClaude(${JSON.stringify(inst.NAME)}, ${JSON.stringify(inst.CITY)}, ${JSON.stringify(inst.STALP)});
-    } catch(e) {}
-    if (!people || !people.length) {
-      el.innerHTML = '<p style="color:var(--muted);font-size:13px;font-family:var(--mono);padding:8px 0;">No leadership data available for this institution.</p>';
-      return;
-    }
-    el.innerHTML = \`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">\${people.map(p => \`
-      <div style="padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
-        <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px;">\${p.name}</div>
-        <div style="font-family:var(--mono);font-size:11px;color:var(--accent);margin-bottom:\${p.notes ? '6px' : '0'}">\${p.title}</div>
-        \${p.notes ? \`<div style="font-size:12px;color:var(--muted);">\${p.notes}</div>\` : ''}
-      </div>\`).join('')}
-    </div>\`;
-  })();
-  <\/script>`;
+  </div>`;
 }
 
 // ── News Relevance Filter ─────────────────────────────────────────────────────
