@@ -1,0 +1,2691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vault — Bank & Credit Union Explorer</title>
+<meta name="description" content="Free financial intelligence on every U.S. bank and credit union. Search assets, deposits, capital ratios, ROA/ROE, and peer benchmarks. No login. No paywall.">
+<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+<meta name="keywords" content="bank financial data, credit union intelligence, FDIC data, NCUA data, community bank assets, credit union members, ROA ROE banking">
+<link rel="canonical" href="https://vaultbot.ai">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://vaultbot.ai">
+<meta property="og:title" content="Vault — Bank & Credit Union Explorer">
+<meta property="og:description" content="Free financial intelligence on every U.S. bank and credit union. No login. No paywall. Powered by FDIC + NCUA public data.">
+<meta property="og:image" content="https://vaultbot.ai/og-image.png?v=3">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Vault — Bank & Credit Union Intelligence">
+<meta property="og:site_name" content="Vault">
+
+<!-- Twitter / X Card -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:url" content="https://vaultbot.ai">
+<meta name="twitter:title" content="Vault — Bank & Credit Union Explorer">
+<meta name="twitter:description" content="Free financial intelligence on every U.S. bank and credit union. No login. No paywall.">
+<meta name="twitter:image" content="https://vaultbot.ai/og-image.png?v=3">
+
+<!-- iOS / Safari -->
+<meta name="apple-mobile-web-app-title" content="Vault">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="https://vaultbot.ai/og-image.png">
+
+<!-- Structured Data -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Vault",
+  "url": "https://vaultbot.ai",
+  "description": "Free financial intelligence on every U.S. bank and credit union. Search assets, deposits, capital ratios, ROA/ROE, and peer benchmarks.",
+  "applicationCategory": "FinanceApplication",
+  "operatingSystem": "Web",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "creator": { "@type": "Organization", "name": "iDENTIFY", "url": "https://goidentify.com" },
+  "keywords": "bank financial data, credit union data, FDIC data, NCUA data, bank assets, community bank intelligence"
+}
+</script>
+
+<!-- Google Analytics 4 -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-GE8WSX77C1"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-GE8WSX77C1');
+</script>
+
+<!-- Plausible Analytics -->
+<script defer data-domain="vaultbot.ai" src="https://plausible.io/js/script.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --bg: #0f1240;
+    --surface: rgba(255,255,255,0.07);
+    --surface2: rgba(255,255,255,0.12);
+    --border: rgba(255,255,255,0.15);
+    --accent: #4db8ff;
+    --accent-dim: rgba(77,184,255,0.15);
+    --accent-glow: rgba(77,184,255,0.35);
+    --accent2: #b06ef3;
+    --text: #ffffff;
+    --muted: rgba(255,255,255,0.65);
+    --red: #ff6b6b;
+    --yellow: #fbbf24;
+    --blue: #7dd3fc;
+    --serif: 'DM Serif Display', Georgia, serif;
+    --mono: 'DM Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: linear-gradient(135deg, #0f1240 0%, #1a1060 30%, #2d1080 60%, #1a0a5e 100%);
+    background-attachment: fixed;
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    font-size: 15px;
+    line-height: 1.6;
+    padding-bottom: 72px;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 1000;
+    opacity: 0.4;
+  }
+
+  body::after {
+    content: '';
+    position: fixed;
+    top: -200px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 900px;
+    height: 600px;
+    background: radial-gradient(ellipse at center, rgba(77,184,255,0.08) 0%, rgba(176,110,243,0.06) 50%, transparent 75%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  header {
+    border-bottom: 1px solid rgba(255,255,255,0.12);
+    padding: 24px 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(15,18,64,0.6);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+
+  .logo { font-family: var(--serif); font-size: 28px; letter-spacing: -0.5px; color: var(--text); }
+  .logo span { color: #3b82f6; }
+  .tagline { font-size: 12px; color: var(--muted); font-family: var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+
+  .data-badge { display: flex; gap: 8px; align-items: center; }
+  .badge { font-family: var(--mono); font-size: 10px; padding: 4px 10px; border-radius: 20px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 500; }
+  .badge-fdic { background: rgba(59,130,246,0.15); color: var(--blue); border: 1px solid rgba(59,130,246,0.3); }
+  .badge-ncua { background: rgba(139,92,246,0.12); color: var(--accent2); border: 1px solid rgba(139,92,246,0.25); }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 48px 40px; }
+  .search-section { margin-bottom: 48px; }
+
+  .search-heading { font-family: var(--serif); font-size: 42px; line-height: 1.15; margin-bottom: 8px; letter-spacing: -0.5px; }
+  .search-heading em { background: linear-gradient(135deg, #4db8ff, #b06ef3); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-style: italic; }
+  .search-sub { color: var(--muted); font-size: 14px; margin-bottom: 32px; font-family: var(--mono); }
+
+  .search-row { display: flex; gap: 12px; align-items: stretch; }
+  .type-toggle { display: flex; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 10px; overflow: hidden; height: 44px; backdrop-filter: blur(8px); }
+  .type-btn { padding: 0 20px; height: 44px; background: none; border: none; color: var(--muted); font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; transition: all 0.2s; white-space: nowrap; border-right: 1px solid var(--border); }
+  .type-btn:last-child { border-right: none; }
+  .type-btn.active { background: rgba(59,130,246,0.15); color: var(--blue); }
+  .type-btn:hover:not(.active) { background: rgba(255,255,255,0.04); color: var(--text); }
+
+  .search-input-wrap { flex: 1; position: relative; }
+  .search-input { width: 100%; height: 44px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 10px; padding: 0 20px; color: var(--text); font-family: var(--sans); font-size: 16px; outline: none; transition: border-color 0.2s, box-shadow 0.2s; backdrop-filter: blur(8px); }
+  .search-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+  .search-input::placeholder { color: rgba(255,255,255,0.45); }
+
+  .search-btn { height: 44px; padding: 0 28px; background: linear-gradient(135deg, #4db8ff, #7c3aed); border: none; border-radius: 10px; color: #fff; font-family: var(--mono); font-size: 13px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; transition: opacity 0.2s, transform 0.1s; }
+  .search-btn:hover { opacity: 0.88; }
+  .search-btn:active { transform: scale(0.98); }
+  .search-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .results-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 32px; }
+  .result-item { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); border-radius: 10px; padding: 16px 20px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: border-color 0.2s, background 0.2s; backdrop-filter: blur(8px); }
+  .result-item:hover { border-color: var(--accent); background: rgba(77,184,255,0.12); }
+  .result-name { font-weight: 600; font-size: 15px; }
+  .result-meta { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .result-assets { font-family: var(--mono); font-size: 13px; color: var(--blue); text-align: right; }
+  .result-type { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+
+  .inst-header { margin-bottom: 40px; padding-bottom: 32px; border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+  .inst-name { font-family: var(--serif); font-size: 36px; letter-spacing: -0.5px; line-height: 1.1; margin-bottom: 8px; }
+  .inst-meta-row { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
+  .inst-meta-item { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .inst-meta-item strong { color: var(--text); font-weight: 500; }
+
+  .back-btn { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; color: rgba(255,255,255,0.7); font-family: var(--mono); font-size: 12px; padding: 8px 16px; cursor: pointer; transition: all 0.2s; white-space: nowrap; letter-spacing: 0.04em; backdrop-filter: blur(8px); }
+  .back-btn:hover { color: var(--text); border-color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.12); }
+
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin-bottom: 40px; }
+  .kpi-card { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 12px; padding: 20px; position: relative; overflow: hidden; backdrop-filter: blur(10px); }
+  .kpi-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, #4db8ff, #b06ef3); opacity: 0.9; }
+  .kpi-label { font-family: var(--mono); font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 8px; }
+  .kpi-value { font-family: var(--serif); font-size: 26px; letter-spacing: -0.5px; line-height: 1; margin-bottom: 4px; }
+  .kpi-sub { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .kpi-positive { color: var(--accent); }
+  .kpi-negative { color: var(--red); }
+  .kpi-neutral { color: var(--text); }
+
+  .section { margin-bottom: 40px; }
+  .section-title { font-family: var(--mono); font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
+  .section-title::after { content: ''; flex: 1; height: 1px; background: rgba(255,255,255,0.15); }
+
+  .data-table { width: 100%; border-collapse: collapse; }
+  .data-table tr { border-bottom: 1px solid var(--border); }
+  .data-table tr:last-child { border-bottom: none; }
+  .data-table td { padding: 12px 16px; font-size: 14px; }
+  .data-table td:first-child { color: var(--muted); font-family: var(--mono); font-size: 12px; width: 45%; }
+  .data-table td:last-child { text-align: right; font-family: var(--mono); font-size: 13px; font-weight: 500; }
+  .data-table tr:nth-child(even) td { background: rgba(255,255,255,0.04); }
+
+  .status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .dot-green { background: #3b82f6; box-shadow: 0 0 6px rgba(59,130,246,0.5); }
+  .dot-red { background: var(--red); }
+  .dot-yellow { background: var(--yellow); }
+
+  .state-msg { text-align: center; padding: 60px 20px; color: var(--muted); font-family: var(--mono); font-size: 13px; }
+  .state-msg .big { font-family: var(--serif); font-size: 48px; display: block; margin-bottom: 12px; color: var(--border); }
+  .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; margin-bottom: 12px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .narrative-box { background: rgba(77,184,255,0.08); border: 1px solid rgba(77,184,255,0.25); border-left: 3px solid #4db8ff; border-radius: 0 12px 12px 0; padding: 24px; font-size: 14px; line-height: 1.8; color: var(--text); font-style: italic; margin-bottom: 40px; backdrop-filter: blur(10px); }
+
+  /* Peer Comparison */
+  .peers-section { margin-bottom: 40px; }
+  .peers-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+  .peer-card { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 18px; cursor: pointer; transition: border-color 0.2s, transform 0.15s, background 0.2s; position: relative; overflow: hidden; backdrop-filter: blur(8px); }
+  .peer-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, #b06ef3, #4db8ff); opacity: 0.9; }
+  .peer-card:hover { border-color: #b06ef3; background: rgba(176,110,243,0.12); transform: translateY(-2px); }
+  .peer-name { font-weight: 600; font-size: 13px; margin-bottom: 6px; line-height: 1.3; }
+  .peer-location { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-bottom: 10px; }
+  .peer-stats { display: flex; flex-direction: column; gap: 5px; }
+  .peer-stat { display: flex; justify-content: space-between; align-items: center; }
+  .peer-stat-label { font-family: var(--mono); font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .peer-stat-value { font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--blue); }
+  .peer-loading { display: flex; align-items: center; gap: 10px; color: var(--muted); font-family: var(--mono); font-size: 12px; padding: 20px 0; }
+  .peer-badge { display: inline-block; font-family: var(--mono); font-size: 9px; padding: 2px 7px; border-radius: 10px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; background: rgba(139,92,246,0.15); color: var(--accent2); border: 1px solid rgba(139,92,246,0.25); }
+  .peer-you-badge { background: rgba(59,130,246,0.15); color: var(--blue); border: 1px solid rgba(59,130,246,0.25); }
+  .compare-bar-wrap { margin-top: 8px; }
+  .compare-bar-label { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10px; color: var(--muted); margin-bottom: 3px; }
+  .compare-bar-track { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .compare-bar-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, #4db8ff, #b06ef3); transition: width 0.6s ease; }
+
+  /* Homepage */
+  .home-section { margin-top: 72px; }
+  .home-section-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+  .home-section-label::after { content: ''; flex: 1; height: 1px; background: rgba(255,255,255,0.15); }
+  .workflow-grid { display: grid; grid-template-columns: 1fr 40px 1fr 40px 1fr; gap: 0; align-items: start; margin-bottom: 8px; }
+  .workflow-step { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); border-radius: 14px; padding: 28px; position: relative; transition: border-color 0.2s, transform 0.2s; backdrop-filter: blur(10px); }
+  .workflow-step:hover { border-color: var(--accent); transform: translateY(-2px); background: rgba(77,184,255,0.1); }
+  .workflow-step-num { font-family: var(--mono); font-size: 11px; color: var(--accent); letter-spacing: 0.1em; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .workflow-step-num::before { content: ''; display: inline-block; width: 24px; height: 24px; border-radius: 50%; background: var(--accent-dim); border: 1px solid rgba(59,130,246,0.3); }
+  .workflow-icon { font-size: 28px; margin-bottom: 14px; display: block; }
+  .workflow-title { font-family: var(--serif); font-size: 20px; color: var(--text); margin-bottom: 8px; line-height: 1.2; }
+  .workflow-desc { font-size: 13px; color: var(--muted); line-height: 1.65; }
+  .workflow-arrow { display: flex; align-items: center; justify-content: center; padding-top: 60px; color: var(--border); font-size: 22px; }
+  .workflow-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+  .workflow-tag { font-family: var(--mono); font-size: 10px; padding: 3px 8px; border-radius: 4px; background: rgba(59,130,246,0.08); color: var(--muted); border: 1px solid var(--border); letter-spacing: 0.04em; }
+
+  .home-news-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .home-news-item { display: flex; flex-direction: column; gap: 6px; padding: 16px 18px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; text-decoration: none; transition: border-color 0.2s, background 0.2s; cursor: pointer; backdrop-filter: blur(8px); }
+  .home-news-item:hover { border-color: rgba(77,184,255,0.4); background: rgba(77,184,255,0.1); }
+  .home-news-title { color: var(--text); font-size: 13px; font-weight: 500; line-height: 1.4; }
+  .home-news-meta { display: flex; gap: 10px; font-family: var(--mono); font-size: 10px; color: var(--muted); align-items: center; }
+  .home-news-source { color: var(--accent); }
+  .home-news-loading { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; color: var(--muted); font-family: var(--mono); font-size: 12px; padding: 20px 0; }
+  .home-stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 48px; margin-bottom: 72px; }
+  .home-stat { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 20px; text-align: center; backdrop-filter: blur(10px); }
+  .home-stat-value { font-family: var(--serif); font-size: 32px; color: var(--accent); line-height: 1; margin-bottom: 6px; }
+  .home-stat-label { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; }
+
+  /* News section */
+  .news-section { margin-top: 48px; }
+  .news-section h2 { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+  .news-list { display: flex; flex-direction: column; gap: 12px; }
+  .news-item { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; text-decoration: none; transition: border-color 0.2s, background 0.2s; }
+  .news-item:hover { border-color: var(--accent); background: var(--surface2); }
+  .news-title { color: var(--text); font-size: 14px; font-weight: 500; line-height: 1.4; }
+  .news-meta { font-family: var(--mono); font-size: 11px; color: var(--muted); display: flex; gap: 12px; }
+  .news-source { color: var(--accent); }
+  .news-empty { color: var(--muted); font-size: 13px; font-family: var(--mono); padding: 16px 0; }
+
+  /* AI Build Report */
+  .about-ai-report { margin: 0 0 20px; }
+  .ai-report-header { margin-bottom: 32px; }
+  .ai-report-eyebrow { font-family: var(--mono); font-size: 11px; color: var(--accent); letter-spacing: 0.08em; margin-bottom: 12px; }
+  .ai-report-title { font-size: 26px; font-weight: 500; color: var(--text); margin: 0 0 10px; font-family: Georgia, serif; }
+  .ai-report-sub { font-size: 15px; color: var(--muted); margin: 0; }
+  .ai-stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 32px; }
+  .ai-stat-card { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 16px; backdrop-filter: blur(8px); }
+  .ai-stat-val { font-size: 26px; font-weight: 500; color: var(--text); line-height: 1.1; margin-bottom: 6px; }
+  .ai-stat-label { font-size: 12px; font-weight: 500; color: var(--text); margin-bottom: 3px; }
+  .ai-stat-sub { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+  .ai-feature-row { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+  .ai-feature-heading { font-family: var(--mono); font-size: 11px; color: var(--accent); letter-spacing: 0.08em; margin-bottom: 14px; }
+  .ai-feature-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; }
+  .ai-feature-item { font-size: 13px; color: var(--muted); padding-left: 20px; position: relative; }
+  .ai-feature-item::before { position: absolute; left: 0; font-size: 11px; }
+  .ai-done { color: var(--text); }
+  .ai-done::before { content: '✓'; color: #34d399; }
+  .ai-soon::before { content: '◎'; color: #7c6ef5; }
+  .ai-planned::before { content: '○'; color: var(--muted); }
+  .ai-quote { background: rgba(124,110,245,0.06); border-left: 3px solid rgba(124,110,245,0.4); border-radius: 0 8px 8px 0; padding: 16px 18px; }
+  .ai-quote-text { font-size: 14px; color: var(--text); font-style: italic; line-height: 1.6; margin-bottom: 8px; }
+  .ai-quote-attr { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+  .ai-section-label { font-family: var(--mono); font-size: 11px; color: var(--accent); letter-spacing: 0.08em; margin: 28px 0 12px; }
+  .ai-inner-divider { border: none; border-top: 1px solid var(--border); margin: 28px 0; }
+  .ai-energy-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+  .ai-energy-card { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 16px; backdrop-filter: blur(8px); }
+  .ai-energy-highlight { border-color: rgba(124,110,245,0.3); background: rgba(124,110,245,0.06); }
+  .ai-energy-val { font-size: 20px; font-weight: 500; color: var(--text); margin-bottom: 6px; }
+  .ai-energy-label { font-size: 12px; font-weight: 500; color: var(--text); margin-bottom: 3px; }
+  .ai-energy-sub { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+  .ai-energy-bar-wrap { margin-bottom: 28px; }
+  .ai-energy-bar-track { display: flex; height: 10px; border-radius: 5px; overflow: hidden; gap: 1px; margin-bottom: 8px; }
+  .ai-energy-seg { height: 100%; }
+  .ai-energy-legend { display: flex; flex-wrap: wrap; gap: 12px; }
+  .ai-leg-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); font-family: var(--mono); }
+  .ai-leg-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+  .ai-cost-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 8px; }
+  .ai-cost-card { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 16px; backdrop-filter: blur(8px); }
+  .ai-cost-type { font-size: 11px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; font-family: var(--mono); }
+  .ai-cost-range { font-size: 20px; font-weight: 500; color: var(--text); margin-bottom: 6px; }
+  .ai-cost-detail { font-size: 12px; color: var(--muted); line-height: 1.5; }
+  .ai-cost-note { font-size: 11px; color: var(--muted); font-family: var(--mono); margin-bottom: 28px; }
+  .ai-coverage-bars { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+  .ai-bar-row { display: flex; align-items: center; gap: 10px; }
+  .ai-bar-label { font-size: 12px; color: var(--muted); width: 140px; flex-shrink: 0; }
+  .ai-bar-track { flex: 1; background: var(--surface); border-radius: 4px; height: 8px; overflow: hidden; border: 1px solid var(--border); }
+  .ai-bar-fill { height: 100%; border-radius: 4px; }
+  .ai-bar-val { font-size: 11px; color: var(--muted); font-family: var(--mono); width: 48px; text-align: right; flex-shrink: 0; }
+
+  /* Industry page */
+  .industry-hero { text-align: center; padding: 48px 0 32px; max-width: 760px; margin: 0 auto; }
+  .industry-hero h1 { font-family: var(--serif); font-size: 42px; letter-spacing: -0.5px; line-height: 1.15; margin-bottom: 12px; }
+  .industry-hero h1 em { background: linear-gradient(135deg,#4db8ff,#b06ef3); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; font-style:italic; }
+  .industry-hero p { color: var(--muted); font-size: 15px; line-height: 1.7; max-width: 600px; margin: 0 auto; }
+  .industry-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 32px 0; }
+  .industry-kpi { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.15); border-radius: 12px; padding: 20px; text-align: center; backdrop-filter: blur(10px); position: relative; overflow: hidden; }
+  .industry-kpi::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, #4db8ff, #b06ef3); }
+  .industry-kpi-val { font-family: var(--serif); font-size: 28px; color: #4db8ff; line-height: 1.1; margin-bottom: 6px; }
+  .industry-kpi-label { font-size: 12px; color: var(--text); font-weight: 500; margin-bottom: 3px; }
+  .industry-kpi-sub { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+  .industry-chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+  .industry-chart-full { margin-bottom: 20px; }
+  .industry-chart-card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 14px; padding: 24px; backdrop-filter: blur(10px); }
+  .industry-chart-title { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
+  .industry-chart-sub { font-size: 13px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
+  .industry-chart-wrap { position: relative; width: 100%; height: clamp(180px, 35vw, 260px); }
+  .industry-source { font-family: var(--mono); font-size: 10px; color: var(--muted); text-align: right; margin-top: 8px; }
+  .industry-story { background: rgba(77,184,255,0.06); border: 1px solid rgba(77,184,255,0.2); border-radius: 12px; padding: 24px 28px; margin: 24px 0; }
+  .industry-story h3 { font-family: var(--serif); font-size: 20px; margin-bottom: 10px; color: var(--text); }
+  .industry-story p { font-size: 14px; color: var(--muted); line-height: 1.8; }
+  .industry-story strong { color: var(--text); }
+  @media (max-width: 768px) {
+    .industry-chart-grid { grid-template-columns: 1fr; }
+    .industry-kpis { grid-template-columns: repeat(2, 1fr); }
+    .industry-hero h1 { font-size: 28px; }
+  }
+  @media (max-width: 640px) {
+    .industry-kpis { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  /* Industry page */
+  .industry-hero { text-align:center; padding:48px 0 32px; max-width:760px; margin:0 auto; }
+  .industry-hero h1 { font-family:var(--serif); font-size:42px; letter-spacing:-0.5px; line-height:1.15; margin-bottom:12px; }
+  .industry-hero h1 em { background:linear-gradient(135deg,#4db8ff,#b06ef3); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; font-style:italic; }
+  .industry-hero p { color:var(--muted); font-size:15px; line-height:1.7; max-width:600px; margin:0 auto; }
+  .industry-kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin:32px 0; }
+  .industry-kpi { background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.15); border-radius:12px; padding:20px; text-align:center; backdrop-filter:blur(10px); position:relative; overflow:hidden; }
+  .industry-kpi::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; background:linear-gradient(90deg,#4db8ff,#b06ef3); }
+  .industry-kpi-val { font-family:var(--serif); font-size:28px; color:#4db8ff; line-height:1.1; margin-bottom:6px; }
+  .industry-kpi-label { font-size:12px; color:var(--text); font-weight:500; margin-bottom:3px; }
+  .industry-kpi-sub { font-size:11px; color:var(--muted); font-family:var(--mono); }
+  .industry-section-header { display:flex; align-items:center; gap:14px; margin:0 0 20px; padding-bottom:16px; border-bottom:1px solid rgba(255,255,255,0.1); }
+  .industry-section-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+  .industry-section-label { font-family:var(--mono); font-size:12px; letter-spacing:0.1em; text-transform:uppercase; color:var(--accent); }
+  .industry-section-desc { font-size:13px; color:var(--muted); margin-top:2px; }
+  .industry-chart-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:20px; }
+  .industry-chart-full { margin-bottom:20px; }
+  .industry-chart-card { background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); border-radius:14px; padding:24px; backdrop-filter:blur(10px); }
+  .industry-chart-title { font-family:var(--mono); font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:var(--accent); margin-bottom:4px; }
+  .industry-chart-sub { font-size:13px; color:var(--muted); margin-bottom:14px; line-height:1.6; }
+  .industry-chart-wrap { position:relative; width:100%; height:clamp(180px,30vw,260px); }
+  .industry-source { font-family:var(--mono); font-size:10px; color:var(--muted); text-align:right; margin-top:8px; }
+  .industry-legend { display:flex; flex-wrap:wrap; gap:14px; margin-bottom:12px; }
+  .industry-leg { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+  .industry-leg-dot { width:10px; height:10px; border-radius:2px; flex-shrink:0; }
+  .industry-story { background:rgba(77,184,255,0.05); border:1px solid rgba(77,184,255,0.18); border-left:3px solid #4db8ff; border-radius:0 12px 12px 0; padding:24px 28px; margin:4px 0 28px; }
+  .industry-story h3 { font-family:var(--serif); font-size:20px; margin-bottom:10px; color:var(--text); }
+  .industry-story p { font-size:14px; color:var(--muted); line-height:1.8; }
+  .industry-story strong { color:var(--text); }
+  @media (max-width:768px) {
+    .industry-chart-grid { grid-template-columns:1fr; }
+    .industry-kpis { grid-template-columns:repeat(2,1fr); }
+    .industry-hero h1 { font-size:28px; }
+  }
+  @media (max-width:640px) {
+    .industry-kpis { grid-template-columns:repeat(2,1fr); }
+    .industry-hero h1 { font-size:22px; }
+    .industry-chart-card { padding:16px; }
+  }
+
+  /* About page */
+  .about-hero { text-align: center; padding: 64px 0 48px; max-width: 680px; margin: 0 auto; }
+  .about-hero h1 { font-family: var(--serif); font-size: 48px; letter-spacing: -0.5px; line-height: 1.1; margin-bottom: 16px; }
+  .about-hero h1 em { background: linear-gradient(135deg,#3b82f6,#8b5cf6); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; font-style:italic; }
+  .about-hero p { color: var(--muted); font-size: 16px; line-height: 1.7; }
+  .about-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin: 48px 0; }
+  .about-card { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.15); border-radius: 14px; padding: 28px; backdrop-filter: blur(10px); }
+  .about-card h3 { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); margin-bottom: 12px; }
+  .about-card p { color: var(--muted); font-size: 14px; line-height: 1.7; }
+  .about-divider { border: none; border-top: 1px solid var(--border); margin: 48px 0; }
+  .about-lead { max-width: 560px; margin: 0 auto; }
+  .about-lead h2 { font-family: var(--serif); font-size: 32px; margin-bottom: 8px; }
+  .about-lead p { color: var(--muted); font-size: 14px; margin-bottom: 28px; }
+  .lead-form { display: flex; flex-direction: column; gap: 14px; }
+  .lead-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .lead-input { width: 100%; height: 48px; padding: 0 16px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 10px; color: var(--text); font-family: var(--sans); font-size: 15px; outline: none; transition: border-color 0.2s; backdrop-filter: blur(8px); }
+  .lead-input:focus { border-color: var(--accent); }
+  .lead-select { width: 100%; height: 48px; padding: 0 16px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 10px; color: var(--text); font-family: var(--sans); font-size: 15px; outline: none; cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='rgba(255,255,255,0.5)' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; }
+  .lead-submit { height: 52px; border: none; border-radius: 10px; cursor: pointer; background: linear-gradient(135deg, #4db8ff, #7c3aed); color: #fff; font-family: var(--mono); font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 500; transition: opacity 0.2s, transform 0.15s; }
+  .lead-submit:hover { opacity: 0.88; transform: translateY(-1px); }
+  .lead-success { text-align: center; padding: 40px; background: var(--surface); border: 1px solid rgba(59,130,246,0.3); border-radius: 14px; }
+  .lead-success .big { font-size: 48px; display: block; margin-bottom: 12px; }
+  .lead-success h3 { font-family: var(--serif); font-size: 24px; margin-bottom: 8px; }
+  .lead-success p { color: var(--muted); font-size: 14px; }
+  .about-back { margin-bottom: 32px; }
+
+  /* Footer */
+  #siteFooter { position: fixed; bottom: 0; left: 0; right: 0; z-index: 999; border-top: 1px solid rgba(255,255,255,0.12); padding: 14px 40px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; background: rgba(15,18,64,0.7); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); transition: background 0.4s ease, border-color 0.4s ease; }
+  #siteFooter.scrolled { background: rgba(15,18,64,0.85) !important; border-color: rgba(77,184,255,0.2) !important; box-shadow: 0 -1px 0 rgba(77,184,255,0.1); }
+
+  /* Mobile */
+  @media (max-width: 768px) {
+    .workflow-grid { grid-template-columns: 1fr; }
+    .workflow-arrow { display: none; }
+    .home-news-grid { grid-template-columns: 1fr; }
+    .home-stats-row { grid-template-columns: 1fr 1fr; }
+  }
+
+  @media (max-width: 640px) {
+    header { padding: 14px 16px; flex-wrap: wrap; gap: 10px; }
+    .container { padding: 24px 16px; }
+    .search-heading { font-size: 26px; }
+    .search-row { flex-direction: column; }
+    .type-toggle { order: -1; }
+    .kpi-grid { grid-template-columns: 1fr 1fr; }
+    .inst-header { flex-direction: column; }
+    .inst-name { font-size: 24px; }
+    .data-badge { gap: 6px; flex-wrap: wrap; }
+    .badge { font-size: 9px; padding: 3px 7px; }
+    .logo { font-size: 24px; }
+    .tagline { font-size: 10px; }
+    footer { padding: 10px 16px !important; }
+    .footer-hide-mobile { display: none !important; }
+    .footer-show-mobile { display: inline !important; }
+    body { padding-bottom: 52px; }
+    .about-grid { grid-template-columns: 1fr; gap: 12px; margin: 28px 0; }
+    .about-card { padding: 20px; }
+    .about-hero h1 { font-size: 22px; }
+    .about-lead h2 { font-size: 20px; }
+    .ai-stat-grid { grid-template-columns: repeat(2, 1fr); }
+    .ai-energy-row { grid-template-columns: 1fr; }
+    .ai-cost-grid { grid-template-columns: 1fr; }
+    .ai-feature-row { grid-template-columns: 1fr; gap: 24px; }
+    .two-col { grid-template-columns: 1fr; gap: 24px; }
+    .ai-bar-label { width: 100px; font-size: 11px; }
+    #siteFooter { padding: 10px 16px; }
+  }
+</style>
+
+<header>
+  <div>
+    <a onclick="showHome()" style="cursor:pointer;text-decoration:none;display:block;">
+      <div class="logo">Vault<span>.</span></div>
+      <div class="tagline">Bank & Credit Union Intelligence</div>
+    </a>
+  </div>
+  <div class="data-badge" style="display:flex;gap:8px;align-items:center;">
+    <a href="https://banks.data.fdic.gov/docs/" target="_blank" style="text-decoration:none;">
+      <span class="badge badge-fdic" style="cursor:pointer;" title="FDIC BankFind API">FDIC Data ↗</span>
+    </a>
+    <a href="https://mapping.ncua.gov/ResearchCreditUnion" target="_blank" style="text-decoration:none;">
+      <span class="badge badge-ncua" style="cursor:pointer;" title="NCUA Credit Union Research">NCUA Data ↗</span>
+    </a>
+    <a onclick="showIndustry()" style="text-decoration:none;cursor:pointer;">
+      <span class="badge" style="background:rgba(77,184,255,0.12);color:#4db8ff;border:1px solid rgba(77,184,255,0.25);">Industry</span>
+    </a>
+    <a onclick="showAbout()" style="text-decoration:none;cursor:pointer;">
+      <span class="badge" style="background:rgba(139,92,246,0.12);color:#c4b5fd;border:1px solid rgba(139,92,246,0.25);">About</span>
+    </a>
+  </div>
+</header>
+
+<div class="container">
+  
+<div id="app"></div>
+</div>
+
+<footer id="siteFooter">
+  <div style="font-family:var(--mono);font-size:11px;color:var(--muted);">
+    © 2026 <a href="https://goidentify.com" target="_blank" style="color:#3b82f6;text-decoration:none;">iDENTIFY</a>
+    <span class="footer-hide-mobile"> — Data Architecture, Engineering & Analytics</span>
+  </div>
+  <div style="font-family:var(--mono);font-size:11px;color:var(--muted);display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
+    <span class="footer-hide-mobile">Data sourced from <a href="https://banks.data.fdic.gov" target="_blank" style="color:var(--muted);text-decoration:underline;text-underline-offset:3px;">FDIC BankFind</a> & <a href="https://ncua.gov" target="_blank" style="color:var(--muted);text-decoration:underline;text-underline-offset:3px;">NCUA</a></span>
+    <span class="footer-show-mobile" style="display:none;font-size:10px;color:var(--muted);">FDIC + NCUA data</span>
+    <a href="https://goidentify.com" target="_blank" style="color:#3b82f6;text-decoration:none;font-weight:500;">goidentify.com ↗</a>
+  </div>
+</footer>
+
+<script>
+const FDIC_BASE = 'https://banks.data.fdic.gov/api';
+const NCUA_BASE = 'https://data.ncua.gov/api';
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+function fmt$(n) {
+  if (n === null || n === undefined || n === '') return '—';
+  const v = Number(n);
+  if (isNaN(v)) return '—';
+  if (Math.abs(v) >= 1e9) return '$' + (v/1e9).toFixed(2) + 'B';
+  if (Math.abs(v) >= 1e6) return '$' + (v/1e6).toFixed(1) + 'M';
+  if (Math.abs(v) >= 1e3) return '$' + (v/1e3).toFixed(0) + 'K';
+  return '$' + v.toFixed(0);
+}
+
+function fmtPct(n) {
+  if (n === null || n === undefined || n === '') return '—';
+  return Number(n).toFixed(2) + '%';
+}
+
+function fmtNum(n) {
+  if (n === null || n === undefined || n === '') return '—';
+  return Number(n).toLocaleString();
+}
+
+function thousands(n) {
+  // FDIC reports in $thousands
+  return Number(n) * 1000;
+}
+
+// ── FDIC API ─────────────────────────────────────────────────────────────────
+
+// Fuzzy search helper: score how well a name matches a query
+function fuzzyScore(name, query) {
+  const n = name.toLowerCase();
+  const q = query.toLowerCase().trim();
+  if (n === q) return 100;
+  if (n.startsWith(q)) return 90;
+  if (n.includes(q)) return 80;
+  // Acronym match: "MSUFCU" matches "Michigan State University Federal Credit Union"
+  const words = n.replace(/[^a-z0-9 ]/g, '').split(/\s+/);
+  const acronym = words.map(w => w[0]).join('');
+  if (acronym.includes(q.toLowerCase())) return 75;
+  if (acronym.startsWith(q.toLowerCase())) return 85;
+  // Token match: all query words appear somewhere in name
+  const qTokens = q.split(/\s+/);
+  if (qTokens.every(t => n.includes(t))) return 70;
+  // Partial token match
+  const matchCount = qTokens.filter(t => n.includes(t)).length;
+  return Math.round((matchCount / qTokens.length) * 60);
+}
+
+async function searchFDIC(query) {
+  const fields = 'NAME,CERT,CITY,STALP,ASSET,REPDTE,ACTIVE,INSTCAT';
+  const q = query.trim();
+  
+  // Run two searches in parallel: wildcard AND full-text
+  const tokens = q.split(/\s+/).map(w => `NAME:${w}*`).join('%20AND%20');
+  const wildcardUrl = `${FDIC_BASE}/institutions?filters=${tokens}%20AND%20ACTIVE%3A1&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC`;
+  
+  // FDIC full-text search — handles abbreviations and fuzzy names
+  const fulltextUrl = `${FDIC_BASE}/institutions?search=${encodeURIComponent(q)}&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC&filters=ACTIVE%3A1`;
+
+  const [r1, r2] = await Promise.allSettled([fetch(wildcardUrl), fetch(fulltextUrl)]);
+  
+  const results1 = r1.status === 'fulfilled' ? (await r1.value.json()).data || [] : [];
+  const results2 = r2.status === 'fulfilled' ? (await r2.value.json()).data || [] : [];
+  
+  // Merge and deduplicate by CERT, prefer higher fuzzy score
+  const seen = new Map();
+  [...results1, ...results2].forEach(d => {
+    const cert = d.data.CERT;
+    const score = fuzzyScore(d.data.NAME, q);
+    if (!seen.has(cert) || seen.get(cert).score < score) {
+      seen.set(cert, { ...d, score });
+    }
+  });
+  
+  // If still empty, try single first-word wildcard fallback
+  if (seen.size === 0) {
+    const firstWord = q.split(/\s+/)[0];
+    const fallbackUrl = `${FDIC_BASE}/institutions?filters=NAME%3A${firstWord}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC`;
+    const r3 = await fetch(fallbackUrl);
+    const data3 = await r3.json();
+    (data3.data || []).forEach(d => seen.set(d.data.CERT, { ...d, score: fuzzyScore(d.data.NAME, q) }));
+  }
+
+  return [...seen.values()]
+    .sort((a, b) => b.score - a.score || (b.data.ASSET || 0) - (a.data.ASSET || 0))
+    .map(d => ({
+      type: 'bank',
+      id: d.data.CERT,
+      name: d.data.NAME,
+      city: d.data.CITY,
+      state: d.data.STALP,
+      assets: thousands(d.data.ASSET),
+      reportDate: d.data.REPDTE,
+      cert: d.data.CERT,
+    }));
+}
+
+async function getFDICDetail(cert) {
+  // Institution info
+  const instFields = 'NAME,CERT,CITY,STALP,ADDRESS,ZIP,WEBADDR,ESTYMD,ACTIVE,INSTCAT,CHRTAGNT,INSDATE,REPDTE,ASSET,DEP,EQ,NETINC,INTINC,NONII,NONIX,LNLSNET,REPDTE,STNAME,SC,LNLSDEPR,HCTMULT,NAMEHCR';
+  const instUrl = `${FDIC_BASE}/institutions?filters=CERT%3A${cert}&fields=${instFields}&limit=1`;
+  const instR = await fetch(instUrl);
+  const instData = await instR.json();
+  const inst = instData.data?.[0]?.data;
+  if (!inst) throw new Error('Institution not found');
+
+  // Financial history (last 8 quarters)
+  const finFields = 'REPDTE,ASSET,DEP,EQ,NETINC,INTINC,NONII,NONIX,LNLSNET,RBC1AAJ,ROA,ROE,INTEXP,NIMY,LNLSDEPR,EFFRATIO,SC,NUMEMP';
+  const finUrl = `${FDIC_BASE}/financials?filters=CERT%3A${cert}&fields=${finFields}&limit=8&sort_by=REPDTE&sort_order=DESC`;
+  const finR = await fetch(finUrl);
+  const finData = await finR.json();
+  const history = (finData.data || []).map(d => d.data);
+
+  return { inst, history };
+}
+
+// ── NCUA API ─────────────────────────────────────────────────────────────────
+// NCUA migrated from data.ncua.gov to mapping.ncua.gov.
+// The new API is POST-based but does NOT send CORS headers, so browser-side
+// calls from a different origin get an empty results array.
+// Strategy: POST to the new endpoint; if results array is empty but
+// totalResultCount > 0 (CORS blocked body), fall back to the NCUA locator link.
+// We also cache a charter→name map from the search page DOM if possible.
+
+async function searchNCUA(query) {
+  // Use our Netlify Edge Function proxy at /api/ncua — bypasses NCUA CORS restriction
+  try {
+    // Acronym expansion: if query is all-caps 4-8 chars (e.g. "MSUFCU"), try common expansions
+    // Common CU suffix words map to full terms
+    const acronymMap = { 'FCU':'Federal Credit Union','CU':'Credit Union','ECU':'Employees Credit Union','TCU':'Teachers Credit Union','SCU':'School Credit Union' };
+    let searchQuery = query;
+    const isAcronym = /^[A-Z0-9]{3,10}$/.test(query.trim());
+    if (isAcronym) {
+      // Try to expand known suffixes to broaden the search
+      const q = query.trim();
+      // Strip common CU suffixes and search for the prefix words
+      // e.g. MSUFCU → MSU → "Michigan State University" via initials
+      // Send the acronym as-is AND run a parallel search on just the prefix
+      const suffix = Object.keys(acronymMap).find(s => q.endsWith(s));
+      const prefix = suffix ? q.slice(0, -suffix.length) : q;
+      if (prefix && prefix !== q) {
+        // Run two searches: exact acronym + prefix initials expansion
+        const [r1, r2] = await Promise.allSettled([
+          fetch(`/.netlify/functions/ncua?q=${encodeURIComponent(q)}&limit=10`),
+          fetch(`/.netlify/functions/ncua?q=${encodeURIComponent(prefix)}&limit=15`)
+        ]);
+        const d1 = r1.status === 'fulfilled' ? (await r1.value.json()).results || [] : [];
+        const d2 = r2.status === 'fulfilled' ? (await r2.value.json()).results || [] : [];
+        // Merge, deduplicate, score
+        const seen = new Map();
+        [...d1, ...d2].forEach(d => {
+          if (!seen.has(d.id) || fuzzyScore(d.name, query) > fuzzyScore(seen.get(d.id).name, query)) {
+            seen.set(d.id, d);
+          }
+        });
+        const merged = [...seen.values()]
+          .map(d => ({ ...d, _score: fuzzyScore(d.name || '', query) }))
+          .sort((a, b) => b._score - a._score);
+        if (merged.length > 0) {
+          return merged.map(d => ({ type: 'cu', id: d.id, name: d.name, city: d.city, state: d.state, assets: d.assets, members: d.members, cuType: d.type }));
+        }
+      }
+    }
+    const url = `/.netlify/functions/ncua?q=${encodeURIComponent(searchQuery)}&limit=20`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`Proxy returned ${r.status}`);
+    const data = await r.json();
+    if (data.error) throw new Error(data.error);
+    return (data.results || [])
+      .map(d => ({ ...d, _score: fuzzyScore(d.name || '', query) }))
+      .sort((a, b) => b._score - a._score)
+      .map(d => ({
+        type: 'cu',
+        id: d.id,
+        name: d.name,
+        city: d.city,
+        state: d.state,
+        assets: d.assets,
+        members: d.members,
+        cuType: d.type,
+      }));
+  } catch(e) {
+    console.warn('NCUA proxy error:', e.message);
+    // Graceful fallback card
+    return [{
+      type: 'cu', id: null,
+      name: `"${query}" — Credit Union Search`,
+      city: '—', state: '—', assets: 0,
+      ncuaUrl: 'https://mapping.ncua.gov/ResearchCreditUnion',
+      ncuaFallback: true, totalCount: 1
+    }];
+  }
+}
+
+
+async function getNCUADetail(cuNumber) {
+  // Use our proxy to get detail for a specific charter number
+  try {
+    const url = `/.netlify/functions/ncua?q=${encodeURIComponent(cuNumber)}&limit=1`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`Proxy returned ${r.status}`);
+    const data = await r.json();
+    return data.results?.[0] || null;
+  } catch(e) {
+    console.warn('NCUA detail error:', e.message);
+    return null;
+  }
+}
+
+
+// ── Narrative generator ───────────────────────────────────────────────────────
+
+function generateNarrative(inst, latest) {
+  if (!latest) return null;
+  const assets = thousands(inst.ASSET);
+  const netInc = thousands(latest.NETINC || inst.NETINC);
+  const roa = latest.ROA || 0;
+  const roe = latest.ROE || 0;
+  const tier1 = latest.RBC1AAJ || 0;
+
+  let health = roa > 1 ? 'strong' : roa > 0.5 ? 'moderate' : 'below-average';
+  let capStr = tier1 > 12 ? 'well-capitalized' : tier1 > 8 ? 'adequately capitalized' : 'thinly capitalized';
+
+  return `${inst.NAME} is a ${inst.STALP}-chartered bank holding ${fmt$(assets)} in total assets as of ${inst.REPDTE}. 
+  The institution posted net income of ${fmt$(netInc)}, reflecting ${health} profitability with a return on assets of ${fmtPct(roa)} 
+  and return on equity of ${fmtPct(roe)}. Capital position appears ${capStr} with a Tier 1 capital ratio of ${fmtPct(tier1)}.`;
+}
+
+
+// ── Peer Comparison ──────────────────────────────────────────────────────────
+
+async function fetchPeers(inst, history) {
+  // Peers = institutions with similar asset size (within ~$1B or 50% range)
+  const currentCert = inst.CERT;
+  const currentAssets = Number(inst.ASSET); // assets in $thousands from FDIC
+  const state = inst.STALP;
+
+  // Define asset band: ±50% or ±$1B (in thousands), whichever is larger
+  const bandPct = currentAssets * 0.5;
+  const bandFlat = 1_000_000; // $1B in thousands
+  const band = Math.max(bandPct, bandFlat);
+  const minAssets = Math.max(0, Math.round(currentAssets - band));
+  const maxAssets = Math.round(currentAssets + band);
+
+  const fields = 'NAME,CERT,CITY,STALP,ASSET,REPDTE';
+
+  try {
+    // First try: same state, similar assets
+    let url = `${FDIC_BASE}/institutions?filters=STALP%3A${state}%20AND%20ACTIVE%3A1%20AND%20ASSET%3A%5B${minAssets}%20TO%20${maxAssets}%5D&fields=${fields}&limit=30&sort_by=ASSET&sort_order=DESC`;
+    let r = await fetch(url);
+    let data = await r.json();
+    let peers = (data.data || [])
+      .map(d => d.data)
+      .filter(d => d.CERT !== currentCert);
+
+    // If fewer than 3, broaden to national same asset range
+    if (peers.length < 3) {
+      const url2 = `${FDIC_BASE}/institutions?filters=ACTIVE%3A1%20AND%20ASSET%3A%5B${minAssets}%20TO%20${maxAssets}%5D&fields=${fields}&limit=50&sort_by=ASSET&sort_order=DESC`;
+      const r2 = await fetch(url2);
+      const data2 = await r2.json();
+      peers = (data2.data || [])
+        .map(d => d.data)
+        .filter(d => d.CERT !== currentCert);
+    }
+
+    // Pick 5 closest by asset size to current institution
+    peers = peers
+      .sort((a, b) => Math.abs(Number(a.ASSET) - currentAssets) - Math.abs(Number(b.ASSET) - currentAssets))
+      .slice(0, 5);
+
+    // Fetch financials for each peer (ROA, ROE)
+    const peersWithFinancials = await Promise.all(peers.map(async (peer) => {
+      try {
+        const finUrl = `${FDIC_BASE}/financials?filters=CERT%3A${peer.CERT}&fields=ROA,ROE,REPDTE,ASSET&limit=1&sort_by=REPDTE&sort_order=DESC`;
+        const fr = await fetch(finUrl);
+        const fd = await fr.json();
+        const fin = fd.data?.[0]?.data || {};
+        return { ...peer, ROA: fin.ROA, ROE: fin.ROE };
+      } catch(e) {
+        return peer;
+      }
+    }));
+
+    return peersWithFinancials;
+  } catch(e) {
+    console.warn('Peer fetch failed:', e);
+    return [];
+  }
+}
+
+function renderPeers(peers, currentInst, currentLatest) {
+  if (!peers || peers.length === 0) return '';
+
+  const currentAssets = thousands(currentInst.ASSET);
+  const maxAssets = Math.max(currentAssets, ...peers.map(p => thousands(p.ASSET)));
+  const currentRoa = currentLatest?.ROA || 0;
+
+  const currentCard = `
+    <div class="peer-card" style="border-color: #3b82f6;">
+      <div class="peer-badge peer-you-badge">You</div>
+      <div class="peer-name">${currentInst.NAME}</div>
+      <div class="peer-location">${currentInst.CITY}, ${currentInst.STALP}</div>
+      <div class="peer-stats">
+        <div class="peer-stat">
+          <span class="peer-stat-label">Assets</span>
+          <span class="peer-stat-value">${fmt$(currentAssets)}</span>
+        </div>
+        <div class="peer-stat">
+          <span class="peer-stat-label">ROA</span>
+          <span class="peer-stat-value">${fmtPct(currentRoa)}</span>
+        </div>
+      </div>
+      <div class="compare-bar-wrap">
+        <div class="compare-bar-label">
+          <span>Asset Size</span>
+          <span>${fmtPct(currentAssets / maxAssets * 100)}</span>
+        </div>
+        <div class="compare-bar-track">
+          <div class="compare-bar-fill" style="width:${Math.max(4, currentAssets / maxAssets * 100)}%"></div>
+        </div>
+      </div>
+    </div>`;
+
+  const peerCards = peers.map(p => {
+    const pAssets = thousands(p.ASSET);
+    const pct = Math.max(4, pAssets / maxAssets * 100);
+    return `
+      <div class="peer-card" data-id="${p.CERT}" data-type="bank">
+        <div class="peer-badge">Peer</div>
+        <div class="peer-name">${p.NAME}</div>
+        <div class="peer-location">${p.CITY}, ${p.STALP}</div>
+        <div class="peer-stats">
+          <div class="peer-stat">
+            <span class="peer-stat-label">Assets</span>
+            <span class="peer-stat-value">${fmt$(pAssets)}</span>
+          </div>
+          <div class="peer-stat">
+            <span class="peer-stat-label">ROA</span>
+            <span class="peer-stat-value">${fmtPct(p.ROA)}</span>
+          </div>
+        </div>
+        <div class="compare-bar-wrap">
+          <div class="compare-bar-label">
+            <span>Asset Size</span>
+            <span>${fmtPct(pAssets / maxAssets * 100)}</span>
+          </div>
+          <div class="compare-bar-track">
+            <div class="compare-bar-fill" style="width:${pct}%"></div>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="section peers-section">
+      <div class="section-title">Market Peers — ${currentInst.CITY}, ${currentInst.STALP}</div>
+      <div class="peers-grid">
+        ${currentCard}
+        ${peerCards}
+      </div>
+    </div>`;
+}
+
+
+// ── CU Peer Comparison ───────────────────────────────────────────────────────
+
+async function fetchCUPeers(cu) {
+  const currentId = cu.id || cu.charter;
+  const currentAssets = cu.assets || 0;
+  const currentState = cu.state;
+  if (!currentAssets) return [];
+
+  // Same band logic as banks: ±50% or ±$500M, whichever is larger
+  const bandPct = currentAssets * 0.5;
+  const bandFlat = 500_000_000; // $500M
+  const band = Math.max(bandPct, bandFlat);
+  const minAssets = Math.max(0, Math.round(currentAssets - band));
+  const maxAssets = Math.round(currentAssets + band);
+
+  try {
+    // First try: same state, similar asset range (search broad state term)
+    const allCUs = await loadAllCUsInRange(minAssets, maxAssets);
+    let statePeers = allCUs.filter(p => p.id !== currentId && p.state === currentState);
+
+    // If fewer than 3, use national peers
+    let peers = statePeers.length >= 3 ? statePeers : allCUs.filter(p => p.id !== currentId);
+
+    // Pick 5 closest by asset size
+    peers = peers
+      .sort((a, b) => Math.abs(a.assets - currentAssets) - Math.abs(b.assets - currentAssets))
+      .slice(0, 5);
+
+    return peers;
+  } catch(e) {
+    console.warn('CU peer fetch failed:', e);
+    return [];
+  }
+}
+
+async function loadAllCUsInRange(minAssets, maxAssets) {
+  try {
+    const url = `/.netlify/functions/ncua?minAssets=${minAssets}&maxAssets=${maxAssets}&limit=100`;
+    const r = await fetch(url);
+    const data = await r.json();
+    return data.results || [];
+  } catch(e) {
+    return [];
+  }
+}
+
+function renderCUPeers(peers, currentCU) {
+  if (!peers || peers.length === 0) return '';
+
+  const currentAssets = currentCU.assets || 0;
+  const maxAssets = Math.max(currentAssets, ...peers.map(p => p.assets || 0));
+
+  const currentCard = `
+    <div class="peer-card" style="border-color:#3b82f6;">
+      <div class="peer-badge peer-you-badge">You</div>
+      <div class="peer-name">${currentCU.name}</div>
+      <div class="peer-location">${currentCU.city}, ${currentCU.state}</div>
+      <div class="peer-stats">
+        <div class="peer-stat">
+          <span class="peer-stat-label">Assets</span>
+          <span class="peer-stat-value">${fmt$(currentAssets)}</span>
+        </div>
+        <div class="peer-stat">
+          <span class="peer-stat-label">Members</span>
+          <span class="peer-stat-value">${currentCU.members ? fmtNum(currentCU.members) : '—'}</span>
+        </div>
+      </div>
+      <div class="compare-bar-wrap">
+        <div class="compare-bar-label">
+          <span>Asset Size</span>
+          <span>${fmtPct(currentAssets / maxAssets * 100)}</span>
+        </div>
+        <div class="compare-bar-track">
+          <div class="compare-bar-fill" style="width:${Math.max(4, currentAssets / maxAssets * 100)}%"></div>
+        </div>
+      </div>
+    </div>`;
+
+  const peerCards = peers.map(p => {
+    const pAssets = p.assets || 0;
+    const pct = Math.max(4, pAssets / maxAssets * 100);
+    return `
+      <div class="peer-card" data-id="${p.id}" data-name="${p.name}" data-assets="${p.assets||0}" data-members="${p.members||0}" data-cutype="${p.type||''}" data-city="${p.city||''}" data-state="${p.state||''}" data-type="cu">
+        <div class="peer-badge">Peer CU</div>
+        <div class="peer-name">${p.name}</div>
+        <div class="peer-location">${p.city}, ${p.state}</div>
+        <div class="peer-stats">
+          <div class="peer-stat">
+            <span class="peer-stat-label">Assets</span>
+            <span class="peer-stat-value">${fmt$(pAssets)}</span>
+          </div>
+          <div class="peer-stat">
+            <span class="peer-stat-label">Members</span>
+            <span class="peer-stat-value">${p.members ? fmtNum(p.members) : '—'}</span>
+          </div>
+        </div>
+        <div class="compare-bar-wrap">
+          <div class="compare-bar-label">
+            <span>Asset Size</span>
+            <span>${fmtPct(pAssets / maxAssets * 100)}</span>
+          </div>
+          <div class="compare-bar-track">
+            <div class="compare-bar-fill" style="width:${pct}%"></div>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="section peers-section">
+      <div class="section-title">Market Peers — ${currentCU.city}, ${currentCU.state}</div>
+      <div class="peers-grid">
+        ${currentCard}
+        ${peerCards}
+      </div>
+    </div>`;
+}
+
+// ── History Chart ─────────────────────────────────────────────────────────────
+
+function fmtPeriod(dateStr) {
+  // Convert YYYYMMDD or YYYY-MM-DD to MM/YY
+  if (!dateStr) return '';
+  const s = dateStr.replace(/-/g, '');
+  const year = s.slice(2, 4);
+  const month = s.slice(4, 6);
+  return month + '/' + year;
+}
+
+function renderHistoryChart(history) {
+  const canvas = document.getElementById('historyChart');
+  if (!canvas || !history || history.length < 2) return;
+
+  // Reverse so oldest is on the left
+  const data = [...history].reverse();
+  const labels = data.map(h => fmtPeriod(h.REPDTE));
+  const roaData = data.map(h => parseFloat(h.ROA) || 0);
+  const roeData = data.map(h => parseFloat(h.ROE) || 0);
+  const assetData = data.map(h => parseFloat(thousands(h.ASSET)) / 1e6); // in $M
+
+  // Destroy existing chart if any
+  if (canvas._chartInstance) canvas._chartInstance.destroy();
+
+  const ctx = canvas.getContext('2d');
+  canvas._chartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Return on Assets (ROA)',
+          data: roaData,
+          borderColor: '#3b82f6',
+          backgroundColor: 'rgba(59,130,246,0.08)',
+          borderWidth: 2,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          pointBackgroundColor: '#3b82f6',
+          tension: 0.35,
+          yAxisID: 'yPct',
+          fill: true,
+        },
+        {
+          label: 'Return on Equity (ROE)',
+          data: roeData,
+          borderColor: '#8b5cf6',
+          backgroundColor: 'rgba(139,92,246,0.06)',
+          borderWidth: 2,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          pointBackgroundColor: '#8b5cf6',
+          tension: 0.35,
+          yAxisID: 'yPct',
+          fill: true,
+        },
+        {
+          label: 'Total Assets',
+          data: assetData,
+          borderColor: '#60a5fa',
+          backgroundColor: 'transparent',
+          borderWidth: 1.5,
+          borderDash: [5, 4],
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          pointBackgroundColor: '#60a5fa',
+          tension: 0.35,
+          yAxisID: 'yAssets',
+        },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: { boxWidth: 10, font: { size: 11 }, padding: 10 },
+          align: 'end',
+          labels: {
+            color: '#6b7bb0',
+            font: { family: 'DM Mono', size: 11 },
+            boxWidth: 12,
+            padding: 16,
+            usePointStyle: true,
+            pointStyleWidth: 8,
+          }
+        },
+        tooltip: {
+          backgroundColor: '#12152a',
+          borderColor: '#252d52',
+          borderWidth: 1,
+          titleColor: '#e8eaf6',
+          bodyColor: '#6b7bb0',
+          titleFont: { family: 'DM Mono', size: 12 },
+          bodyFont: { family: 'DM Mono', size: 11 },
+          padding: 12,
+          callbacks: {
+            label: (ctx) => {
+              if (ctx.dataset.yAxisID === 'yAssets') return ' Assets: $' + ctx.parsed.y.toFixed(1) + 'M';
+              const shortName = ctx.dataset.label.includes('Assets') ? 'Assets' : ctx.dataset.label.includes('Return on Assets') ? 'ROA' : 'ROE';
+              return ' ' + shortName + ': ' + ctx.parsed.y.toFixed(2) + '%';
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: '#252d52', lineWidth: 0.5 },
+          ticks: { color: '#6b7bb0', font: { family: 'DM Mono', size: 11 } },
+          border: { color: '#252d52' },
+        },
+        yPct: {
+          type: 'linear',
+          position: 'left',
+          grid: { color: '#252d52', lineWidth: 0.5 },
+          ticks: {
+            color: '#6b7bb0',
+            font: { family: 'DM Mono', size: 10 },
+            callback: v => v.toFixed(2) + '%'
+          },
+          border: { color: '#252d52' },
+        },
+        yAssets: {
+          type: 'linear',
+          position: 'right',
+          grid: { display: false },
+          ticks: {
+            color: '#3b82f6',
+            font: { family: 'DM Mono', size: 10 },
+            callback: v => '$' + v.toFixed(0) + 'M'
+          },
+          border: { color: '#252d52' },
+        }
+      }
+    }
+  });
+}
+
+// ── CU Chart ─────────────────────────────────────────────────────────────────
+function renderCUChart(cu) {
+  const canvas = document.getElementById('cuChart');
+  if (!canvas) return;
+  if (canvas._chartInstance) canvas._chartInstance.destroy();
+
+  const assets = cu.assets || 0;
+  const members = cu.members || 0;
+  const assetsB = assets / 1e9;
+  const assetsPerMember = members ? Math.round(assets / members) : 0;
+
+  // Peer benchmarks by asset tier (NCUA 5300 Q4 2025 averages)
+  const peerData = assets >= 10e9
+    ? { label: 'Large CU (>$10B)', avgAssets: 28.5, avgMembers: 1850000, avgAPM: 15400 }
+    : assets >= 1e9
+    ? { label: 'Mid-size CU ($1B-$10B)', avgAssets: 2.8, avgMembers: 185000, avgAPM: 15100 }
+    : assets >= 100e6
+    ? { label: 'Community CU ($100M-$1B)', avgAssets: 0.32, avgMembers: 24000, avgAPM: 13300 }
+    : { label: 'Small CU (<$100M)', avgAssets: 0.028, avgMembers: 3200, avgAPM: 8700 };
+
+  const ctx = canvas.getContext('2d');
+
+  canvas._chartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: ['Total Assets ($B)', 'Members (000s)', 'Assets per Member ($K)'],
+      datasets: [
+        {
+          label: cu.name || 'This CU',
+          data: [
+            parseFloat(assetsB.toFixed(3)),
+            parseFloat((members / 1000).toFixed(1)),
+            parseFloat((assetsPerMember / 1000).toFixed(1))
+          ],
+          backgroundColor: ['rgba(59,130,246,0.7)', 'rgba(139,92,246,0.7)', 'rgba(52,211,153,0.7)'],
+          borderColor: ['#3b82f6', '#8b5cf6', '#34d399'],
+          borderWidth: 1.5,
+          borderRadius: 6,
+        },
+        {
+          label: peerData.label + ' avg',
+          data: [
+            parseFloat(peerData.avgAssets.toFixed(3)),
+            parseFloat((peerData.avgMembers / 1000).toFixed(1)),
+            parseFloat((peerData.avgAPM / 1000).toFixed(1))
+          ],
+          backgroundColor: ['rgba(59,130,246,0.18)', 'rgba(139,92,246,0.18)', 'rgba(52,211,153,0.18)'],
+          borderColor: ['rgba(59,130,246,0.4)', 'rgba(139,92,246,0.4)', 'rgba(52,211,153,0.4)'],
+          borderWidth: 1,
+          borderRadius: 6,
+          borderDash: [4, 3],
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          position: 'top',
+          align: 'end',
+          labels: {
+            color: '#6b7bb0',
+            font: { family: 'DM Mono', size: 11 },
+            boxWidth: 12,
+            padding: 16,
+            usePointStyle: true,
+            pointStyleWidth: 8,
+          }
+        },
+        tooltip: {
+          backgroundColor: '#12152a',
+          borderColor: '#252d52',
+          borderWidth: 1,
+          titleColor: '#e8eaf6',
+          bodyColor: '#6b7bb0',
+          titleFont: { family: 'DM Mono', size: 12 },
+          bodyFont: { family: 'DM Mono', size: 11 },
+          padding: 12,
+          callbacks: {
+            label: (ctx) => {
+              const v = ctx.parsed.y;
+              const labels = ['Assets: $' + v.toFixed(2) + 'B', 'Members: ' + v.toFixed(0) + 'K', 'APM: $' + v.toFixed(1) + 'K'];
+              return ' ' + labels[ctx.dataIndex];
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: '#252d52', lineWidth: 0.5 },
+          ticks: { color: '#6b7bb0', font: { family: 'DM Mono', size: 11 } },
+          border: { color: '#252d52' },
+        },
+        y: {
+          grid: { color: '#252d52', lineWidth: 0.5 },
+          ticks: { color: '#6b7bb0', font: { family: 'DM Mono', size: 10 } },
+          border: { color: '#252d52' },
+        }
+      }
+    }
+  });
+}
+
+// ── Render functions ──────────────────────────────────────────────────────────
+
+let state = { view: 'search', query: '', instType: 'bank', results: [], loading: false, error: null, detail: null };
+
+function showHome() { state = { view: 'search', query: '', instType: state.instType, results: [], loading: false, error: null, detail: null }; render(); }
+function showIndustry() { state.view = 'industry'; render(); }
+function showAbout() { state.view = 'about'; render(); }
+
+function render() {
+  const app = document.getElementById('app');
+  if (state.view === 'search') app.innerHTML = renderSearch();
+  else if (state.view === 'results') app.innerHTML = renderResults();
+  else if (state.view === 'detail') app.innerHTML = renderDetail();
+  else if (state.view === 'about') app.innerHTML = renderAbout();
+  else if (state.view === 'industry') { app.innerHTML = renderIndustry(); setTimeout(drawIndustryCharts, 50); }
+  bindEvents();
+  // Draw chart after DOM is updated
+  if (state.view === 'detail' && state.detail?.type === 'bank' && state.detail.history) {
+    setTimeout(() => {
+      renderHistoryChart(state.detail.history);
+      const wrap = document.getElementById('historyChartWrap');
+      if (wrap && window.ResizeObserver) {
+        if (wrap._ro) wrap._ro.disconnect();
+        wrap._ro = new ResizeObserver(() => {
+          const c = document.getElementById('historyChart');
+          if (c?._chartInstance) c._chartInstance.resize();
+        });
+        wrap._ro.observe(wrap);
+      }
+    }, 50);
+  }
+  if (state.view === 'detail' && state.detail?.type === 'cu' && state.detail.raw?.assets) {
+    setTimeout(() => {
+      renderCUChart(state.detail.raw);
+      const wrap = document.getElementById('cuChartWrap');
+      if (wrap && window.ResizeObserver) {
+        if (wrap._ro) wrap._ro.disconnect();
+        wrap._ro = new ResizeObserver(() => {
+          const c = document.getElementById('cuChart');
+          if (c?._chartInstance) c._chartInstance.resize();
+        });
+        wrap._ro.observe(wrap);
+      }
+    }, 50);
+    // Load CU peers asynchronously
+    const rawCU = state.detail.raw;
+    fetchCUPeers(rawCU).then(peers => {
+      const container = document.getElementById('cuPeersContainer');
+      if (container) container.innerHTML = renderCUPeers(peers, rawCU);
+      // Bind click events on peer cards
+      document.querySelectorAll('#cuPeersContainer .peer-card[data-id]').forEach(card => {
+        card.addEventListener('click', () => {
+          const cached = {
+            id: card.dataset.id, name: card.dataset.name,
+            assets: parseInt(card.dataset.assets||'0',10),
+            members: parseInt(card.dataset.members||'0',10),
+            type: card.dataset.cutype, city: card.dataset.city,
+            state: card.dataset.state, charter: card.dataset.id,
+          };
+          loadCUDetail(card.dataset.id, card.dataset.name, cached);
+        });
+      });
+    });
+  }
+}
+
+function renderSearch() {
+  // Kick off industry news load async
+  setTimeout(loadHomeNews, 0);
+  return `
+    <div class="search-section">
+      <h1 class="search-heading">Unlock financial data behind<br><em>any</em> bank or credit union.</h1>
+      <p class="search-sub">// Powered by FDIC BankFind + NCUA public data</p>
+      ${renderSearchBar()}
+    </div>
+
+    <!-- Stats row -->
+    <div class="home-stats-row">
+      <div class="home-stat">
+        <div class="home-stat-value">4,500+</div>
+        <div class="home-stat-label">FDIC Banks</div>
+      </div>
+      <div class="home-stat">
+        <div class="home-stat-value">4,600+</div>
+        <div class="home-stat-label">Credit Unions</div>
+      </div>
+      <div class="home-stat">
+        <div class="home-stat-value">$24T</div>
+        <div class="home-stat-label">Total Assets Tracked</div>
+      </div>
+      <div class="home-stat">
+        <div class="home-stat-value">Free</div>
+        <div class="home-stat-label">No Login. No Paywall.</div>
+      </div>
+    </div>
+
+    <!-- How it works -->
+    <div class="home-section">
+      <div class="home-section-label">// How it works</div>
+      <div class="workflow-grid">
+
+        <div class="workflow-step">
+          <span class="workflow-icon">⌕</span>
+          <div class="workflow-step-num">Step 01 — Search</div>
+          <div class="workflow-title">Find any institution by name</div>
+          <div class="workflow-desc">Search across all FDIC-regulated banks and NCUA credit unions in the U.S. Just type a name — partial matches work too.</div>
+          <div class="workflow-tags">
+            <span class="workflow-tag">Banks</span>
+            <span class="workflow-tag">Credit Unions</span>
+            <span class="workflow-tag">Thrifts</span>
+          </div>
+        </div>
+
+        <div class="workflow-arrow">→</div>
+
+        <div class="workflow-step">
+          <span class="workflow-icon">◈</span>
+          <div class="workflow-step-num">Step 02 — Analyze</div>
+          <div class="workflow-title">Explore financial health at a glance</div>
+          <div class="workflow-desc">View assets, deposits, net income, ROA, ROE, Tier 1 capital, NIM, and efficiency ratio — all from the latest quarterly call report.</div>
+          <div class="workflow-tags">
+            <span class="workflow-tag">ROA / ROE</span>
+            <span class="workflow-tag">Tier 1 Capital</span>
+            <span class="workflow-tag">Deposits</span>
+            <span class="workflow-tag">NIM</span>
+          </div>
+        </div>
+
+        <div class="workflow-arrow">→</div>
+
+        <div class="workflow-step">
+          <span class="workflow-icon">⇄</span>
+          <div class="workflow-step-num">Step 03 — Compare</div>
+          <div class="workflow-title">Benchmark against true peers</div>
+          <div class="workflow-desc">See how an institution stacks up against similarly-sized peers — filtered by asset range, not just geography. Spot outliers and opportunities fast.</div>
+          <div class="workflow-tags">
+            <span class="workflow-tag">Asset-Range Peers</span>
+            <span class="workflow-tag">Trend Charts</span>
+            <span class="workflow-tag">News</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Industry news -->
+    <div class="home-section" style="margin-bottom: 80px;">
+      <div class="home-section-label">// Industry news</div>
+      <div class="home-news-grid" id="homeNewsGrid">
+        <div class="home-news-loading">
+          <div class="spinner" style="width:14px;height:14px;border-width:2px;"></div>
+          Loading latest community banking news…
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function loadHomeNews() {
+  const el = document.getElementById('homeNewsGrid');
+  if (!el) return;
+  const q = 'community bank OR "credit union" fintech regulation';
+  const innerRss = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
+  const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(innerRss)}`;
+  try {
+    const r = await fetch(apiUrl);
+    const data = await r.json();
+    if (data.status !== 'ok' || !data.items?.length) {
+      el.innerHTML = '<p style="color:var(--muted);font-family:var(--mono);font-size:12px;padding:16px 0;grid-column:1/-1;">No news available right now.</p>';
+      return;
+    }
+    const items = data.items.slice(0, 8);
+    el.innerHTML = items.map(item => {
+      const dashIdx = item.title?.lastIndexOf(' - ') ?? -1;
+      const title = dashIdx > 0 ? item.title.slice(0, dashIdx) : item.title;
+      const source = dashIdx > 0 ? item.title.slice(dashIdx + 3) : 'News';
+      const date = item.pubDate
+        ? new Date(item.pubDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        : '';
+      return `<a href="${item.link}" target="_blank" rel="noopener" class="home-news-item">
+        <div class="home-news-title">${title}</div>
+        <div class="home-news-meta">
+          <span class="home-news-source">${source}</span>
+          <span>${date}</span>
+        </div>
+      </a>`;
+    }).join('');
+  } catch(e) {
+    el.innerHTML = '<p style="color:var(--muted);font-family:var(--mono);font-size:12px;padding:16px 0;grid-column:1/-1;">Could not load news feed.</p>';
+  }
+}
+
+function renderSearchBar(query = '') {
+  return `
+    <div class="search-row">
+      <div class="type-toggle">
+        <button class="type-btn ${state.instType === 'bank' ? 'active' : ''}" data-type="bank">Banks</button>
+        <button class="type-btn ${state.instType === 'cu' ? 'active' : ''}" data-type="cu">Credit Unions</button>
+        <button class="type-btn ${state.instType === 'both' ? 'active' : ''}" data-type="both">Both</button>
+      </div>
+      <div class="search-input-wrap">
+        <input class="search-input" id="searchInput" type="text" placeholder="Institution name…" value="${query}" />
+      </div>
+      <button class="search-btn" id="searchBtn" ${state.loading ? 'disabled style="opacity:0.6;cursor:not-allowed;"' : ''}>
+        ${state.loading ? '<span style="display:inline-flex;align-items:center;gap:8px;"><span class="spinner" style="width:14px;height:14px;border-width:2px;margin:0;"></span>Searching…</span>' : 'Search →'}
+      </button>
+    </div>`;
+}
+
+function renderResults() {
+  const results = state.results;
+  return `
+    <div class="search-section">
+      <h1 class="search-heading">Results for <em>"${state.query}"</em></h1>
+      <p class="search-sub">// ${results.length} institution${results.length !== 1 ? 's' : ''} found</p>
+      ${renderSearchBar(state.query)}
+    </div>
+    ${state.loading ? `<div class="state-msg"><div class="spinner"></div><br>Searching${state.instType === 'cu' ? ' NCUA credit unions…' : state.instType === 'both' ? ' banks &amp; credit unions…' : ' FDIC banks…'}</div>`  : ''}
+    ${state.error ? `<div class="state-msg">${state.error}</div>` : ''}
+    ${!state.loading && results.length === 0 ? '<div class="state-msg"><span class="big">∅</span>No results found. Try a broader search.</div>' : ''}
+    <div class="results-list">
+      ${results.map(r => r.ncuaFallback ? `
+        <a href="${r.ncuaUrl}" target="_blank" style="text-decoration:none;">
+          <div class="result-item" style="border-color:rgba(139,92,246,0.35);background:rgba(139,92,246,0.06);">
+            <div>
+              <div class="result-name" style="color:#c4b5fd;">${r.name.replace(' (Credit Union)','')} <span style="font-size:12px;opacity:0.7;">(Credit Union)</span></div>
+              <div class="result-meta">⚠ NCUA data requires same-origin access · ${r.totalCount} result${r.totalCount===1?'':'s'} found</div>
+            </div>
+            <div class="result-assets">
+              <div style="font-size:12px;color:#a78bfa;font-family:var(--mono);">View on NCUA ↗</div>
+              <div class="result-type">🤝 Credit Union</div>
+            </div>
+          </div>
+        </a>` : `
+        <div class="result-item" data-id="${r.id}" data-type="${r.type}" data-name="${r.name || ''}" data-assets="${r.assets||0}" data-members="${r.members||0}" data-cutype="${r.cuType||r.type||''}" data-city="${r.city||''}" data-state="${r.state||''}">
+          <div>
+            <div class="result-name">${r.name}</div>
+            <div class="result-meta">${r.city || '—'}, ${r.state || '—'} · ${r.type === 'bank' ? 'CERT #' + r.id : 'CU #' + r.id}</div>
+          </div>
+          <div class="result-assets">
+            <div>${r.assets ? fmt$(r.assets) : '—'}</div>
+            <div class="result-type">${r.type === 'bank' ? '🏦 Bank' : '🤝 Credit Union'}</div>
+          </div>
+        </div>`).join('')}
+    </div>`;
+}
+
+function renderDetail() {
+  const d = state.detail;
+  if (!d) return '<div class="state-msg"><div class="spinner"></div><br>Loading…</div>';
+
+  if (d.type === 'bank') return renderBankDetail(d);
+  return renderCUDetail(d);
+}
+
+function renderBankDetail(d) {
+  const { inst, history } = d;
+  const latest = history?.[0];
+
+  const assets    = thousands(inst.ASSET);
+  const deposits  = thousands(inst.DEP);
+  const equity    = thousands(inst.EQ);
+  const netInc    = latest ? thousands(latest.NETINC) : thousands(inst.NETINC);
+  const loans     = latest ? thousands(latest.LNLSNET) : thousands(inst.LNLSNET);
+  const roa       = latest?.ROA;
+  const roe       = latest?.ROE;
+  const tier1     = latest?.RBC1AAJ || 0;
+  const nim       = latest?.NIMY;
+  const effRatio  = latest?.EFFRATIO;
+
+  const narrative = generateNarrative(inst, latest);
+
+  return `
+    <div class="inst-header">
+      <div>
+        <div class="inst-name">${inst.NAME}</div>
+        <div class="inst-meta-row">
+          <span class="inst-meta-item"><strong>${inst.CITY}, ${inst.STALP}</strong></span>
+          <span class="inst-meta-item">FDIC CERT <strong>${inst.CERT}</strong></span>
+          <span class="inst-meta-item">Est. <strong>${(inst.ESTYMD ? (()=>{ const m=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; const s=String(inst.ESTYMD); const parts=s.split('/'); if(parts.length===3){ const mo=parseInt(parts[0],10)-1; return (mo>=0?m[mo]+' ':'')+parts[2]; } const mo=parseInt(s.slice(4,6),10)-1; const yr=s.slice(0,4); return (mo>=0?m[mo]+' ':'')+yr; })() : '—')}</strong></span>
+          <span class="inst-meta-item">As of <strong>${inst.REPDTE || '—'}</strong></span>
+          ${inst.WEBADDR ? `<span class="inst-meta-item"><a href="https://${inst.WEBADDR}" target="_blank" style="color:var(--accent)">${inst.WEBADDR}</a></span>` : ''}
+          ${inst.HCTMULT ? `<span class="inst-meta-item"><span style="font-family:var(--mono);font-size:11px;padding:3px 8px;background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.3);border-radius:6px;color:#fbbf24;letter-spacing:0.05em;">&#9654; ${inst.HCTMULT}</span></span>` : ''}
+        </div>
+      </div>
+      <button class="back-btn" id="backBtn">← Back</button>
+    </div>
+
+    ${narrative ? `<div class="narrative-box">${narrative}</div>` : ''}
+
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">Total Assets</div>
+        <div class="kpi-value kpi-neutral">${fmt$(assets)}</div>
+        <div class="kpi-sub">Balance sheet size</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Total Deposits</div>
+        <div class="kpi-value kpi-neutral">${fmt$(deposits)}</div>
+        <div class="kpi-sub">${assets ? fmtPct(deposits/assets*100) + ' of assets' : ''}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Net Loans</div>
+        <div class="kpi-value kpi-neutral">${fmt$(loans)}</div>
+        <div class="kpi-sub">${assets ? fmtPct(loans/assets*100) + ' of assets' : ''}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Equity Capital</div>
+        <div class="kpi-value kpi-neutral">${fmt$(equity)}</div>
+        <div class="kpi-sub">${assets ? fmtPct(equity/assets*100) + ' capital ratio' : ''}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Net Income</div>
+        <div class="kpi-value ${netInc >= 0 ? 'kpi-positive' : 'kpi-negative'}">${fmt$(netInc)}</div>
+        <div class="kpi-sub">Most recent period</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Return on Assets</div>
+        <div class="kpi-value ${roa >= 1 ? 'kpi-positive' : roa >= 0 ? 'kpi-neutral' : 'kpi-negative'}">${fmtPct(roa)}</div>
+        <div class="kpi-sub">Benchmark: >1.00%</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Return on Equity</div>
+        <div class="kpi-value ${roe >= 10 ? 'kpi-positive' : roe >= 0 ? 'kpi-neutral' : 'kpi-negative'}">${fmtPct(roe)}</div>
+        <div class="kpi-sub">Benchmark: >10%</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Tier 1 Capital Ratio</div>
+        <div class="kpi-value ${tier1 >= 10 ? 'kpi-positive' : tier1 >= 8 ? 'kpi-neutral' : 'kpi-negative'}">${fmtPct(tier1)}</div>
+        <div class="kpi-sub">Well-cap: ≥10%</div>
+      </div>
+      ${nim ? `<div class="kpi-card">
+        <div class="kpi-label">Net Interest Margin</div>
+        <div class="kpi-value kpi-neutral">${fmtPct(nim)}</div>
+        <div class="kpi-sub">Interest spread</div>
+      </div>` : ''}
+      ${effRatio ? `<div class="kpi-card">
+        <div class="kpi-label">Efficiency Ratio</div>
+        <div class="kpi-value ${effRatio <= 60 ? 'kpi-positive' : effRatio <= 70 ? 'kpi-neutral' : 'kpi-negative'}">${fmtPct(effRatio)}</div>
+        <div class="kpi-sub">Lower is better</div>
+      </div>` : ''}
+    </div>
+
+    <div class="section-title" style="margin-top:8px;">iDENTIFY Prospect Signals</div>
+    <div class="kpi-grid" style="margin-bottom:40px;">
+      <div class="kpi-card">
+        <div class="kpi-label">Headcount</div>
+        <div class="kpi-value kpi-neutral">${latest?.NUMEMP ? fmtNum(latest.NUMEMP) : '—'}</div>
+        <div class="kpi-sub">Full-time employees</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Cash & Securities</div>
+        <div class="kpi-value kpi-neutral">${fmt$(thousands(inst.SC || 0))}</div>
+        <div class="kpi-sub">Investment portfolio</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Capital Ratio</div>
+        <div class="kpi-value ${tier1 >= 12 ? 'kpi-positive' : tier1 >= 8 ? 'kpi-neutral' : 'kpi-negative'}">${fmtPct(tier1)}</div>
+        <div class="kpi-sub">${tier1 >= 12 ? '✦ Well capitalized' : tier1 >= 10 ? 'Adequately capitalized' : 'Monitor closely'}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Non-Interest Income</div>
+        <div class="kpi-value kpi-neutral">${fmt$(thousands(inst.NONII || 0))}</div>
+        <div class="kpi-sub">Fee & tech revenue signal</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Non-Interest Expense</div>
+        <div class="kpi-value kpi-neutral">${fmt$(thousands(inst.NONIX || 0))}</div>
+        <div class="kpi-sub">Ops & tech spend signal</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Assets per Employee</div>
+        <div class="kpi-value kpi-neutral">${latest?.NUMEMP && inst.ASSET ? fmt$(thousands(inst.ASSET) / Number(latest.NUMEMP)) : '—'}</div>
+        <div class="kpi-sub">Efficiency indicator</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Institution Details</div>
+      <table class="data-table">
+        <tr><td>Charter Agent</td><td>${inst.CHRTAGNT || '—'}</td></tr>
+        <tr><td>FDIC Insurance Date</td><td>${inst.INSDATE || '—'}</td></tr>
+        <tr><td>Address</td><td>${inst.ADDRESS || '—'}, ${inst.CITY}, ${inst.STALP} ${inst.ZIP || ''}</td></tr>
+        <tr><td>State</td><td>${inst.STNAME || inst.STALP}</td></tr>
+        <tr><td>Institution Category</td><td>${inst.INSTCAT || '—'}</td></tr>
+        <tr><td>Report Date</td><td>${inst.REPDTE || '—'}</td></tr>
+      </table>
+    </div>
+
+    ${history && history.length > 1 ? `
+    <div class="section">
+      <div class="section-title">Financial History (Quarterly)</div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:8px;position:relative;">
+        <div id="historyChartWrap" style="position:relative;width:100%;height:clamp(160px,40vw,240px);">
+          <canvas id="historyChart"></canvas>
+        </div>
+      </div>
+    </div>` : ''}
+    ${renderNewsSection(inst.NAME, inst.CITY, inst.STALP)}
+    ${d.peers && d.peers.length > 0 ? renderPeers(d.peers, inst, latest) : '<div class="peer-loading"><div class="spinner"></div> Loading market peers…</div>'}`;
+}
+
+function generateCUNarrative(cu) {
+  const name = cu.name || 'This credit union';
+  const assets = cu.assets || 0;
+  const members = cu.members || 0;
+  const type = cu.type || '';
+  const city = cu.city || '';
+  const state = cu.state || '';
+
+  if (!assets) return null;
+
+  const assetStr = fmt$(assets);
+  const memberStr = members ? fmtNum(members) + ' members' : '';
+  const location = city && state ? `based in ${city}, ${state}` : '';
+  const assetsPerMember = assets && members ? fmt$(assets / members) : null;
+
+  let narrative = `${name} is a ${type || 'credit union'} ${location}`.trim();
+  narrative += ` with ${assetStr} in total assets`;
+  if (memberStr) narrative += ` serving ${memberStr}`;
+  narrative += '.';
+  if (assetsPerMember) narrative += ` Assets per member: ${assetsPerMember}.`;
+  return narrative;
+}
+
+function renderCUDetail(d) {
+  const cu = d.raw || {};
+  const name = cu.name || d.id || 'Credit Union';
+  const city = cu.city || '—';
+  const state = cu.state || '—';
+  const zip = cu.zip || '';
+  const charter = cu.charter || cu.id || d.id || '—';
+  const assets = cu.assets || 0;
+  const members = cu.members || 0;
+  const cuType = cu.type || '—';
+  const website = cu.website || null;
+
+  // Derived metrics
+  const assetsPerMember = assets && members ? assets / members : 0;
+  // Peer group sizing signal — rough tier based on assets
+  const assetTier = assets >= 10e9 ? 'Large (>$10B)' : assets >= 1e9 ? 'Mid-size ($1B-$10B)' : assets >= 100e6 ? 'Community ($100M-$1B)' : 'Small (<$100M)';
+
+  const narrative = generateCUNarrative(cu);
+
+  return `
+    <div class="inst-header">
+      <div>
+        <div class="inst-name">${name}</div>
+        <div class="inst-meta-row">
+          <span class="inst-meta-item"><strong>${city}, ${state}${zip ? ' ' + zip : ''}</strong></span>
+          <span class="inst-meta-item">Charter <strong>${charter}</strong></span>
+          <span class="inst-meta-item">As of <strong>Q4 2025</strong></span>
+          ${website ? `<span class="inst-meta-item"><a href="https://${website}" target="_blank" style="color:var(--accent)">${website}</a></span>` : ''}
+          <span class="inst-meta-item"><span style="font-family:var(--mono);font-size:10px;padding:2px 8px;background:rgba(139,92,246,0.12);border:1px solid rgba(139,92,246,0.25);border-radius:6px;color:#a78bfa;">🤝 Credit Union</span></span>
+          ${cuType !== '—' ? `<span class="inst-meta-item"><span style="font-family:var(--mono);font-size:10px;padding:2px 8px;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.2);border-radius:6px;color:#60a5fa;">${cuType}</span></span>` : ''}
+        </div>
+      </div>
+      <button class="back-btn" id="backBtn">← Back</button>
+    </div>
+
+    ${narrative ? `<div class="narrative-box">${narrative}</div>` : ''}
+
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">Total Assets</div>
+        <div class="kpi-value kpi-neutral">${assets ? fmt$(assets) : '—'}</div>
+        <div class="kpi-sub">Balance sheet size</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Members</div>
+        <div class="kpi-value kpi-neutral">${members ? fmtNum(members) : '—'}</div>
+        <div class="kpi-sub">Member-owners (NCUA 5300)</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Assets per Member</div>
+        <div class="kpi-value kpi-neutral">${assetsPerMember ? fmt$(assetsPerMember) : '—'}</div>
+        <div class="kpi-sub">Depth of relationship</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Asset Tier</div>
+        <div class="kpi-value kpi-neutral" style="font-size:13px">${assetTier}</div>
+        <div class="kpi-sub">Peer group sizing</div>
+      </div>
+    </div>
+
+    <div class="section-title" style="margin-top:8px;">iDENTIFY Prospect Signals</div>
+    <div class="kpi-grid" style="margin-bottom:40px;">
+      <div class="kpi-card">
+        <div class="kpi-label">Charter Type</div>
+        <div class="kpi-value kpi-neutral" style="font-size:14px">${cuType !== '—' ? cuType : '—'}</div>
+        <div class="kpi-sub">${cuType === 'Federal CU' ? 'NCUA regulated' : cuType === 'State CU' ? 'State + NCUA regulated' : 'Regulated entity'}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Location</div>
+        <div class="kpi-value kpi-neutral" style="font-size:14px">${city}, ${state}</div>
+        <div class="kpi-sub">Primary service area</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">NCUA Charter #</div>
+        <div class="kpi-value kpi-neutral" style="font-size:16px">${charter}</div>
+        <div class="kpi-sub"><a href="https://mapping.ncua.gov/ResearchCreditUnion" target="_blank" style="color:var(--accent);text-decoration:none;">View on NCUA ↗</a></div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Data Source</div>
+        <div class="kpi-value kpi-neutral" style="font-size:13px">NCUA 5300</div>
+        <div class="kpi-sub">Q4 2025 Call Report</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Member Metrics vs Peer Benchmark</div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:8px;position:relative;">
+        <div id="cuChartWrap" style="position:relative;width:100%;height:clamp(160px,40vw,240px);">
+          <canvas id="cuChart"></canvas>
+        </div>
+      </div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-align:right;padding:0 4px;">NCUA 5300 Q4 2025 · peer averages by asset tier</div>
+    </div>
+
+    <div id="cuPeersContainer"><div class="peer-loading"><div class="spinner"></div> Loading market peers…</div></div>
+
+    ${renderNewsSection(name, city, state)}
+
+    <div class="section">
+      <div class="section-title">Institution Details</div>
+      <table class="data-table">
+        <tr><td>Full Name</td><td>${name}</td></tr>
+        <tr><td>Charter Number</td><td>${charter}</td></tr>
+        <tr><td>Charter Type</td><td>${cuType}</td></tr>
+        <tr><td>City</td><td>${city}</td></tr>
+        <tr><td>State</td><td>${state}</td></tr>
+        ${zip ? `<tr><td>ZIP Code</td><td>${zip}</td></tr>` : ''}
+        <tr><td>Total Assets</td><td>${assets ? fmt$(assets) : '—'}</td></tr>
+        ${members ? `<tr><td>Members</td><td>${fmtNum(members)}</td></tr>` : ''}
+        ${assetsPerMember ? `<tr><td>Assets per Member</td><td>${fmt$(assetsPerMember)}</td></tr>` : ''}
+        ${website ? `<tr><td>Website</td><td><a href="https://${website}" target="_blank" style="color:var(--accent)">${website}</a></td></tr>` : ''}
+        <tr><td>Data Period</td><td>Q4 2025 (Dec 31, 2025)</td></tr>
+        <tr><td>Regulator</td><td>NCUA</td></tr>
+      </table>
+    </div>`;
+}
+
+// ── Events ────────────────────────────────────────────────────────────────────
+
+function bindEvents() {
+  document.getElementById('searchBtn')?.addEventListener('click', doSearch);
+  document.getElementById('searchInput')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') doSearch();
+  });
+  document.getElementById('backBtn')?.addEventListener('click', () => {
+    state.view = state.results.length ? 'results' : 'search';
+    render();
+  });
+  document.querySelectorAll('.type-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.instType = btn.dataset.type;
+      render();
+    });
+  });
+  document.querySelectorAll('.result-item').forEach(item => {
+    item.addEventListener('click', () => {
+      if (item.dataset.type === 'cu') {
+        // For CUs, use cached data from search results immediately
+        const cached = {
+          id: item.dataset.id,
+          name: item.dataset.name,
+          assets: parseInt(item.dataset.assets || '0', 10),
+          members: parseInt(item.dataset.members || '0', 10),
+          type: item.dataset.cutype,
+          city: item.dataset.city,
+          state: item.dataset.state,
+          charter: item.dataset.id,
+        };
+        loadCUDetail(item.dataset.id, item.dataset.name, cached);
+      } else {
+        loadDetail(item.dataset.id, item.dataset.type);
+      }
+    });
+  });
+  document.querySelectorAll('.peer-card[data-id]').forEach(card => {
+    card.addEventListener('click', () => loadDetail(card.dataset.id, card.dataset.type));
+  });
+}
+
+async function doSearch() {
+  const q = document.getElementById('searchInput')?.value?.trim();
+  if (!q) return;
+  // Track search event
+  if (window.plausible) plausible('Search', { props: { query: q, type: state.instType } });
+  if (window.gtag) gtag('event', 'search', { search_term: q, institution_type: state.instType });
+  state.query = q;
+  state.loading = true;
+  state.error = null;
+  state.results = [];
+  state.view = 'results';
+  render();
+
+  try {
+    let results = [];
+    if (state.instType === 'bank' || state.instType === 'both') {
+      const banks = await searchFDIC(q);
+      results = results.concat(banks);
+    }
+    if (state.instType === 'cu' || state.instType === 'both') {
+      try {
+        const cus = await searchNCUA(q);
+        results = results.concat(cus);
+      } catch(e) {
+        console.warn('NCUA search failed:', e);
+      }
+    }
+    results.sort((a,b) => (b.assets||0) - (a.assets||0));
+    state.results = results;
+  } catch(e) {
+    state.error = 'Search failed: ' + e.message;
+  } finally {
+    state.loading = false;
+    render();
+  }
+}
+
+async function loadCUDetail(id, name, cached) {
+  state.view = 'detail';
+  // Show cached data immediately — no loading spinner needed
+  state.detail = { type: 'cu', id, raw: cached };
+  render();
+  if (window.plausible) plausible('View Institution', { props: { id: String(id), type: 'cu' } });
+  // Optionally try to re-fetch by name to get fresher/fuller data
+  try {
+    const url = `/.netlify/functions/ncua?q=${encodeURIComponent(name || id)}&limit=5`;
+    const r = await fetch(url);
+    if (r.ok) {
+      const data = await r.json();
+      const match = (data.results || []).find(x => x.id === id) || data.results?.[0];
+      if (match && match.assets) {
+        state.detail = { type: 'cu', id, raw: match };
+        render();
+      }
+    }
+  } catch(e) { /* keep cached data */ }
+}
+
+async function loadDetail(id, type) {
+  state.view = 'detail';
+  state.detail = null;
+  render();
+  // Track institution view
+  if (window.plausible) plausible('View Institution', { props: { id: String(id), type } });
+  if (window.gtag) gtag('event', 'view_item', { item_id: String(id), item_category: type });
+  try {
+    if (type === 'bank') {
+      const { inst, history } = await getFDICDetail(id);
+      // Fetch peers in parallel
+      const peers = await fetchPeers(inst, history);
+      state.detail = { type: 'bank', inst, history, peers };
+    } else {
+      const raw = await getNCUADetail(id);
+      // raw comes from our proxy — already normalised
+      state.detail = { type: 'cu', id, raw: raw || { name: id, id } };
+    }
+  } catch(e) {
+    state.detail = { type: 'error', msg: e.message };
+  }
+  render();
+}
+
+
+// ── Recent News ──────────────────────────────────────────────────────────────
+async function fetchNews(institutionName, city, state) {
+  // Google News RSS via rss2json.com proxy (CORS-open, free tier 10k req/day)
+  // Key fixes vs prior version:
+  //   1. Inner RSS URL must be double-encoded (encodeURIComponent of full URL)
+  //   2. `count` param requires paid key — omit it (free returns 10, we slice 5)
+  //   3. Include city+state for relevance; filter obvious non-matches by name
+  //   4. Source extracted from title suffix "- Source Name" since author is blank
+
+  // Build query: exact name + city + state for strong geographic signal
+  // Falls back to name-only if city/state broaden to 0 results
+  const queries = city && state
+    ? [`"${institutionName}" ${city} ${state}`, `"${institutionName}"`]
+    : [`"${institutionName}"`];
+
+  for (const q of queries) {
+    try {
+      const innerRss = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
+      const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(innerRss)}`;
+      const r = await fetch(apiUrl);
+      if (!r.ok) continue;
+      const data = await r.json();
+      if (data.status !== 'ok' || !data.items?.length) continue;
+
+      // Filter out obvious noise: articles where institution name doesn't appear in title
+      const nameWords = institutionName.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+      const relevant = data.items.filter(item => {
+        const t = item.title?.toLowerCase() || '';
+        return nameWords.some(w => t.includes(w));
+      });
+
+      const pool = relevant.length >= 2 ? relevant : data.items;
+
+      return pool.slice(0, 5).map(item => {
+        // Extract source from "Title - Source Name" suffix
+        const dashIdx = item.title?.lastIndexOf(' - ') ?? -1;
+        const title = dashIdx > 0 ? item.title.slice(0, dashIdx) : item.title;
+        const source = dashIdx > 0 ? item.title.slice(dashIdx + 3) : 'News';
+        // Format date: pubDate is "YYYY-MM-DD HH:MM:SS"
+        const date = item.pubDate
+          ? new Date(item.pubDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+          : '';
+        return { title, source, url: item.link, date };
+      });
+    } catch(e) { continue; }
+  }
+  return [];
+}
+
+function renderNewsSection(name, city, state) {
+  // Renders placeholder immediately; fills async so it doesn't block page paint
+  setTimeout(async () => {
+    const el = document.getElementById('newsContainer');
+    if (!el) return;
+    const articles = await fetchNews(name, city, state);
+    if (!articles.length) {
+      el.innerHTML = '<p class="news-empty">No recent news found for this institution.</p>';
+      return;
+    }
+    el.innerHTML = '<div class="news-list">' + articles.map(a => `
+      <a href="${a.url}" target="_blank" rel="noopener" class="news-item">
+        <div class="news-title">${a.title}</div>
+        <div class="news-meta">
+          <span class="news-source">${a.source}</span>
+          <span>${a.date}</span>
+        </div>
+      </a>`).join('') + '</div>';
+  }, 0);
+  return `<div class="news-section">
+    <h2>// Recent News</h2>
+    <div id="newsContainer"><div style="display:flex;align-items:center;gap:10px;padding:12px 0;color:var(--muted);font-family:var(--mono);font-size:12px;"><div class="spinner" style="width:14px;height:14px;border-width:2px;"></div>Loading news…</div></div>
+  </div>`;
+}
+
+// ── Industry Analytics page ──────────────────────────────────────────────────
+
+const FDIC_NEW_CHARTERS = {
+  1970:193,1971:215,1972:287,1973:406,1974:427,1975:284,1976:206,1977:190,1978:226,1979:264,
+  1980:277,1981:252,1982:378,1983:402,1984:463,1985:447,1986:334,1987:273,1988:304,1989:341,
+  1990:407,1991:238,1992:136,1993:80,1994:70,1995:111,1996:158,1997:202,1998:218,1999:271,
+  2000:221,2001:145,2002:94,2003:117,2004:128,2005:182,2006:195,2007:193,2008:100,2009:37,
+  2010:14,2011:5,2012:1,2013:2,2014:0,2015:1,2016:0,2017:5,2018:8,2019:13,2020:7,2021:9,
+  2022:15,2023:9,2024:6,2025:4
+};
+const FDIC_FAILURES = {
+  1982:119,1983:99,1984:106,1985:180,1986:204,1987:262,1988:470,1989:534,1990:382,1991:271,
+  1992:181,1993:50,1994:15,1995:8,1996:6,1997:1,1998:3,1999:8,2000:7,2001:4,2002:11,2003:3,
+  2004:4,2007:3,2008:30,2009:148,2010:157,2011:92,2012:51,2013:24,2014:18,2015:8,2016:5,
+  2017:8,2019:4,2020:4,2023:5,2024:2,2025:2
+};
+const FDIC_ACTIVE_BANKS = {
+  1992:12060,1994:10452,1996:9528,1998:8774,2000:8315,2002:7887,2004:7631,2006:7401,
+  2008:7061,2010:6519,2012:5884,2014:5607,2016:5112,2018:4743,2020:4380,2022:4135,2024:4317
+};
+const FDIC_DEPOSITS = {
+  1984:2910,1986:3370,1988:3631,1990:3711,1992:3563,1994:3617,1996:3934,1998:4397,
+  2000:4928,2002:5582,2004:6605,2006:7853,2008:9124,2010:9475,2012:10891,2014:11884,
+  2016:12983,2018:13957,2020:17926,2022:18870,2024:19954
+};
+const FDIC_RE_LOANS = {
+  1994:1602,1996:1777,1998:1990,2000:2397,2002:2850,2004:3682,2006:4509,2008:4707,
+  2010:4270,2012:4097,2014:4178,2016:4616,2018:4898,2020:5129,2022:5777,2024:6018
+};
+const FDIC_BRANCH_TIERS = {
+  labels: ['Mega (>$100B)', 'Large ($10B-$100B)', 'Mid ($1B-$10B)', 'Community ($100M-$1B)', 'Small (<$100M)'],
+  banks:   [31,   122,  888,  2700, 570],
+  total:   [31326,13700,18891,13514,875],
+  avg:     [1011, 112,  21,   5,    2]
+};
+const FDIC_BRANCH_STATES = {
+  states:   ['OH','NC','SD','TX','DE','IL','NY','PA','MO','AR','TN','AL'],
+  branches: [12960,6710,5529,4351,3926,3287,2983,2308,2037,1939,1928,1905]
+};
+const INDUSTRY_EVENTS = {
+  1987:'Black Monday stock crash',
+  1989:'S&L Crisis peak — 534 failures',
+  1999:'Gramm-Leach-Bliley Act',
+  2001:'9/11 economic shock',
+  2006:'Housing market peak',
+  2008:'Global Financial Crisis begins',
+  2009:'GFC peak — 148 bank failures',
+  2010:'Dodd-Frank Act passed',
+  2020:'COVID-19 pandemic — stimulus surge',
+  2023:'SVB & Signature Bank failures'
+};
+
+function renderIndustry() {
+  return `
+    <div class="about-back">
+      <button class="back-btn" onclick="showHome()">← Back to Search</button>
+    </div>
+    <div class="industry-hero">
+      <h1>U.S. Banking Industry <em>Intelligence</em></h1>
+      <p>Fifty years of FDIC data reveals the structural transformation of American banking — from the S&L crisis to the collapse of new bank formation, the concentration of branches, and the economy hiding in deposit flows.</p>
+    </div>
+
+    <div class="industry-kpis">
+      <div class="industry-kpi">
+        <div class="industry-kpi-val">4,317</div>
+        <div class="industry-kpi-label">Active FDIC Banks</div>
+        <div class="industry-kpi-sub">vs ~14,000 in 1984</div>
+      </div>
+      <div class="industry-kpi">
+        <div class="industry-kpi-val">$25.2T</div>
+        <div class="industry-kpi-label">Total Industry Assets</div>
+        <div class="industry-kpi-sub">~87% of U.S. GDP</div>
+      </div>
+      <div class="industry-kpi">
+        <div class="industry-kpi-val">78,311</div>
+        <div class="industry-kpi-label">Total Bank Branches</div>
+        <div class="industry-kpi-sub">down from ~100K peak 2009</div>
+      </div>
+      <div class="industry-kpi">
+        <div class="industry-kpi-val">$20.0T</div>
+        <div class="industry-kpi-label">Total Deposits Held</div>
+        <div class="industry-kpi-sub">6.8× growth since 1984</div>
+      </div>
+    </div>
+
+    <!-- ── CHARTER REPORTS ── -->
+    <div class="industry-section-header">
+      <div class="industry-section-dot" style="background:#4db8ff"></div>
+      <div>
+        <div class="industry-section-label">// Charter Reports</div>
+        <div class="industry-section-desc">New entrants, failures, and consolidation over time</div>
+      </div>
+    </div>
+
+    <div class="industry-chart-grid">
+      <div class="industry-chart-card">
+        <div class="industry-chart-title">New bank charters per year</div>
+        <div class="industry-chart-sub">From 463 new banks in 1984 to 1 in 2012. The post-2008 collapse is structural, not cyclical — banking became a commodity and regulators effectively stopped approving new entrants. Hover for historical context.</div>
+        <div class="industry-legend">
+          <span class="industry-leg"><span class="industry-leg-dot" style="background:#4db8ff"></span>Normal</span>
+          <span class="industry-leg"><span class="industry-leg-dot" style="background:#ff6b6b"></span>S&L crisis era</span>
+          <span class="industry-leg"><span class="industry-leg-dot" style="background:#b06ef3"></span>Post-GFC</span>
+        </div>
+        <div class="industry-chart-wrap"><canvas id="charterChart"></canvas></div>
+        <div class="industry-source">Source: FDIC BankFind · 1970–2025</div>
+      </div>
+      <div class="industry-chart-card">
+        <div class="industry-chart-title">Bank failures per year</div>
+        <div class="industry-chart-sub">Two waves of destruction separated by 20 years. S&L crisis peaked at 534 failures in 1989. The GFC peaked at 157 in 2010. Both fundamentally reshaped the competitive landscape. Hover for event context.</div>
+        <div class="industry-legend">
+          <span class="industry-leg"><span class="industry-leg-dot" style="background:#ff6b6b"></span>S&L crisis</span>
+          <span class="industry-leg"><span class="industry-leg-dot" style="background:#b06ef3"></span>GFC era</span>
+        </div>
+        <div class="industry-chart-wrap"><canvas id="failureChart"></canvas></div>
+        <div class="industry-source">Source: FDIC Failures Database · 1982–2025</div>
+      </div>
+    </div>
+
+    <div class="industry-chart-full">
+      <div class="industry-chart-card">
+        <div class="industry-chart-title">Total active FDIC-insured banks over time</div>
+        <div class="industry-chart-sub">A 70% decline over 40 years — from ~14,000 institutions at peak to 4,317 today. Consolidation, acquisitions, and failures have steadily reduced the field. New entrants have not replaced them. This is commoditization made visible.</div>
+        <div class="industry-chart-wrap" style="height:clamp(160px,22vw,220px)"><canvas id="activeChart"></canvas></div>
+        <div class="industry-source">Source: FDIC BankFind · 1992–2024</div>
+      </div>
+    </div>
+
+    <div class="industry-story">
+      <h3>The charter story</h3>
+      <p>In 1984, <strong>463 new banks</strong> were chartered in a single year. By 2012, that number was <strong>1</strong>. That's not a regulatory blip — it's the market signaling that the traditional bank model had become structurally commoditized. The S&L crisis (1987–1992) wiped out over 2,400 institutions. The GFC (2008–2012) wiped out another 465. The survivors consolidated. New entrants stopped coming. <strong>The competitive moat around community banking is real — but so is the pressure to justify existence in a market that no longer rewards sameness.</strong></p>
+    </div>
+
+    <!-- ── BRANCH REPORTS ── -->
+    <div class="industry-section-header" style="margin-top:48px">
+      <div class="industry-section-dot" style="background:#3ddc97"></div>
+      <div>
+        <div class="industry-section-label">// Branch Reports</div>
+        <div class="industry-section-desc">Physical footprint, concentration, and geographic distribution</div>
+      </div>
+    </div>
+
+    <div class="industry-chart-full">
+      <div class="industry-chart-card">
+        <div class="industry-chart-title">Average branches per bank by asset tier</div>
+        <div class="industry-chart-sub">31 mega banks average 1,011 branches each. 2,700 community banks average 5. This isn't just about scale — it's about market access, deposit capture, and the asymmetric cost of physical presence. The branch is becoming a luxury item.</div>
+        <div class="industry-chart-wrap" style="height:clamp(180px,26vw,260px)"><canvas id="tierAvgChart"></canvas></div>
+        <div class="industry-source">Source: FDIC BankFind · Active institutions · Q4 2025</div>
+      </div>
+    </div>
+
+    <div class="industry-chart-grid">
+      <div class="industry-chart-card">
+        <div class="industry-chart-title">Total branches by asset tier</div>
+        <div class="industry-chart-sub">31 mega banks hold 40% of all branches. 2,700 community banks share just 17%. Concentration in one view.</div>
+        <div class="industry-chart-wrap"><canvas id="tierTotalChart"></canvas></div>
+        <div class="industry-source">Source: FDIC BankFind · Q4 2025</div>
+      </div>
+      <div class="industry-chart-card">
+        <div class="industry-chart-title">Top 12 states by branch count</div>
+        <div class="industry-chart-sub">Ohio leads at 12,960 — driven by JPMorgan HQ activity. South Dakota's #3 ranking reflects charter arbitrage, not population density.</div>
+        <div class="industry-chart-wrap"><canvas id="stateChart"></canvas></div>
+        <div class="industry-source">Source: FDIC BankFind · Q4 2025</div>
+      </div>
+    </div>
+
+    <div class="industry-story">
+      <h3>The branch story</h3>
+      <p>The industry closed roughly <strong>950 branches per year</strong> since the 2009 peak of ~100,000 locations. But the closures aren't uniform — big banks are consolidating strategically while smaller banks are closing out of necessity. Community banks with 5 branches can't compete on physical reach. They compete on relationships. <strong>The branch is no longer a distribution advantage — it's a trust signal. The banks that understand this are building differently.</strong></p>
+    </div>
+
+    <!-- ── DEPOSIT REPORTS ── -->
+    <div class="industry-section-header" style="margin-top:48px">
+      <div class="industry-section-dot" style="background:#b06ef3"></div>
+      <div>
+        <div class="industry-section-label">// Deposit Reports</div>
+        <div class="industry-section-desc">Where the money lives, how it moves, and what it tells us about the economy</div>
+      </div>
+    </div>
+
+    <div class="industry-chart-full">
+      <div class="industry-chart-card">
+        <div class="industry-chart-title">Total U.S. bank deposits over time</div>
+        <div class="industry-chart-sub">A proxy for the health of the broader economy. The 2020 COVID-19 stimulus spike — deposits surging $4T in a single year — is the most dramatic single-year move in modern banking history. Deposit growth mirrors GDP expansion, monetary policy cycles, and crisis response in real time.</div>
+        <div class="industry-chart-wrap" style="height:clamp(160px,22vw,220px)"><canvas id="depositChart"></canvas></div>
+        <div class="industry-source">Source: FDIC BankFind · 1984–2024 · Values in $billions</div>
+      </div>
+    </div>
+
+    <div class="industry-chart-full">
+      <div class="industry-chart-card">
+        <div class="industry-chart-title">Real estate loans held by U.S. banks</div>
+        <div class="industry-chart-sub">The housing bubble is hiding in plain sight. Real estate loans peaked at $4.5T in 2006, collapsed through the GFC, recovered slowly, and now sit at a record $6.0T. Banks are more exposed to real estate today than at the peak of the 2006 bubble. This is the economic cycle proxy most people aren't watching.</div>
+        <div class="industry-chart-wrap" style="height:clamp(160px,22vw,220px)"><canvas id="reLoanChart"></canvas></div>
+        <div class="industry-source">Source: FDIC BankFind · LNRE field · 1994–2024</div>
+      </div>
+    </div>
+
+    <div class="industry-story">
+      <h3>The deposit story</h3>
+      <p>Total U.S. bank deposits grew from <strong>$2.9T in 1984 to $20T today</strong> — a 6.8× increase over 40 years. But the distribution of those deposits is increasingly uneven. The top 5 banks now control roughly 45% of all insured deposits. Meanwhile, real estate loans have grown to <strong>$6.0T — 30% of all bank assets</strong>. The banking system is simultaneously more deposit-rich and more concentrated in a single asset class than at any point in modern history. <strong>For community banks, this creates both opportunity and fragility depending on where you sit in the local economy.</strong></p>
+    </div>
+
+    <div style="text-align:center;padding:40px 0 16px;font-family:var(--mono);font-size:11px;color:var(--muted);">
+      // NCUA credit union data · peer benchmarks · economic indicators — coming soon
+    </div>
+  `;
+}
+
+function drawIndustryCharts() {
+  if (typeof Chart === 'undefined') {
+    setTimeout(drawIndustryCharts, 200);
+    return;
+  }
+
+  const gridColor = 'rgba(255,255,255,0.08)';
+  const tickColor = 'rgba(255,255,255,0.45)';
+  const tip = {
+    backgroundColor: 'rgba(15,18,64,0.97)',
+    borderColor: 'rgba(77,184,255,0.3)',
+    borderWidth: 1,
+    titleColor: '#ffffff',
+    bodyColor: 'rgba(255,255,255,0.7)',
+    titleFont: { family: 'DM Mono, monospace', size: 12 },
+    bodyFont: { family: 'DM Mono, monospace', size: 11 },
+    padding: 12,
+    callbacks: {
+      title: (items) => {
+        const yr = parseInt(items[0]?.label);
+        return INDUSTRY_EVENTS[yr] ? `${yr}  ·  ${INDUSTRY_EVENTS[yr]}` : String(yr);
+      }
+    }
+  };
+  const xScale = { grid:{color:gridColor}, ticks:{color:tickColor,font:{size:10},maxTicksLimit:12}, border:{color:'rgba(255,255,255,0.1)'} };
+  const yScale = { grid:{color:gridColor}, ticks:{color:tickColor,font:{size:10}}, border:{color:'rgba(255,255,255,0.1)'} };
+
+  function makeChart(id, config) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el._chart) el._chart.destroy();
+    el._chart = new Chart(el, config);
+    const wrap = el.parentElement;
+    if (wrap && window.ResizeObserver) {
+      if (wrap._ro) wrap._ro.disconnect();
+      wrap._ro = new ResizeObserver(() => { if (el._chart) el._chart.resize(); });
+      wrap._ro.observe(wrap);
+    }
+  }
+
+  // ── 1. New Charters ────────────────────────────────────────────────────────
+  const cYrs = Object.keys(FDIC_NEW_CHARTERS).map(Number).sort((a,b)=>a-b);
+  makeChart('charterChart', {
+    type:'bar',
+    data:{ labels:cYrs, datasets:[{
+      data:cYrs.map(y=>FDIC_NEW_CHARTERS[y]),
+      backgroundColor:cYrs.map(y=>y>=2008?'rgba(176,110,243,0.75)':y>=1985&&y<=1992?'rgba(255,107,107,0.75)':'rgba(77,184,255,0.65)'),
+      borderColor:'transparent', borderRadius:2
+    }]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      interaction:{mode:'index',intersect:false},
+      plugins:{ legend:{display:false}, tooltip:{...tip, callbacks:{...tip.callbacks, label:c=>` New charters: ${c.parsed.y}`}} },
+      scales:{ x:xScale, y:yScale }
+    }
+  });
+
+  // ── 2. Failures ────────────────────────────────────────────────────────────
+  const fYrs = Object.keys(FDIC_FAILURES).map(Number).sort((a,b)=>a-b);
+  makeChart('failureChart', {
+    type:'bar',
+    data:{ labels:fYrs, datasets:[{
+      data:fYrs.map(y=>FDIC_FAILURES[y]),
+      backgroundColor:fYrs.map(y=>y>=2008&&y<=2013?'rgba(176,110,243,0.75)':y>=1985&&y<=1992?'rgba(255,107,107,0.75)':'rgba(77,184,255,0.55)'),
+      borderColor:'transparent', borderRadius:2
+    }]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      interaction:{mode:'index',intersect:false},
+      plugins:{ legend:{display:false}, tooltip:{...tip, callbacks:{...tip.callbacks, label:c=>` Failures: ${c.parsed.y}`}} },
+      scales:{ x:xScale, y:yScale }
+    }
+  });
+
+  // ── 3. Active Banks ────────────────────────────────────────────────────────
+  const aYrs = Object.keys(FDIC_ACTIVE_BANKS).map(Number).sort((a,b)=>a-b);
+  makeChart('activeChart', {
+    type:'line',
+    data:{ labels:aYrs, datasets:[{
+      data:aYrs.map(y=>FDIC_ACTIVE_BANKS[y]),
+      borderColor:'#4db8ff', backgroundColor:'rgba(77,184,255,0.07)',
+      borderWidth:2.5, pointRadius:4, pointBackgroundColor:'#4db8ff', tension:0.3, fill:true
+    }]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      interaction:{mode:'index',intersect:false},
+      plugins:{ legend:{display:false}, tooltip:{...tip, callbacks:{...tip.callbacks, label:c=>` Active banks: ${c.parsed.y.toLocaleString()}`}} },
+      scales:{ x:xScale, y:{...yScale, ticks:{...yScale.ticks, callback:v=>v.toLocaleString()}} }
+    }
+  });
+
+  // ── 4. Branch Avg by Tier (horizontal bar) ─────────────────────────────────
+  const tierColors = ['rgba(77,184,255,0.75)','rgba(100,160,255,0.7)','rgba(61,220,151,0.7)','rgba(251,191,36,0.7)','rgba(176,110,243,0.7)'];
+  makeChart('tierAvgChart', {
+    type:'bar',
+    data:{ labels:FDIC_BRANCH_TIERS.labels, datasets:[{
+      data:FDIC_BRANCH_TIERS.avg,
+      backgroundColor:tierColors, borderColor:'transparent', borderRadius:4, indexAxis:'y'
+    }]},
+    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{ ...tip, callbacks:{ title:()=>'', label:c=>` Avg branches: ${c.parsed.x.toLocaleString()}  (${FDIC_BRANCH_TIERS.banks[c.dataIndex].toLocaleString()} banks)` }} },
+      scales:{ x:{...xScale, ticks:{...xScale.ticks, callback:v=>v.toLocaleString()}}, y:{...yScale, ticks:{...yScale.ticks, font:{size:11}}} }
+    }
+  });
+
+  // ── 5. Branch Total by Tier (donut) ────────────────────────────────────────
+  makeChart('tierTotalChart', {
+    type:'doughnut',
+    data:{ labels:FDIC_BRANCH_TIERS.labels, datasets:[{
+      data:FDIC_BRANCH_TIERS.total,
+      backgroundColor:tierColors, borderColor:'rgba(15,18,64,0.8)', borderWidth:2, hoverOffset:6
+    }]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ position:'bottom', labels:{color:'rgba(255,255,255,0.5)',font:{size:10},boxWidth:10,padding:8} },
+        tooltip:{ ...tip, callbacks:{ title:()=>'', label:c=>` ${c.label}: ${c.parsed.toLocaleString()} (${Math.round(c.parsed/78311*100)}%)` }} }
+    }
+  });
+
+  // ── 6. Top States (vertical bar) ──────────────────────────────────────────
+  makeChart('stateChart', {
+    type:'bar',
+    data:{ labels:FDIC_BRANCH_STATES.states, datasets:[{
+      data:FDIC_BRANCH_STATES.branches,
+      backgroundColor:'rgba(61,220,151,0.65)', borderColor:'#3ddc97', borderWidth:1.5, borderRadius:3
+    }]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{ ...tip, callbacks:{ title:()=>'', label:c=>` ${c.label}: ${c.parsed.y.toLocaleString()} branches` }} },
+      scales:{ x:xScale, y:{...yScale, ticks:{...yScale.ticks, callback:v=>v.toLocaleString()}} }
+    }
+  });
+
+  // ── 7. Total Deposits ──────────────────────────────────────────────────────
+  const dYrs = Object.keys(FDIC_DEPOSITS).map(Number).sort((a,b)=>a-b);
+  makeChart('depositChart', {
+    type:'line',
+    data:{ labels:dYrs, datasets:[{
+      data:dYrs.map(y=>FDIC_DEPOSITS[y]),
+      borderColor:'#b06ef3', backgroundColor:'rgba(176,110,243,0.07)',
+      borderWidth:2.5, pointRadius:4, pointBackgroundColor:'#b06ef3', tension:0.3, fill:true
+    }]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      interaction:{mode:'index',intersect:false},
+      plugins:{ legend:{display:false}, tooltip:{...tip, callbacks:{...tip.callbacks, label:c=>` Deposits: $${c.parsed.y.toLocaleString()}B`}} },
+      scales:{ x:xScale, y:{...yScale, ticks:{...yScale.ticks, callback:v=>'$'+(v/1000).toFixed(0)+'T'}} }
+    }
+  });
+
+  // ── 8. Real Estate Loans ───────────────────────────────────────────────────
+  const rYrs = Object.keys(FDIC_RE_LOANS).map(Number).sort((a,b)=>a-b);
+  makeChart('reLoanChart', {
+    type:'line',
+    data:{ labels:rYrs, datasets:[{
+      data:rYrs.map(y=>FDIC_RE_LOANS[y]),
+      borderColor:'#fbbf24', backgroundColor:'rgba(251,191,36,0.07)',
+      borderWidth:2.5, pointRadius:4, pointBackgroundColor:'#fbbf24', tension:0.3, fill:true
+    }]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      interaction:{mode:'index',intersect:false},
+      plugins:{ legend:{display:false}, tooltip:{...tip, callbacks:{...tip.callbacks, label:c=>` RE loans: $${c.parsed.y.toLocaleString()}B`}} },
+      scales:{ x:xScale, y:{...yScale, ticks:{...yScale.ticks, callback:v=>'$'+v.toLocaleString()+'B'}} }
+    }
+  });
+}
+
+
+
+// ── About page ───────────────────────────────────────────────────────────────
+function renderAbout() {
+  const leads = JSON.parse(localStorage.getItem('vaultbot_leads') || '[]');
+  const submitted = sessionStorage.getItem('vaultbot_submitted');
+  return `
+    <div class="about-back">
+      <button class="back-btn" onclick="showHome()">← Back to Search</button>
+    </div>
+    <div class="about-hero">
+      <h1>Financial data should be <em>free</em> and fast.</h1>
+      <p>Vault was built because the tools that exist today are either paywalled, outdated, or just plain ugly.
+         The FDIC and NCUA publish a treasure trove of public data on every bank and credit union in the country —
+         we just made it easier to actually use.</p>
+    </div>
+
+    <div class="about-grid">
+      <div class="about-card">
+        <h3>// Why we built this</h3>
+        <p>We run <a href="https://goidentify.com" target="_blank" style="color:var(--accent);">iDENTIFY</a>, a data infrastructure and analytics company serving community banks and credit unions. Every day we'd go searching for basic financial info on a prospect and end up wading through clunky government portals. So we built the tool we wanted to exist.</p>
+      </div>
+      <div class="about-card">
+        <h3>// What it does</h3>
+        <p>Search any FDIC-regulated bank or NCUA-regulated credit union. See assets, deposits, capital ratios, ROA/ROE trends, and peer comparisons — all from public regulatory filings updated quarterly. No login. No paywall. No nonsense.</p>
+      </div>
+      <div class="about-card">
+        <h3>// The data</h3>
+        <p>All data is sourced directly from the <a href="https://banks.data.fdic.gov/docs/" target="_blank" style="color:var(--accent);">FDIC BankFind API</a> and the <a href="https://mapping.ncua.gov/ResearchCreditUnion" target="_blank" style="color:var(--accent);">NCUA</a> public data portal. Financial figures are in thousands of dollars as reported. Updated quarterly with each call report cycle.</p>
+      </div>
+      <div class="about-card">
+        <h3>// What's coming</h3>
+        <p>Deposit trend alerts. Technology spend signals. Branching activity. Merger and acquisition tracking. And eventually, a way to build and export prospect lists — all without a subscription fee.</p>
+      </div>
+    </div>
+
+    <hr class="about-divider">
+
+    <div class="about-ai-report">
+      <div class="ai-report-header">
+        <div class="ai-report-eyebrow">// Built with AI</div>
+        <h2 class="ai-report-title">This product was built entirely with Claude.</h2>
+        <p class="ai-report-sub">No dev team. No agency. No sprints. Just a founder, an AI, and a weekend.</p>
+      </div>
+
+      <!-- Row 1: Session overview -->
+      <div class="ai-section-label">// Session overview</div>
+      <div class="ai-stat-grid">
+        <div class="ai-stat-card">
+          <div class="ai-stat-val" style="color:#7c6ef5">~25 hrs</div>
+          <div class="ai-stat-label">Total session time</div>
+          <div class="ai-stat-sub">Across 4 conversations</div>
+        </div>
+        <div class="ai-stat-card">
+          <div class="ai-stat-val">130+</div>
+          <div class="ai-stat-label">Messages exchanged</div>
+          <div class="ai-stat-sub">Human + Claude turns</div>
+        </div>
+        <div class="ai-stat-card">
+          <div class="ai-stat-val">33</div>
+          <div class="ai-stat-label">Production deploys</div>
+          <div class="ai-stat-sub">To vaultbot.ai — all 33 successful</div>
+        </div>
+        <div class="ai-stat-card">
+          <div class="ai-stat-val" style="color:#34d399">42</div>
+          <div class="ai-stat-label">Features shipped</div>
+          <div class="ai-stat-sub">Zero to production</div>
+        </div>
+      </div>
+
+      <!-- Row 2: Claude's workload -->
+      <div class="ai-section-label">// Claude's workload</div>
+      <div class="ai-stat-grid">
+        <div class="ai-stat-card">
+          <div class="ai-stat-val">300+</div>
+          <div class="ai-stat-label">Tool calls executed</div>
+          <div class="ai-stat-sub">API, browser, bash, file</div>
+        </div>
+        <div class="ai-stat-card">
+          <div class="ai-stat-val">2,237</div>
+          <div class="ai-stat-label">Lines of code</div>
+          <div class="ai-stat-sub">Single-file app</div>
+        </div>
+        <div class="ai-stat-card">
+          <div class="ai-stat-val">108 KB</div>
+          <div class="ai-stat-label">Final file size</div>
+          <div class="ai-stat-sub">HTML + JS + CSS</div>
+        </div>
+        <div class="ai-stat-card">
+          <div class="ai-stat-val">~600K</div>
+          <div class="ai-stat-label">Tokens processed</div>
+          <div class="ai-stat-sub">Estimated</div>
+        </div>
+      </div>
+
+      <!-- Row 3: Energy & carbon -->
+      <div class="ai-section-label">// Estimated energy &amp; carbon</div>
+      <div class="ai-energy-row">
+        <div class="ai-energy-card">
+          <div class="ai-energy-val">~0.6 kWh</div>
+          <div class="ai-energy-label">Estimated energy used</div>
+          <div class="ai-energy-sub">Claude inference + your device</div>
+        </div>
+        <div class="ai-energy-card">
+          <div class="ai-energy-val">~240g CO₂</div>
+          <div class="ai-energy-label">Carbon equivalent</div>
+          <div class="ai-energy-sub">US avg grid, 0.4 kg/kWh</div>
+        </div>
+        <div class="ai-energy-card ai-energy-highlight">
+          <div class="ai-energy-val">≈ 3 cups of coffee</div>
+          <div class="ai-energy-label">Human-readable equivalent</div>
+          <div class="ai-energy-sub">Drip coffee ≈ 0.025 kWh each</div>
+        </div>
+      </div>
+      <div class="ai-energy-bar-wrap">
+        <div class="ai-energy-bar-track">
+          <div class="ai-energy-seg" style="background:#7c6ef5;width:55%" title="Claude inference 55%"></div>
+          <div class="ai-energy-seg" style="background:#1d9e75;width:25%" title="Browser automation 25%"></div>
+          <div class="ai-energy-seg" style="background:#ef9f27;width:12%" title="Bash / file ops 12%"></div>
+          <div class="ai-energy-seg" style="background:#378add;width:8%" title="API calls 8%"></div>
+        </div>
+        <div class="ai-energy-legend">
+          <span class="ai-leg-item"><span class="ai-leg-dot" style="background:#7c6ef5"></span>Claude inference 55%</span>
+          <span class="ai-leg-item"><span class="ai-leg-dot" style="background:#1d9e75"></span>Browser automation 25%</span>
+          <span class="ai-leg-item"><span class="ai-leg-dot" style="background:#ef9f27"></span>Bash / file ops 12%</span>
+          <span class="ai-leg-item"><span class="ai-leg-dot" style="background:#378add"></span>API calls 8%</span>
+        </div>
+      </div>
+
+      <!-- Row 4: Cost comparison -->
+      <div class="ai-section-label">// What would this have cost?</div>
+      <div class="ai-cost-grid">
+        <div class="ai-cost-card">
+          <div class="ai-cost-type">Solo freelancer</div>
+          <div class="ai-cost-range">$3K – $6K</div>
+          <div class="ai-cost-detail">~3–5 days at $100–150/hr. Full-stack JS, API integration, responsive UI, deployment.</div>
+        </div>
+        <div class="ai-cost-card">
+          <div class="ai-cost-type">Small dev shop</div>
+          <div class="ai-cost-range">$12K – $25K</div>
+          <div class="ai-cost-detail">2–3 week sprint with designer + dev. Scoping, sprints, QA, revisions, PM overhead.</div>
+        </div>
+        <div class="ai-cost-card">
+          <div class="ai-cost-type">Agency / product team</div>
+          <div class="ai-cost-range">$30K – $60K</div>
+          <div class="ai-cost-detail">Discovery, design system, dev, QA, UAT. Typical rate for a data product MVP.</div>
+        </div>
+      </div>
+      <div class="ai-cost-note">Claude Pro subscription cost for this build: ~$20/mo across 4 days &nbsp;·&nbsp; Savings vs solo freelancer: $2,980–$5,980</div>
+
+      <hr class="ai-inner-divider">
+
+      <!-- Features + roadmap -->
+      <div class="ai-feature-row">
+        <div class="ai-feature-col">
+          <div class="ai-feature-heading">// Features shipped</div>
+          <div class="ai-feature-list">
+            <div class="ai-feature-item ai-done">FDIC BankFind API (4,500+ banks)</div>
+            <div class="ai-feature-item ai-done">NCUA bulk data integration (4,374 CUs)</div>
+            <div class="ai-feature-item ai-done">Institution detail pages + 10 KPIs</div>
+            <div class="ai-feature-item ai-done">iDENTIFY prospect signals panel</div>
+            <div class="ai-feature-item ai-done">Financial history chart (Chart.js)</div>
+            <div class="ai-feature-item ai-done">CU member metrics chart + peer benchmark</div>
+            <div class="ai-feature-item ai-done">Asset-range peer comparison</div>
+            <div class="ai-feature-item ai-done">Recent news via Google News RSS</div>
+            <div class="ai-feature-item ai-done">Industry news feed (homepage)</div>
+            <div class="ai-feature-item ai-done">About page + lead capture form</div>
+            <div class="ai-feature-item ai-done">Custom OG image (AI-generated PNG)</div>
+            <div class="ai-feature-item ai-done">iOS-style translucent scroll footer</div>
+            <div class="ai-feature-item ai-done">Full mobile responsive layout</div>
+            <div class="ai-feature-item ai-done">Google Analytics 4 (G-GE8WSX77C1)</div>
+            <div class="ai-feature-item ai-done">Netlify serverless function proxy</div>
+            <div class="ai-feature-item ai-done">Custom domain + SSL (vaultbot.ai)</div>
+            <div class="ai-feature-item ai-done">Fuzzy + acronym search (MSUFCU, USAA)</div>
+            <div class="ai-feature-item ai-done">Improved color contrast + UX polish</div>
+            <div class="ai-feature-item ai-done">robots.txt + sitemap.xml + JSON-LD schema</div>
+            <div class="ai-feature-item ai-done">Google Search Console submitted</div>
+          </div>
+        </div>
+        <div class="ai-feature-col">
+          <div class="ai-feature-heading">// Data coverage</div>
+          <div class="ai-coverage-bars">
+            <div class="ai-bar-row">
+              <div class="ai-bar-label">FDIC banks</div>
+              <div class="ai-bar-track"><div class="ai-bar-fill" style="width:100%;background:#7c6ef5"></div></div>
+              <div class="ai-bar-val">4,500+</div>
+            </div>
+            <div class="ai-bar-row">
+              <div class="ai-bar-label">NCUA credit unions</div>
+              <div class="ai-bar-track"><div class="ai-bar-fill" style="width:80%;background:#1d9e75"></div></div>
+              <div class="ai-bar-val">4,374</div>
+            </div>
+            <div class="ai-bar-row">
+              <div class="ai-bar-label">Total assets tracked</div>
+              <div class="ai-bar-track"><div class="ai-bar-fill" style="width:85%;background:#ef9f27"></div></div>
+              <div class="ai-bar-val">$24T</div>
+            </div>
+            <div class="ai-bar-row">
+              <div class="ai-bar-label">Quarterly data depth</div>
+              <div class="ai-bar-track"><div class="ai-bar-fill" style="width:80%;background:#378add"></div></div>
+              <div class="ai-bar-val">8 qtrs</div>
+            </div>
+            <div class="ai-bar-row">
+              <div class="ai-bar-label">Mobile readiness</div>
+              <div class="ai-bar-track"><div class="ai-bar-fill" style="width:90%;background:#d85a30"></div></div>
+              <div class="ai-bar-val">~90%</div>
+            </div>
+          </div>
+
+          <div class="ai-feature-heading" style="margin-top:24px">// Roadmap</div>
+          <div class="ai-feature-list">
+            <div class="ai-feature-item ai-soon">Full NCUA financial data (shares, loans, capital)</div>
+            <div class="ai-feature-item ai-soon">Custom charts + metric filters</div>
+            <div class="ai-feature-item ai-planned">Prospect list export (CSV / Salesforce)</div>
+            <div class="ai-feature-item ai-planned">Deposit trend alerts</div>
+            <div class="ai-feature-item ai-planned">M&amp;A activity tracker</div>
+            <div class="ai-feature-item ai-planned">Technology spend signals</div>
+          </div>
+
+          <div class="ai-quote">
+            <div class="ai-quote-text">"The goal was always to build the tool we wished existed. AI just made it possible to do it in a weekend instead of a quarter."</div>
+            <div class="ai-quote-attr">— Lee Easton, iDENTIFY</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <hr class="about-divider">
+
+    <div class="about-lead">
+      <h2>Stay in the loop — and tell us what to build.</h2>
+      <p>Got a feature idea or feedback? Drop it below. We read every submission. No spam — just occasional updates from the iDENTIFY team.</p>
+
+      ${submitted ? `
+        <div class="lead-success">
+          <span class="big">✓</span>
+          <h3>You're on the list.</h3>
+          <p>We'll reach out when there's something worth sharing.</p>
+        </div>
+      ` : `
+        <div class="lead-form" id="leadForm">
+          <div class="lead-row">
+            <input class="lead-input" id="lead_name" type="text" placeholder="Your name" />
+            <input class="lead-input" id="lead_email" type="email" placeholder="Work email" />
+          </div>
+          <div class="lead-row">
+            <input class="lead-input" id="lead_institution" type="text" placeholder="Institution / Company" />
+            <select class="lead-select" id="lead_role">
+              <option value="">Role / Title…</option>
+              <option>CEO / President</option>
+              <option>CFO / Finance</option>
+              <option>CTO / Technology</option>
+              <option>COO / Operations</option>
+              <option>Analyst / Data</option>
+              <option>Sales / BD</option>
+              <option>Consultant</option>
+              <option>Other</option>
+            </select>
+          </div>
+          <div class="lead-row">
+            <textarea class="lead-input lead-textarea" id="lead_feedback" placeholder="Feature request or feedback (optional)…" rows="3" style="resize:vertical;min-height:72px;font-family:inherit;font-size:14px;"></textarea>
+          </div>
+          <button class="lead-submit" id="leadSubmit" onclick="submitLead()">Send →</button>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+async function submitLead() {
+  const name = document.getElementById('lead_name')?.value?.trim();
+  const email = document.getElementById('lead_email')?.value?.trim();
+  const institution = document.getElementById('lead_institution')?.value?.trim();
+  const role = document.getElementById('lead_role')?.value;
+  const feedback = document.getElementById('lead_feedback')?.value?.trim();
+
+  if (!name || !email) {
+    document.getElementById('lead_name').style.borderColor = name ? 'var(--border)' : 'var(--red)';
+    document.getElementById('lead_email').style.borderColor = email ? 'var(--border)' : 'var(--red)';
+    return;
+  }
+
+  // Disable button during submit
+  const btn = document.getElementById('leadSubmit');
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+
+  // Submit to Netlify Function
+  try {
+    const body = new URLSearchParams({ name, email,
+      institution: institution || '', role: role || '', feedback: feedback || '' });
+    await fetch('/.netlify/functions/submit-lead', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString()
+    });
+  } catch(e) {
+    console.warn('Netlify form submit error:', e);
+  }
+
+  // Also save locally as backup
+  const leads = JSON.parse(localStorage.getItem('vaultbot_leads') || '[]');
+  leads.push({ name, email, institution, role, feedback, ts: new Date().toISOString() });
+  localStorage.setItem('vaultbot_leads', JSON.stringify(leads));
+  if (window.gtag) gtag('event', 'generate_lead', { method: 'about_form' });
+  sessionStorage.setItem('vaultbot_submitted', '1');
+
+  // Fire Plausible event if available
+  if (window.plausible) plausible('Lead Captured', { props: { role: role || 'unknown', institution: institution || 'unknown' } });
+
+  // Re-render to show success state
+  render();
+}
+
+// ── Footer scroll blur ───────────────────────────────────────────────────────
+(function() {
+  // Strip any lingering inline background from old deploys
+  const f = document.getElementById('siteFooter');
+  if (f) f.style.removeProperty('background');
+
+  let ticking = false;
+  window.addEventListener('scroll', function() {
+    if (!ticking) {
+      requestAnimationFrame(function() {
+        const footer = document.getElementById('siteFooter');
+        if (footer) {
+          if (window.scrollY > 40) {
+            footer.classList.add('scrolled');
+          } else {
+            footer.classList.remove('scrolled');
+          }
+        }
+        ticking = false;
+      });
+      ticking = true;
+    }
+  }, { passive: true });
+})();
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+render();
+</script>
+</body>
+</html>
