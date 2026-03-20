@@ -49,7 +49,7 @@
 <meta property="og:url" content="https://vaultbot.ai">
 <meta property="og:title" content="Vault — Bank & Credit Union Explorer">
 <meta property="og:description" content="Free financial intelligence on every U.S. bank and credit union. No login. No paywall. Powered by FDIC + NCUA public data.">
-<meta property="og:image" content="https://vaultbot.ai/og-image.png?v=3">
+<meta property="og:image" content="https://vaultbot.ai/og-image.png?v=4">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Vault — Bank & Credit Union Intelligence">
@@ -60,7 +60,7 @@
 <meta name="twitter:url" content="https://vaultbot.ai">
 <meta name="twitter:title" content="Vault — Bank & Credit Union Explorer">
 <meta name="twitter:description" content="Free financial intelligence on every U.S. bank and credit union. No login. No paywall.">
-<meta name="twitter:image" content="https://vaultbot.ai/og-image.png?v=3">
+<meta name="twitter:image" content="https://vaultbot.ai/og-image.png?v=4">
 
 <!-- iOS / Safari -->
 <meta name="apple-mobile-web-app-title" content="Vault">
@@ -1284,22 +1284,26 @@ const PAGE_META = {
   home: {
     title: 'Vault — Bank & Credit Union Explorer',
     desc:  'Free financial intelligence on every U.S. bank and credit union. Search assets, deposits, capital ratios, ROA/ROE, and peer benchmarks. No login. No paywall.',
-    canonical: 'https://vaultbot.ai/'
+    canonical: 'https://vaultbot.ai/',
+    image: 'https://vaultbot.ai/og-image.png?v=4'
   },
   industry: {
     title: 'U.S. Banking Industry Analytics — Vault',
     desc:  'Fifty years of FDIC data: new bank charters, failures, branch concentration, and deposit trends. Free industry intelligence from Vault by iDENTIFY.',
-    canonical: 'https://vaultbot.ai/industry'
+    canonical: 'https://vaultbot.ai/industry',
+    image: 'https://vaultbot.ai/og-industry.png?v=4'
   },
   lenders: {
     title: 'Find a Local Lender — Vault',
     desc:  'Compare local banks and credit unions by mortgage lending activity, capital strength, and loan performance. Find the best lender near you. Powered by FDIC data.',
-    canonical: 'https://vaultbot.ai/lenders'
+    canonical: 'https://vaultbot.ai/lenders',
+    image: 'https://vaultbot.ai/og-lenders.png?v=4'
   },
   about: {
     title: 'About Vault — Built with AI by iDENTIFY',
     desc:  'Vault was built entirely with Claude AI. Free bank and credit union intelligence powered by FDIC BankFind and NCUA public data. No login, no paywall.',
-    canonical: 'https://vaultbot.ai/about'
+    canonical: 'https://vaultbot.ai/about',
+    image: 'https://vaultbot.ai/og-about.png?v=4'
   }
 };
 
@@ -1311,8 +1315,10 @@ function setPageMeta(view) {
   document.querySelector('meta[property="og:title"]')?.setAttribute('content', m.title);
   document.querySelector('meta[property="og:description"]')?.setAttribute('content', m.desc);
   document.querySelector('meta[property="og:url"]')?.setAttribute('content', m.canonical);
+  document.querySelector('meta[property="og:image"]')?.setAttribute('content', m.image);
   document.querySelector('meta[name="twitter:title"]')?.setAttribute('content', m.title);
   document.querySelector('meta[name="twitter:description"]')?.setAttribute('content', m.desc);
+  document.querySelector('meta[name="twitter:image"]')?.setAttribute('content', m.image);
 }
 
 function navigate(path, view) {
