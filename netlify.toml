@@ -9,6 +9,11 @@
   status = 200
 
 [[redirects]]
+  from = "/lenders"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
   from = "/about"
   to = "/index.html"
   status = 200

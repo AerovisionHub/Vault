@@ -515,6 +515,9 @@
     <a onclick="showIndustry()" style="text-decoration:none;cursor:pointer;">
       <span class="badge" style="background:rgba(77,184,255,0.12);color:#4db8ff;border:1px solid rgba(77,184,255,0.25);">Industry</span>
     </a>
+    <a onclick="showLenders()" style="text-decoration:none;cursor:pointer;">
+      <span class="badge" style="background:rgba(74,222,128,0.12);color:#4ade80;border:1px solid rgba(74,222,128,0.25);">Find a Lender</span>
+    </a>
     <a onclick="showAbout()" style="text-decoration:none;cursor:pointer;">
       <span class="badge" style="background:rgba(139,92,246,0.12);color:#c4b5fd;border:1px solid rgba(139,92,246,0.25);">About</span>
     </a>
@@ -1288,6 +1291,11 @@ const PAGE_META = {
     desc:  'Fifty years of FDIC data: new bank charters, failures, branch concentration, and deposit trends. Free industry intelligence from Vault by iDENTIFY.',
     canonical: 'https://vaultbot.ai/industry'
   },
+  lenders: {
+    title: 'Find a Local Lender — Vault',
+    desc:  'Compare local banks and credit unions by mortgage lending activity, capital strength, and loan performance. Find the best lender near you. Powered by FDIC data.',
+    canonical: 'https://vaultbot.ai/lenders'
+  },
   about: {
     title: 'About Vault — Built with AI by iDENTIFY',
     desc:  'Vault was built entirely with Claude AI. Free bank and credit union intelligence powered by FDIC BankFind and NCUA public data. No login, no paywall.',
@@ -1317,6 +1325,7 @@ function navigate(path, view) {
 
 function showHome()     { navigate('/', 'home'); }
 function showIndustry() { navigate('/industry', 'industry'); }
+function showLenders()  { navigate('/lenders', 'lenders'); }
 function showAbout()    { navigate('/about', 'about'); }
 
 // Handle browser back/forward
@@ -1329,6 +1338,7 @@ window.addEventListener('popstate', (e) => {
 
 function pathToView(path) {
   if (path.startsWith('/industry')) return 'industry';
+  if (path.startsWith('/lenders'))  return 'lenders';
   if (path.startsWith('/about'))    return 'about';
   return 'home';
 }
@@ -1339,6 +1349,7 @@ function render() {
   else if (state.view === 'results') app.innerHTML = renderResults();
   else if (state.view === 'detail') app.innerHTML = renderDetail();
   else if (state.view === 'about') app.innerHTML = renderAbout();
+  else if (state.view === 'lenders') { app.innerHTML = renderLenders(); setTimeout(initLenders, 50); }
   else if (state.view === 'industry') { app.innerHTML = renderIndustry(); setTimeout(drawIndustryCharts, 50); }
   bindEvents();
   // Draw chart after DOM is updated
@@ -2297,7 +2308,204 @@ function renderNewsSection(name, city, state) {
   </div>`;
 }
 
-// ── Industry Analytics page ──────────────────────────────────────────────────
+// ── Find a Lender page ────────────────────────────────────────────────────────
+function renderLenders() {
+  return `
+  <div style="max-width:900px;margin:0 auto;padding:32px 0 80px;">
+    <button class="back-btn" onclick="showHome()">← Back to Search</button>
+
+    <div style="margin-bottom:32px;">
+      <h1 style="font-family:var(--serif);font-size:32px;letter-spacing:-0.5px;margin-bottom:8px;">Find a Local Lender</h1>
+      <p style="color:var(--muted);font-size:14px;max-width:600px;line-height:1.6;">
+        Compare banks and credit unions by lending activity, capital strength, and loan performance.
+        All data sourced from FDIC regulatory filings — updated quarterly.
+        <span style="color:var(--accent);">Contact institutions directly for current rates.</span>
+      </p>
+    </div>
+
+    <!-- Filters -->
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px;padding:20px;background:var(--surface);border:1px solid var(--border);border-radius:12px;">
+      <div style="display:flex;flex-direction:column;gap:6px;flex:1;min-width:140px;">
+        <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">State</label>
+        <select id="lenderState" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px;font-family:var(--mono);">
+          <option value="">All States</option>
+          ${['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY'].map(s => `<option value="${s}">${s}</option>`).join('')}
+        </select>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;flex:1;min-width:140px;">
+        <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">Loan Type</label>
+        <select id="lenderLoanType" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px;font-family:var(--mono);">
+          <option value="residential">Residential Mortgage</option>
+          <option value="commercial">Commercial Real Estate</option>
+          <option value="smallbiz">Small Business (C&I)</option>
+          <option value="consumer">Consumer Loans</option>
+        </select>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;flex:1;min-width:140px;">
+        <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">Asset Size</label>
+        <select id="lenderAssetSize" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px;font-family:var(--mono);">
+          <option value="all">All Sizes</option>
+          <option value="community" selected>Community (&lt;$1B)</option>
+          <option value="regional">Regional ($1B–$10B)</option>
+          <option value="large">Large (&gt;$10B)</option>
+        </select>
+      </div>
+      <div style="display:flex;align-items:flex-end;">
+        <button onclick="runLenderSearch()" style="padding:8px 20px;background:var(--accent);color:#0f1240;border:none;border-radius:8px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.05em;white-space:nowrap;">Search →</button>
+      </div>
+    </div>
+
+    <!-- Disclaimer -->
+    <div style="padding:10px 14px;background:rgba(251,191,36,0.07);border:1px solid rgba(251,191,36,0.2);border-radius:8px;margin-bottom:20px;font-family:var(--mono);font-size:11px;color:#fbbf24;line-height:1.6;">
+      ⚠ Scores are derived from FDIC regulatory data (capital ratios, loan mix, asset quality) — not posted rates.
+      A high Lending Score indicates a financially strong, active lender. Always contact the institution for current rates and terms.
+      Future update: live rate integration via data subscription.
+    </div>
+
+    <!-- Results table -->
+    <div id="lenderResults">
+      <div style="color:var(--muted);font-family:var(--mono);font-size:13px;padding:40px 0;text-align:center;">
+        Select filters above and click Search to find lenders.
+      </div>
+    </div>
+  </div>`;
+}
+
+// Lender scoring weights by loan type
+const LENDER_WEIGHTS = {
+  residential: { loanConc: 'LNLSRES',  label: 'Residential RE' },
+  commercial:  { loanConc: 'LNLSRE',   label: 'Commercial RE' },
+  smallbiz:    { loanConc: 'LNCI',      label: 'C&I Loans' },
+  consumer:    { loanConc: 'LNCON',     label: 'Consumer' },
+};
+
+function initLenders() {
+  // Auto-run with community banks default
+  runLenderSearch();
+}
+
+async function runLenderSearch() {
+  const el = document.getElementById('lenderResults');
+  if (!el) return;
+  el.innerHTML = '<div style="display:flex;align-items:center;gap:10px;padding:40px 0;justify-content:center;color:var(--muted);font-family:var(--mono);font-size:13px;"><div class="spinner"></div>Loading lender data…</div>';
+
+  const stateVal    = document.getElementById('lenderState')?.value || '';
+  const loanType    = document.getElementById('lenderLoanType')?.value || 'residential';
+  const assetSize   = document.getElementById('lenderAssetSize')?.value || 'community';
+
+  // Asset range
+  const assetRanges = {
+    community: [0,       1000000],
+    regional:  [1000000, 10000000],
+    large:     [10000000,9999999999],
+    all:       [0,       9999999999],
+  };
+  const [minA, maxA] = assetRanges[assetSize] || assetRanges.all;
+
+  // Fields — core financials + loan mix
+  const fields = 'NAME,CERT,CITY,STALP,ASSET,DEP,LNLSRES,LNLSRE,LNCI,LNCON,LNLSNET,RBC1AAJ,ROA,LNLSDEPR,NIMY,REPDTE';
+  let filters = `ACTIVE%3A1%20AND%20ASSET%3A%5B${minA}%20TO%20${maxA}%5D`;
+  if (stateVal) filters += `%20AND%20STALP%3A${stateVal}`;
+
+  try {
+    const url = `${FDIC_BASE}/financials?filters=${filters}&fields=${fields}&limit=100&sort_by=ASSET&sort_order=DESC`;
+    const r = await fetch(url);
+    const data = await r.json();
+    const rows = (data.data || []).map(d => d.data).filter(Boolean);
+
+    if (!rows.length) {
+      el.innerHTML = '<div style="color:var(--muted);font-family:var(--mono);font-size:13px;padding:40px 0;text-align:center;">No results found. Try adjusting your filters.</div>';
+      return;
+    }
+
+    // Score each institution
+    const loanField = LENDER_WEIGHTS[loanType]?.loanConc;
+    const scored = rows.map(r => {
+      const assets      = Number(r.ASSET) || 1;
+      const loanConc    = loanField ? (Number(r[loanField]) || 0) / assets * 100 : 0;
+      const totalLoans  = (Number(r.LNLSNET) || 0) / assets * 100;
+      const capital     = Number(r.RBC1AAJ) || 0;
+      const roa         = Number(r.ROA) || 0;
+      const delinq      = Number(r.LNLSDEPR) || 0;
+      const nim         = Number(r.NIMY) || 0;
+
+      // Composite lending score (0–100)
+      // Weights: loan concentration 35%, capital strength 20%, asset quality 25%, profitability 20%
+      const concScore    = Math.min(loanConc * 2, 40) * (35/40);
+      const capScore     = Math.min(Math.max(capital - 8, 0) * 4, 20);
+      const qualScore    = Math.max(25 - delinq * 5, 0);
+      const profScore    = Math.min(Math.max(roa * 10, 0), 20);
+      const score        = Math.round(concScore + capScore + qualScore + profScore);
+
+      return { ...r, loanConc, totalLoans, capital, roa, delinq, nim, score };
+    });
+
+    // Sort by score desc
+    scored.sort((a, b) => b.score - a.score);
+    const top = scored.slice(0, 50);
+
+    const loanLabel = LENDER_WEIGHTS[loanType]?.label || 'Loans';
+
+    el.innerHTML = `
+      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:12px;">
+        Showing top ${top.length} lenders${stateVal ? ` in ${stateVal}` : ''} · Sorted by Lending Score · ${loanLabel} focus
+      </div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead>
+            <tr style="border-bottom:1px solid var(--border);">
+              <th style="text-align:left;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;white-space:nowrap;">#</th>
+              <th style="text-align:left;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">Institution</th>
+              <th style="text-align:left;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">Location</th>
+              <th style="text-align:right;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;white-space:nowrap;">Lending Score</th>
+              <th style="text-align:right;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;white-space:nowrap;">${loanLabel} %</th>
+              <th style="text-align:right;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;white-space:nowrap;">Capital Ratio</th>
+              <th style="text-align:right;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">ROA</th>
+              <th style="text-align:right;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">Assets</th>
+              <th style="text-align:right;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">Delinq %</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${top.map((b, i) => {
+              const scoreColor = b.score >= 70 ? '#4ade80' : b.score >= 45 ? '#fbbf24' : '#f87171';
+              const delinqColor = b.delinq <= 1 ? '#4ade80' : b.delinq <= 3 ? '#fbbf24' : '#f87171';
+              const roaColor = b.roa >= 1 ? '#4ade80' : b.roa >= 0 ? '#fbbf24' : '#f87171';
+              return `<tr style="border-bottom:1px solid rgba(255,255,255,0.05);cursor:pointer;transition:background 0.15s;" 
+                onmouseover="this.style.background='rgba(77,184,255,0.05)'" 
+                onmouseout="this.style.background=''"
+                onclick="loadDetail('${b.CERT}','bank')">
+                <td style="padding:12px 12px;font-family:var(--mono);font-size:11px;color:var(--muted);">${i+1}</td>
+                <td style="padding:12px 12px;">
+                  <div style="font-weight:600;color:var(--text);margin-bottom:2px;">${b.NAME}</div>
+                  <div style="font-family:var(--mono);font-size:10px;color:var(--muted);">CERT ${b.CERT}</div>
+                </td>
+                <td style="padding:12px 12px;font-family:var(--mono);font-size:12px;color:var(--muted);">${b.CITY}, ${b.STALP}</td>
+                <td style="padding:12px 12px;text-align:right;">
+                  <span style="font-family:var(--mono);font-size:13px;font-weight:700;color:${scoreColor};">${b.score}</span>
+                  <div style="width:48px;height:4px;background:rgba(255,255,255,0.08);border-radius:2px;margin:4px 0 0 auto;">
+                    <div style="width:${b.score}%;height:100%;background:${scoreColor};border-radius:2px;"></div>
+                  </div>
+                </td>
+                <td style="padding:12px 12px;text-align:right;font-family:var(--mono);font-size:12px;color:var(--text);">${b.loanConc.toFixed(1)}%</td>
+                <td style="padding:12px 12px;text-align:right;font-family:var(--mono);font-size:12px;color:${b.capital >= 10 ? '#4ade80' : b.capital >= 8 ? '#fbbf24' : '#f87171'};">${b.capital.toFixed(1)}%</td>
+                <td style="padding:12px 12px;text-align:right;font-family:var(--mono);font-size:12px;color:${roaColor};">${b.roa.toFixed(2)}%</td>
+                <td style="padding:12px 12px;text-align:right;font-family:var(--mono);font-size:12px;color:var(--muted);">$${(Number(b.ASSET)/1000).toFixed(0)}M</td>
+                <td style="padding:12px 12px;text-align:right;font-family:var(--mono);font-size:12px;color:${delinqColor};">${b.delinq.toFixed(2)}%</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:16px;font-family:var(--mono);font-size:10px;color:var(--muted);line-height:1.8;">
+        <strong style="color:var(--text);">Lending Score methodology:</strong> Composite of loan concentration (35%), capital strength (20%), asset quality / delinquency rate (25%), and ROA profitability (20%).
+        Click any row to view full institution profile. Data as of most recent FDIC call report.
+      </div>`;
+  } catch(e) {
+    el.innerHTML = `<div style="color:#f87171;font-family:var(--mono);font-size:13px;padding:20px 0;">Error loading data: ${e.message}</div>`;
+  }
+}
+
+// ── Industry Analytics page ───────────────────────────────────────────────────
 
 const FDIC_NEW_CHARTERS = {
   1970:193,1971:215,1972:287,1973:406,1974:427,1975:284,1976:206,1977:190,1978:226,1979:264,
