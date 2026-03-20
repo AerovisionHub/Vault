@@ -2408,10 +2408,18 @@ async function runLenderSearch() {
   if (stateVal) filters += `%20AND%20STALP%3A${stateVal}`;
 
   try {
-    const url = `${FDIC_BASE}/financials?filters=${filters}&fields=${fields}&limit=100&sort_by=ASSET&sort_order=DESC`;
+    const url = `${FDIC_BASE}/financials?filters=${filters}&fields=${fields}&limit=500&sort_by=REPDTE&sort_order=DESC`;
     const r = await fetch(url);
     const data = await r.json();
     const rows = (data.data || []).map(d => d.data).filter(Boolean);
+
+    // Deduplicate by CERT — keep most recent quarter only (results sorted DESC by REPDTE already)
+    const seen = new Set();
+    const unique = rows.filter(r => {
+      if (seen.has(r.CERT)) return false;
+      seen.add(r.CERT);
+      return true;
+    });
 
     if (!rows.length) {
       el.innerHTML = '<div style="color:var(--muted);font-family:var(--mono);font-size:13px;padding:40px 0;text-align:center;">No results found. Try adjusting your filters.</div>';
@@ -2420,7 +2428,7 @@ async function runLenderSearch() {
 
     // Score each institution
     const loanField = LENDER_WEIGHTS[loanType]?.loanConc;
-    const scored = rows.map(r => {
+    const scored = unique.map(r => {
       const assets      = Number(r.ASSET) || 1;
       const loanConc    = loanField ? (Number(r[loanField]) || 0) / assets * 100 : 0;
       const totalLoans  = (Number(r.LNLSNET) || 0) / assets * 100;
