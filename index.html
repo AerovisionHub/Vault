@@ -2489,19 +2489,26 @@ async function runLenderSearch() {
     // If name/city search provided — query institutions endpoint first to get matching CERTs
     if (searchTerm) {
       const instFields = 'NAME,CERT,CITY,STALP,ASSET,ACTIVE';
-      const tokens = searchTerm.trim().split(/\s+/).map(t => `NAME%3A${encodeURIComponent(t)}*`).join('%20AND%20');
-      const cityToken = `CITY%3A${encodeURIComponent(searchTerm)}*`;
-      // Try name match first, then city match
-      const [nameR, cityR] = await Promise.all([
-        fetch(`${FDIC_BASE}/institutions?filters=${tokens}%20AND%20ACTIVE%3A1&fields=${instFields}&limit=100&sort_by=ASSET&sort_order=DESC`),
-        fetch(`${FDIC_BASE}/institutions?filters=${cityToken}%20AND%20ACTIVE%3A1&fields=${instFields}&limit=100&sort_by=ASSET&sort_order=DESC`),
-      ]);
-      const [nameData, cityData] = await Promise.all([nameR.json(), cityR.json()]);
-      const nameMatches = (nameData.data || []).map(d => d.data).filter(Boolean);
-      const cityMatches = (cityData.data || []).map(d => d.data).filter(Boolean);
+      // Use fulltext search for multi-word queries (handles "Sutton Bank" correctly)
+      // Also run a city wildcard search in parallel
+      const fulltextUrl = `${FDIC_BASE}/institutions?search=${encodeURIComponent(searchTerm)}&fields=${instFields}&limit=100&sort_by=ASSET&sort_order=DESC&filters=ACTIVE%3A1`;
+      const cityUrl     = `${FDIC_BASE}/institutions?filters=CITY%3A${encodeURIComponent(searchTerm)}*%20AND%20ACTIVE%3A1&fields=${instFields}&limit=100&sort_by=ASSET&sort_order=DESC`;
+      // Also try single wildcard for partial name match e.g. "Sutton"
+      const firstWord   = searchTerm.split(/\s+/)[0];
+      const wildcardUrl = `${FDIC_BASE}/institutions?filters=NAME%3A${encodeURIComponent(firstWord)}*%20AND%20ACTIVE%3A1&fields=${instFields}&limit=100&sort_by=ASSET&sort_order=DESC`;
 
-      // Merge, dedupe by CERT
-      const merged = [...nameMatches, ...cityMatches];
+      const [ftR, cityR, wcR] = await Promise.all([
+        fetch(fulltextUrl),
+        fetch(cityUrl),
+        fetch(wildcardUrl),
+      ]);
+      const [ftData, cityData, wcData] = await Promise.all([ftR.json(), cityR.json(), wcR.json()]);
+      const ftMatches   = (ftData.data   || []).map(d => d.data).filter(Boolean);
+      const cityMatches = (cityData.data || []).map(d => d.data).filter(Boolean);
+      const wcMatches   = (wcData.data   || []).map(d => d.data).filter(Boolean);
+
+      // Merge all three, dedupe by CERT — fulltext results ranked first
+      const merged = [...ftMatches, ...cityMatches, ...wcMatches];
       const seenCerts = new Set();
       const instResults = merged.filter(i => {
         if (seenCerts.has(i.CERT)) return false;
