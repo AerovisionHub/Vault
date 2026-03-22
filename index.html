@@ -1736,43 +1736,6 @@ function renderBankDetail(d) {
       </table>
     </div>
 
-    ${d.hmda ? `
-    <div class="section">
-      <div class="section-title">Mortgage Lending Activity <span style="font-size:10px;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;">(HMDA 2023)</span></div>
-      <div class="kpi-grid">
-        <div class="kpi-card">
-          <div class="kpi-label">Total Originations</div>
-          <div class="kpi-value kpi-neutral">${d.hmda.total_originations != null ? fmtNum(d.hmda.total_originations) : '—'}</div>
-          <div class="kpi-sub">Loans originated 2023</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-label">Purchase Loans</div>
-          <div class="kpi-value kpi-neutral">${d.hmda.purchase_originations != null ? fmtNum(d.hmda.purchase_originations) : '—'}</div>
-          <div class="kpi-sub">Home purchases</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-label">Refinances</div>
-          <div class="kpi-value kpi-neutral">${d.hmda.refi_originations != null ? fmtNum(d.hmda.refi_originations) : '—'}</div>
-          <div class="kpi-sub">Refis & cash-out</div>
-        </div>
-        ${d.hmda.avg_loan_amount ? `
-        <div class="kpi-card">
-          <div class="kpi-label">Avg Loan Amount</div>
-          <div class="kpi-value kpi-neutral">$${Math.round(d.hmda.avg_loan_amount / 1000)}K</div>
-          <div class="kpi-sub">Per origination</div>
-        </div>` : ''}
-        ${d.hmda.approval_rate_pct != null ? `
-        <div class="kpi-card">
-          <div class="kpi-label">Approval Rate</div>
-          <div class="kpi-value ${d.hmda.approval_rate_pct >= 75 ? 'kpi-positive' : 'kpi-neutral'}">${d.hmda.approval_rate_pct}%</div>
-          <div class="kpi-sub">Applications approved</div>
-        </div>` : ''}
-      </div>
-      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:8px;">
-        LEI: ${d.hmda.lei} · Source: CFPB HMDA · Data year: 2023
-      </div>
-    </div>` : ''}
-
     ${history && history.length > 1 ? `
     <div class="section">
       <div class="section-title">Financial History (Quarterly)</div>
@@ -2036,13 +1999,12 @@ async function loadDetail(id, type) {
   try {
     if (type === 'bank') {
       const { inst, history } = await getFDICDetail(id);
-      const [peers, officers, stock, hmda] = await Promise.all([
+      const [peers, officers, stock] = await Promise.all([
         fetchPeers(inst, history),
         fetchOfficers(id),
         fetchStockInfo(inst),
-        fetchHMDA(inst),
       ]);
-      state.detail = { type: 'bank', inst, history, peers, officers, stock, hmda };
+      state.detail = { type: 'bank', inst, history, peers, officers, stock };
     } else {
       const raw = await getNCUADetail(id);
       state.detail = { type: 'cu', id, raw: raw || { name: id, id } };
@@ -2053,45 +2015,6 @@ async function loadDetail(id, type) {
   render();
 }
 
-// ── HMDA Data ─────────────────────────────────────────────────────────────────
-async function fetchHMDA(inst) {
-  if (!inst?.NAME) return null;
-  try {
-    // Try multiple name variations to maximize match rate
-    const namesToTry = [
-      inst.NAME,                                              // "Sutton Bank"
-      inst.NAME.replace(/\b(bank|bancorp|bancshares|financial|national|federal|savings|trust|community)\b/gi, '').trim(), // "Sutton"
-      inst.NAME.split(/\s+/).slice(0, 2).join(' '),          // First two words
-    ].filter((n, i, arr) => n && arr.indexOf(n) === i);     // dedupe
-
-    let match = null;
-    for (const name of namesToTry) {
-      const searchR = await fetch(`/.netlify/functions/hmda?action=search&q=${encodeURIComponent(name)}&year=2023`);
-      if (!searchR.ok) continue;
-      const searchData = await searchR.json();
-      const institutions = searchData?.institutions || [];
-      if (!institutions.length) continue;
-
-      // Match by state first, then city, then fall back to first result
-      match = institutions.find(i => i.state === inst.STALP && (i.name || '').toLowerCase().includes(inst.NAME.split(' ')[0].toLowerCase()))
-           || institutions.find(i => i.state === inst.STALP)
-           || institutions[0];
-      if (match) break;
-    }
-
-    if (!match?.lei) return null;
-
-    // Step 2: get lender summary
-    const summaryR = await fetch(`/.netlify/functions/hmda?action=lender_summary&lei=${match.lei}&year=2023`);
-    if (!summaryR.ok) return null;
-    const summary = await summaryR.json();
-    if (summary.error) return null;
-    return { ...summary, institution_name: match.name, lei: match.lei };
-  } catch(e) {
-    console.warn('HMDA fetch failed:', e.message);
-    return null;
-  }
-}
 async function fetchOfficers(cert) {
   // FDIC /summary endpoint has officer/director data
   try {
