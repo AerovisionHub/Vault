@@ -33,9 +33,27 @@ function fetchJSON(url) {
 // GET /functions/hmda?action=search&q=CERT_OR_NAME&year=2023
 // Looks up a bank's LEI from FFIEC by CERT number or name
 async function searchInstitution(q, year = '2023') {
-  const url = `https://ffiec.cfpb.gov/api/public/institutions/search?q=${encodeURIComponent(q)}&year=${year}`;
-  const data = await fetchJSON(url);
-  return data;
+  // Try multiple FFIEC endpoint formats — API has changed over time
+  const urls = [
+    `https://ffiec.cfpb.gov/api/public/institutions/search?q=${encodeURIComponent(q)}&year=${year}`,
+    `https://ffiec.cfpb.gov/api/public/institutions?name=${encodeURIComponent(q)}&year=${year}`,
+    `https://api.consumerfinance.gov/data/hmda/institutions?name=${encodeURIComponent(q)}&year=${year}&_limit=10`,
+  ];
+
+  for (const url of urls) {
+    try {
+      const data = await fetchJSON(url);
+      // Return whichever format worked
+      if (data?.institutions || data?.results || Array.isArray(data)) {
+        console.log('HMDA search hit:', url);
+        return data;
+      }
+    } catch(e) {
+      console.log('HMDA url failed:', url, e.message);
+      continue;
+    }
+  }
+  return { institutions: [] };
 }
 
 // GET /functions/hmda?action=filing&lei=LEI&year=2023
@@ -147,6 +165,27 @@ exports.handler = async function(event) {
     let result;
 
     switch (action) {
+      case 'ping': {
+        // Debug endpoint — returns raw response from FFIEC to diagnose URL issues
+        const testUrls = [
+          `https://ffiec.cfpb.gov/api/public/institutions/search?q=sutton+bank&year=2023`,
+          `https://ffiec.cfpb.gov/api/public/institutions?name=sutton+bank&year=2023`,
+          `https://api.consumerfinance.gov/data/hmda/institutions?name=sutton+bank&year=2023&_limit=5`,
+          `https://ffiec.cfpb.gov/api/public/filers?year=2023&page=1&count=1`,
+        ];
+        const results = {};
+        for (const url of testUrls) {
+          try {
+            const data = await fetchJSON(url);
+            results[url] = { ok: true, keys: Object.keys(data || {}), sample: JSON.stringify(data).slice(0, 300) };
+          } catch(e) {
+            results[url] = { ok: false, error: e.message };
+          }
+        }
+        result = results;
+        break;
+      }
+
       case 'search':
         if (!p.q) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'q param required' }) };
         result = await searchInstitution(p.q, year);
