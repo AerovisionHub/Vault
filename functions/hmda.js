@@ -167,41 +167,47 @@ exports.handler = async function(event) {
     switch (action) {
       case 'ping': {
         const testUrls = [
-          // FFIEC HMDA Platform — current API docs suggest these formats
-          `https://ffiec.cfpb.gov/api/public/filers/2023`,
-          `https://ffiec.cfpb.gov/api/public/institutions/2023/search?q=sutton`,
-          `https://ffiec.cfpb.gov/api/public/institutions/2023?name=sutton`,
-          // CFPB HMDA Explorer API
-          `https://api.consumerfinance.gov/data/hmda/aggregations?as_of_year=2023&action_taken=1&_limit=1`,
-          // HMDA Beta API
-          `https://ffiec.cfpb.gov/api/public/lei/search?q=sutton&year=2023`,
-          // Check if ffiec.cfpb.gov root is even reachable
-          `https://ffiec.cfpb.gov/api/public/`,
-          // Try HMDA data browser API
-          `https://ffiec.cfpb.gov/v2/api/institutions?year=2023&name=sutton`,
-          // CFPB main HMDA endpoint
-          `https://api.consumerfinance.gov/data/hmda/slice/hmda_lar.json?as_of_year=2023&_limit=1`,
+          // CFPB HMDA API v2 — newer endpoint
+          `https://ffiec.cfpb.gov/api/filing/institutions?year=2023&page=1&count=1`,
+          // HMDA data via CFPB's S3 public data
+          `https://s3.amazonaws.com/cfpb-hmda-public/prod/three-year-data/2023/2023_public_lar_csv.zip`,
+          // HMDA public data API — different subdomain
+          `https://api.hmda.gov/institutions?year=2023&name=sutton`,
+          // CFPB public API explorer  
+          `https://api.consumerfinance.gov/data/hmda/years`,
+          // FFIEC CDR (Central Data Repository) — separate from HMDA platform
+          `https://cdr.ffiec.gov/public/ManageFacsimiles.aspx`,
+          // HMDA via data.gov CKAN API
+          `https://catalog.data.gov/api/3/action/package_search?q=hmda+2023&rows=3`,
+          // FFIEC HMDA filing API (separate from explorer)
+          `https://ffiec.cfpb.gov/api/filing/2023/institutions`,
+          // HMDA Explorer new API path
+          `https://ffiec.cfpb.gov/api/data-browser/institutions?year=2023&name=sutton`,
         ];
         const results = {};
         for (const url of testUrls) {
           try {
-            const data = await fetchJSON(url);
-            results[url] = { ok: true, keys: Object.keys(data || {}), sample: JSON.stringify(data).slice(0, 200) };
+            const raw = await new Promise((resolve, reject) => {
+              https.get(url, { headers: { 'User-Agent': 'VaultBot/1.0', 'Accept': 'application/json' } }, (res) => {
+                const chunks = [];
+                res.on('data', c => chunks.push(c));
+                res.on('end', () => resolve({
+                  status: res.statusCode,
+                  contentType: res.headers['content-type'] || '',
+                  body: Buffer.concat(chunks).toString('utf8').slice(0, 200)
+                }));
+              }).on('error', reject);
+            });
+            // Only try JSON parse if content-type suggests JSON
+            const isJson = raw.contentType.includes('json') || raw.body.trim().startsWith('{') || raw.body.trim().startsWith('[');
+            results[url] = {
+              status: raw.status,
+              contentType: raw.contentType,
+              isJson,
+              preview: raw.body
+            };
           } catch(e) {
-            // Also try fetching as raw text to see what we're getting back
-            try {
-              const raw = await new Promise((resolve, reject) => {
-                const u = new URL(url);
-                https.get(url, { headers: { 'User-Agent': 'VaultBot/1.0' } }, (res) => {
-                  const chunks = [];
-                  res.on('data', c => chunks.push(c));
-                  res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString('utf8').slice(0, 150) }));
-                }).on('error', reject);
-              });
-              results[url] = { ok: false, status: raw.status, preview: raw.body, error: e.message };
-            } catch(e2) {
-              results[url] = { ok: false, error: e.message };
-            }
+            results[url] = { ok: false, error: e.message };
           }
         }
         result = results;
