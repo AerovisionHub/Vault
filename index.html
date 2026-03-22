@@ -2395,7 +2395,16 @@ function renderLenders() {
     </div>
 
     <!-- Filters -->
-    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px;padding:20px;background:var(--surface);border:1px solid var(--border);border-radius:12px;">
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;padding:20px;background:var(--surface);border:1px solid var(--border);border-radius:12px;">
+      <!-- Search box — full width row -->
+      <div style="width:100%;display:flex;flex-direction:column;gap:6px;">
+        <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">Search by Name or City</label>
+        <input id="lenderSearch" type="text" placeholder="e.g. First National Bank, Tulsa, Bank of Oklahoma…"
+          style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:10px 14px;font-size:14px;font-family:var(--mono);outline:none;transition:border-color 0.2s;"
+          onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
+          onkeydown="if(event.key==='Enter') runLenderSearch()" />
+      </div>
+      <!-- Dropdowns row -->
       <div style="display:flex;flex-direction:column;gap:6px;flex:1;min-width:140px;">
         <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">State</label>
         <select id="lenderState" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px;font-family:var(--mono);">
@@ -2460,6 +2469,7 @@ async function runLenderSearch() {
   if (!el) return;
   el.innerHTML = '<div style="display:flex;align-items:center;gap:10px;padding:40px 0;justify-content:center;color:var(--muted);font-family:var(--mono);font-size:13px;"><div class="spinner"></div>Loading lender data…</div>';
 
+  const searchTerm  = (document.getElementById('lenderSearch')?.value || '').trim().toLowerCase();
   const stateVal    = document.getElementById('lenderState')?.value || '';
   const loanType    = document.getElementById('lenderLoanType')?.value || 'residential';
   const assetSize   = document.getElementById('lenderAssetSize')?.value || 'community';
@@ -2498,8 +2508,23 @@ async function runLenderSearch() {
     }
 
     // Score each institution
+    // Apply name / city text search if provided
+    let filtered = unique;
+    if (searchTerm) {
+      filtered = unique.filter(r => {
+        const name = (r.NAME || '').toLowerCase();
+        const city = (r.CITY || '').toLowerCase();
+        return name.includes(searchTerm) || city.includes(searchTerm);
+      });
+    }
+
+    if (!filtered.length) {
+      el.innerHTML = '<div style="color:var(--muted);font-family:var(--mono);font-size:13px;padding:40px 0;text-align:center;">No results found. Try adjusting your search or filters.</div>';
+      return;
+    }
+
     const loanField = LENDER_WEIGHTS[loanType]?.loanConc;
-    const scored = unique.map(r => {
+    const scored = filtered.map(r => {
       const assets      = Number(r.ASSET) || 1;
       const loanConc    = loanField ? (Number(r[loanField]) || 0) / assets * 100 : 0;
       const totalLoans  = (Number(r.LNLSNET) || 0) / assets * 100;
@@ -2527,7 +2552,7 @@ async function runLenderSearch() {
 
     el.innerHTML = `
       <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:12px;">
-        Showing top ${top.length} lenders${stateVal ? ` in ${stateVal}` : ''} · Sorted by Lending Score · ${loanLabel} focus
+        Showing top ${top.length} lenders${searchTerm ? ` matching "${searchTerm}"` : ''}${stateVal ? ` in ${stateVal}` : ''} · Sorted by Lending Score · ${loanLabel} focus
       </div>
       <div style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;font-size:13px;">
