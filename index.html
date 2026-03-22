@@ -2469,7 +2469,7 @@ async function runLenderSearch() {
   if (!el) return;
   el.innerHTML = '<div style="display:flex;align-items:center;gap:10px;padding:40px 0;justify-content:center;color:var(--muted);font-family:var(--mono);font-size:13px;"><div class="spinner"></div>Loading lender data…</div>';
 
-  const searchTerm  = (document.getElementById('lenderSearch')?.value || '').trim().toLowerCase();
+  const searchTerm  = (document.getElementById('lenderSearch')?.value || '').trim();
   const stateVal    = document.getElementById('lenderState')?.value || '';
   const loanType    = document.getElementById('lenderLoanType')?.value || 'residential';
   const assetSize   = document.getElementById('lenderAssetSize')?.value || 'community';
@@ -2483,18 +2483,59 @@ async function runLenderSearch() {
   };
   const [minA, maxA] = assetRanges[assetSize] || assetRanges.all;
 
-  // Fields — core financials + loan mix
-  const fields = 'NAME,CERT,CITY,STALP,ASSET,DEP,LNLSRES,LNLSRE,LNCI,LNCON,LNLSNET,RBC1AAJ,ROA,LNLSDEPR,NIMY,REPDTE';
-  let filters = `ACTIVE%3A1%20AND%20ASSET%3A%5B${minA}%20TO%20${maxA}%5D`;
-  if (stateVal) filters += `%20AND%20STALP%3A${stateVal}`;
-
   try {
-    const url = `${FDIC_BASE}/financials?filters=${filters}&fields=${fields}&limit=500&sort_by=REPDTE&sort_order=DESC`;
+    let certSet = null; // null = no restriction, Set = restrict to these CERTs
+
+    // If name/city search provided — query institutions endpoint first to get matching CERTs
+    if (searchTerm) {
+      const instFields = 'NAME,CERT,CITY,STALP,ASSET,ACTIVE';
+      const tokens = searchTerm.trim().split(/\s+/).map(t => `NAME%3A${encodeURIComponent(t)}*`).join('%20AND%20');
+      const cityToken = `CITY%3A${encodeURIComponent(searchTerm)}*`;
+      // Try name match first, then city match
+      const [nameR, cityR] = await Promise.all([
+        fetch(`${FDIC_BASE}/institutions?filters=${tokens}%20AND%20ACTIVE%3A1&fields=${instFields}&limit=100&sort_by=ASSET&sort_order=DESC`),
+        fetch(`${FDIC_BASE}/institutions?filters=${cityToken}%20AND%20ACTIVE%3A1&fields=${instFields}&limit=100&sort_by=ASSET&sort_order=DESC`),
+      ]);
+      const [nameData, cityData] = await Promise.all([nameR.json(), cityR.json()]);
+      const nameMatches = (nameData.data || []).map(d => d.data).filter(Boolean);
+      const cityMatches = (cityData.data || []).map(d => d.data).filter(Boolean);
+
+      // Merge, dedupe by CERT
+      const merged = [...nameMatches, ...cityMatches];
+      const seenCerts = new Set();
+      const instResults = merged.filter(i => {
+        if (seenCerts.has(i.CERT)) return false;
+        seenCerts.add(i.CERT);
+        return true;
+      });
+
+      if (!instResults.length) {
+        el.innerHTML = '<div style="color:var(--muted);font-family:var(--mono);font-size:13px;padding:40px 0;text-align:center;">No institutions found matching that name or city. Try a broader search.</div>';
+        return;
+      }
+      certSet = new Map(instResults.map(i => [i.CERT, i]));
+    }
+
+    // Build financials query
+    const finFields = 'CERT,ASSET,DEP,LNLSRES,LNLSRE,LNCI,LNCON,LNLSNET,RBC1AAJ,ROA,LNLSDEPR,NIMY,REPDTE';
+    let filters;
+
+    if (certSet) {
+      // Fetch financials for specific CERTs — batch by CERT list
+      const certs = [...certSet.keys()].slice(0, 100);
+      const certFilter = certs.map(c => `CERT%3A${c}`).join('%20OR%20');
+      filters = `(${certFilter})`;
+    } else {
+      filters = `ACTIVE%3A1%20AND%20ASSET%3A%5B${minA}%20TO%20${maxA}%5D`;
+      if (stateVal) filters += `%20AND%20STALP%3A${stateVal}`;
+    }
+
+    const url = `${FDIC_BASE}/financials?filters=${filters}&fields=${finFields}&limit=500&sort_by=REPDTE&sort_order=DESC`;
     const r = await fetch(url);
     const data = await r.json();
     const rows = (data.data || []).map(d => d.data).filter(Boolean);
 
-    // Deduplicate by CERT — keep most recent quarter only (results sorted DESC by REPDTE already)
+    // Deduplicate by CERT — keep most recent quarter only
     const seen = new Set();
     const unique = rows.filter(r => {
       if (seen.has(r.CERT)) return false;
@@ -2502,29 +2543,41 @@ async function runLenderSearch() {
       return true;
     });
 
-    if (!rows.length) {
-      el.innerHTML = '<div style="color:var(--muted);font-family:var(--mono);font-size:13px;padding:40px 0;text-align:center;">No results found. Try adjusting your filters.</div>';
-      return;
+    // Enrich with institution name/city from certSet if we did a name search
+    // otherwise fetch names from institutions endpoint for display
+    let enriched = unique;
+    if (certSet) {
+      enriched = unique.map(r => ({
+        ...r,
+        NAME: certSet.get(r.CERT)?.NAME || r.CERT,
+        CITY: certSet.get(r.CERT)?.CITY || '',
+        STALP: certSet.get(r.CERT)?.STALP || '',
+        ASSET: certSet.get(r.CERT)?.ASSET || r.ASSET,
+      }));
+    } else {
+      // For dropdown-only searches, fetch institution names in parallel
+      const certList = unique.map(r => r.CERT).slice(0, 100);
+      const certFilter2 = certList.map(c => `CERT%3A${c}`).join('%20OR%20');
+      try {
+        const instR = await fetch(`${FDIC_BASE}/institutions?filters=(${certFilter2})&fields=CERT,NAME,CITY,STALP&limit=100`);
+        const instData = await instR.json();
+        const instMap = new Map((instData.data || []).map(d => [d.data?.CERT, d.data]));
+        enriched = unique.map(r => ({
+          ...r,
+          NAME: instMap.get(r.CERT)?.NAME || `CERT ${r.CERT}`,
+          CITY: instMap.get(r.CERT)?.CITY || '',
+          STALP: instMap.get(r.CERT)?.STALP || '',
+        }));
+      } catch(e) { /* use raw data if inst lookup fails */ }
     }
-
-    // Score each institution
-    // Apply name / city text search if provided
-    let filtered = unique;
-    if (searchTerm) {
-      filtered = unique.filter(r => {
-        const name = (r.NAME || '').toLowerCase();
-        const city = (r.CITY || '').toLowerCase();
-        return name.includes(searchTerm) || city.includes(searchTerm);
-      });
-    }
-
-    if (!filtered.length) {
+    if (!enriched.length) {
       el.innerHTML = '<div style="color:var(--muted);font-family:var(--mono);font-size:13px;padding:40px 0;text-align:center;">No results found. Try adjusting your search or filters.</div>';
       return;
     }
 
+    // Score each institution
     const loanField = LENDER_WEIGHTS[loanType]?.loanConc;
-    const scored = filtered.map(r => {
+    const scored = enriched.map(r => {
       const assets      = Number(r.ASSET) || 1;
       const loanConc    = loanField ? (Number(r[loanField]) || 0) / assets * 100 : 0;
       const totalLoans  = (Number(r.LNLSNET) || 0) / assets * 100;
