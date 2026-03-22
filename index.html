@@ -2057,27 +2057,38 @@ async function loadDetail(id, type) {
 async function fetchHMDA(inst) {
   if (!inst?.NAME) return null;
   try {
-    // Step 1: look up LEI from FFIEC using institution name
-    const searchR = await fetch(`/.netlify/functions/hmda?action=search&q=${encodeURIComponent(inst.NAME)}&year=2023`);
-    if (!searchR.ok) return null;
-    const searchData = await searchR.json();
-    const institutions = searchData?.institutions || [];
-    if (!institutions.length) return null;
+    // Try multiple name variations to maximize match rate
+    const namesToTry = [
+      inst.NAME,                                              // "Sutton Bank"
+      inst.NAME.replace(/\b(bank|bancorp|bancshares|financial|national|federal|savings|trust|community)\b/gi, '').trim(), // "Sutton"
+      inst.NAME.split(/\s+/).slice(0, 2).join(' '),          // First two words
+    ].filter((n, i, arr) => n && arr.indexOf(n) === i);     // dedupe
 
-    // Match by state to avoid wrong bank with same name
-    const match = institutions.find(i =>
-      i.state === inst.STALP || i.stateName?.includes(inst.STNAME)
-    ) || institutions[0];
+    let match = null;
+    for (const name of namesToTry) {
+      const searchR = await fetch(`/.netlify/functions/hmda?action=search&q=${encodeURIComponent(name)}&year=2023`);
+      if (!searchR.ok) continue;
+      const searchData = await searchR.json();
+      const institutions = searchData?.institutions || [];
+      if (!institutions.length) continue;
 
-    const lei = match?.lei;
-    if (!lei) return null;
+      // Match by state first, then city, then fall back to first result
+      match = institutions.find(i => i.state === inst.STALP && (i.name || '').toLowerCase().includes(inst.NAME.split(' ')[0].toLowerCase()))
+           || institutions.find(i => i.state === inst.STALP)
+           || institutions[0];
+      if (match) break;
+    }
+
+    if (!match?.lei) return null;
 
     // Step 2: get lender summary
-    const summaryR = await fetch(`/.netlify/functions/hmda?action=lender_summary&lei=${lei}&year=2023`);
+    const summaryR = await fetch(`/.netlify/functions/hmda?action=lender_summary&lei=${match.lei}&year=2023`);
     if (!summaryR.ok) return null;
     const summary = await summaryR.json();
-    return { ...summary, institution_name: match.name, lei };
+    if (summary.error) return null;
+    return { ...summary, institution_name: match.name, lei: match.lei };
   } catch(e) {
+    console.warn('HMDA fetch failed:', e.message);
     return null;
   }
 }
@@ -2106,7 +2117,10 @@ Include CEO, President, CFO if known. Limit to 4 people. If you cannot find reli
 
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 500,
@@ -2321,15 +2335,22 @@ async function fetchNews(institutionName, city, state) {
       const data = await r.json();
       if (data.status !== 'ok' || !data.items?.length) continue;
 
-      // Filter: require name match AND no older than 18 months
       const cutoff = new Date();
       cutoff.setMonth(cutoff.getMonth() - 18);
-      const nameWords = institutionName.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+      // Filter out generic words that match too broadly
+      const stopWords = new Set(['bank', 'national', 'federal', 'savings', 'trust', 'community', 'first', 'state', 'the', 'and', 'of']);
+      const nameWords = institutionName.toLowerCase().split(/\s+/).filter(w => w.length > 2 && !stopWords.has(w));
+      // If all words are stop words (e.g. "First National Bank"), fall back to full name match
+      const fullName = institutionName.toLowerCase();
+
       const relevant = data.items.filter(item => {
         const t = item.title?.toLowerCase() || '';
         const pubDate = item.pubDate ? new Date(item.pubDate) : null;
         const fresh = !pubDate || pubDate >= cutoff;
-        const nameMatch = nameWords.some(w => t.includes(w));
+        // Require either a meaningful unique word match OR the full institution name
+        const nameMatch = nameWords.length > 0
+          ? nameWords.some(w => t.includes(w))
+          : t.includes(fullName);
         return fresh && nameMatch;
       });
 
