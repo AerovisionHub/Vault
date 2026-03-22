@@ -166,20 +166,42 @@ exports.handler = async function(event) {
 
     switch (action) {
       case 'ping': {
-        // Debug endpoint — returns raw response from FFIEC to diagnose URL issues
         const testUrls = [
-          `https://ffiec.cfpb.gov/api/public/institutions/search?q=sutton+bank&year=2023`,
-          `https://ffiec.cfpb.gov/api/public/institutions?name=sutton+bank&year=2023`,
-          `https://api.consumerfinance.gov/data/hmda/institutions?name=sutton+bank&year=2023&_limit=5`,
-          `https://ffiec.cfpb.gov/api/public/filers?year=2023&page=1&count=1`,
+          // FFIEC HMDA Platform — current API docs suggest these formats
+          `https://ffiec.cfpb.gov/api/public/filers/2023`,
+          `https://ffiec.cfpb.gov/api/public/institutions/2023/search?q=sutton`,
+          `https://ffiec.cfpb.gov/api/public/institutions/2023?name=sutton`,
+          // CFPB HMDA Explorer API
+          `https://api.consumerfinance.gov/data/hmda/aggregations?as_of_year=2023&action_taken=1&_limit=1`,
+          // HMDA Beta API
+          `https://ffiec.cfpb.gov/api/public/lei/search?q=sutton&year=2023`,
+          // Check if ffiec.cfpb.gov root is even reachable
+          `https://ffiec.cfpb.gov/api/public/`,
+          // Try HMDA data browser API
+          `https://ffiec.cfpb.gov/v2/api/institutions?year=2023&name=sutton`,
+          // CFPB main HMDA endpoint
+          `https://api.consumerfinance.gov/data/hmda/slice/hmda_lar.json?as_of_year=2023&_limit=1`,
         ];
         const results = {};
         for (const url of testUrls) {
           try {
             const data = await fetchJSON(url);
-            results[url] = { ok: true, keys: Object.keys(data || {}), sample: JSON.stringify(data).slice(0, 300) };
+            results[url] = { ok: true, keys: Object.keys(data || {}), sample: JSON.stringify(data).slice(0, 200) };
           } catch(e) {
-            results[url] = { ok: false, error: e.message };
+            // Also try fetching as raw text to see what we're getting back
+            try {
+              const raw = await new Promise((resolve, reject) => {
+                const u = new URL(url);
+                https.get(url, { headers: { 'User-Agent': 'VaultBot/1.0' } }, (res) => {
+                  const chunks = [];
+                  res.on('data', c => chunks.push(c));
+                  res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString('utf8').slice(0, 150) }));
+                }).on('error', reject);
+              });
+              results[url] = { ok: false, status: raw.status, preview: raw.body, error: e.message };
+            } catch(e2) {
+              results[url] = { ok: false, error: e.message };
+            }
           }
         }
         result = results;
