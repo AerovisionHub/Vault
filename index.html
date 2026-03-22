@@ -2489,38 +2489,47 @@ async function runLenderSearch() {
     // If name/city search provided — query institutions endpoint first to get matching CERTs
     if (searchTerm) {
       const instFields = 'NAME,CERT,CITY,STALP,ASSET,ACTIVE';
-      // Use fulltext search for multi-word queries (handles "Sutton Bank" correctly)
-      // Also run a city wildcard search in parallel
-      const fulltextUrl = `${FDIC_BASE}/institutions?search=${encodeURIComponent(searchTerm)}&fields=${instFields}&limit=100&sort_by=ASSET&sort_order=DESC&filters=ACTIVE%3A1`;
-      const cityUrl     = `${FDIC_BASE}/institutions?filters=CITY%3A${encodeURIComponent(searchTerm)}*%20AND%20ACTIVE%3A1&fields=${instFields}&limit=100&sort_by=ASSET&sort_order=DESC`;
-      // Also try single wildcard for partial name match e.g. "Sutton"
-      const firstWord   = searchTerm.split(/\s+/)[0];
-      const wildcardUrl = `${FDIC_BASE}/institutions?filters=NAME%3A${encodeURIComponent(firstWord)}*%20AND%20ACTIVE%3A1&fields=${instFields}&limit=100&sort_by=ASSET&sort_order=DESC`;
+      const q = searchTerm.trim();
+      const firstWord = q.split(/\s+/)[0];
 
-      const [ftR, cityR, wcR] = await Promise.all([
-        fetch(fulltextUrl),
-        fetch(cityUrl),
-        fetch(wildcardUrl),
+      // Cast a wide net — wildcard on first word + fulltext + city, all in parallel
+      const [wcR, ftR, cityR] = await Promise.all([
+        fetch(`${FDIC_BASE}/institutions?filters=NAME%3A${encodeURIComponent(firstWord)}*%20AND%20ACTIVE%3A1&fields=${instFields}&limit=100&sort_by=ASSET&sort_order=DESC`),
+        fetch(`${FDIC_BASE}/institutions?search=${encodeURIComponent(q)}&fields=${instFields}&limit=50&sort_by=ASSET&sort_order=DESC&filters=ACTIVE%3A1`),
+        fetch(`${FDIC_BASE}/institutions?filters=CITY%3A${encodeURIComponent(q)}*%20AND%20ACTIVE%3A1&fields=${instFields}&limit=100&sort_by=ASSET&sort_order=DESC`),
       ]);
-      const [ftData, cityData, wcData] = await Promise.all([ftR.json(), cityR.json(), wcR.json()]);
-      const ftMatches   = (ftData.data   || []).map(d => d.data).filter(Boolean);
-      const cityMatches = (cityData.data || []).map(d => d.data).filter(Boolean);
-      const wcMatches   = (wcData.data   || []).map(d => d.data).filter(Boolean);
+      const [wcData, ftData, cityData] = await Promise.all([wcR.json(), ftR.json(), cityR.json()]);
 
-      // Merge all three, dedupe by CERT — fulltext results ranked first
-      const merged = [...ftMatches, ...cityMatches, ...wcMatches];
+      // Merge all results, dedupe by CERT
+      const all = [
+        ...(wcData.data   || []).map(d => d.data),
+        ...(ftData.data   || []).map(d => d.data),
+        ...(cityData.data || []).map(d => d.data),
+      ].filter(Boolean);
       const seenCerts = new Set();
-      const instResults = merged.filter(i => {
+      const merged = all.filter(i => {
         if (seenCerts.has(i.CERT)) return false;
         seenCerts.add(i.CERT);
         return true;
       });
 
-      if (!instResults.length) {
+      // Re-rank client-side with fuzzyScore — same logic as home page search
+      const scored = merged
+        .map(i => ({
+          inst: i,
+          score: Math.max(
+            fuzzyScore(i.NAME || '', q),
+            fuzzyScore(i.CITY || '', q)
+          )
+        }))
+        .filter(({ score }) => score >= 30)
+        .sort((a, b) => b.score - a.score);
+
+      if (!scored.length) {
         el.innerHTML = '<div style="color:var(--muted);font-family:var(--mono);font-size:13px;padding:40px 0;text-align:center;">No institutions found matching that name or city. Try a broader search.</div>';
         return;
       }
-      certSet = new Map(instResults.map(i => [i.CERT, i]));
+      certSet = new Map(scored.map(({ inst }) => [inst.CERT, inst]));
     }
 
     // Build financials query
