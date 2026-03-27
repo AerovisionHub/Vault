@@ -630,7 +630,6 @@ async function searchFDIC(query) {
     const data4 = await r4.json();
     (data4.data || []).forEach(d => seen.set(d.data.CERT, { ...d, score: fuzzyScore(d.data.NAME, q) }));
   }
-  }
 
   return [...seen.values()]
     .sort((a, b) => b.score - a.score || (b.data.ASSET || 0) - (a.data.ASSET || 0))
@@ -3510,7 +3509,7 @@ async function submitLead() {
   }, { passive: true });
 })();
 
-// ── Init ──────────────────────────────────────────────────────────────────────
+// ── Init (v2) ───────────────────────────────────────────────────────────────
 // Boot from URL path
 const _bootView = pathToView(location.pathname);
 state.view = _bootView;
