@@ -600,8 +600,13 @@ async function searchFDIC(query) {
   const qNoThe = q.replace(/^the\s+/i, ''); // strip leading "The" for broader match
 
   // Run three searches in parallel: wildcard, full-text, and "The"-prefixed wildcard
-  const tokens      = qNoThe.split(/\s+/).map(w => `NAME:${w}*`).join('%20AND%20');
-  const theTokens   = `The%20${qNoThe.split(/\s+/).map(w => `NAME:${encodeURIComponent(w)}*`).join('%20AND%20')}`;
+  // Strip stop words from wildcard tokens — "of", "the", "and" etc. break FDIC AND chain
+  const stopWords = new Set(['of','the','and','a','an','at','in','for','by','to','de','la','le']);
+  const meaningfulWords = qNoThe.split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w.toLowerCase()));
+  // Fall back to all words if stripping leaves nothing (e.g. query is just "The")
+  const tokenWords = meaningfulWords.length > 0 ? meaningfulWords : qNoThe.split(/\s+/);
+  const tokens      = tokenWords.map(w => `NAME:${encodeURIComponent(w)}*`).join('%20AND%20');
+  const theTokens   = `The%20${tokenWords.map(w => `NAME:${encodeURIComponent(w)}*`).join('%20AND%20')}`;
   const wildcardUrl  = `${FDIC_BASE}/institutions?filters=${tokens}%20AND%20ACTIVE%3A1&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC`;
   const theUrl       = `${FDIC_BASE}/institutions?filters=NAME%3AThe*${encodeURIComponent(qNoThe.split(/\s+/)[0])}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC`;
   const fulltextUrl  = `${FDIC_BASE}/institutions?search=${encodeURIComponent(q)}&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC&filters=ACTIVE%3A1`;
@@ -624,7 +629,7 @@ async function searchFDIC(query) {
   
   // If still empty, try single first-word wildcard fallback
   if (seen.size === 0) {
-    const firstWord = qNoThe.split(/\s+/)[0];
+    const firstWord = tokenWords[tokenWords.length - 1] || qNoThe.split(/\s+/)[0]; // use last meaningful word (most distinctive)
     const fallbackUrl = `${FDIC_BASE}/institutions?filters=NAME%3A${firstWord}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC`;
     const r4 = await fetch(fallbackUrl);
     const data4 = await r4.json();
