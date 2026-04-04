@@ -1278,9 +1278,9 @@ function renderCUChart(cu) {
 
 // ── Render functions ──────────────────────────────────────────────────────────
 
-let state; window._vaultState = state = { view: 'search', query: '', instType: 'bank', results: [], loading: false, error: null, detail: null };
+let state; window._vaultState = state = { view: 'search', query: '', resultFilter: 'all', results: [], loading: false, error: null, detail: null };
 
-function showHome() { state = { view: 'search', query: '', instType: state.instType, results: [], loading: false, error: null, detail: null }; render(); }
+function showHome() { state = { view: 'search', query: '', resultFilter: 'all', results: [], loading: false, error: null, detail: null }; render(); }
 // ── URL routing ──────────────────────────────────────────────────────────────
 const PAGE_META = {
   home: {
@@ -1541,13 +1541,8 @@ async function loadHomeNews() {
 function renderSearchBar(query = '') {
   return `
     <div class="search-row">
-      <div class="type-toggle">
-        <button class="type-btn ${state.instType === 'bank' ? 'active' : ''}" data-type="bank">Banks</button>
-        <button class="type-btn ${state.instType === 'cu' ? 'active' : ''}" data-type="cu">Credit Unions</button>
-        <button class="type-btn ${state.instType === 'both' ? 'active' : ''}" data-type="both">Both</button>
-      </div>
       <div class="search-input-wrap">
-        <input class="search-input" id="searchInput" type="text" placeholder="Institution name…" value="${query}" />
+        <input class="search-input" id="searchInput" type="text" placeholder="Search any bank or credit union…" value="${query}" />
       </div>
       <button class="search-btn" id="searchBtn" ${state.loading ? 'disabled style="opacity:0.6;cursor:not-allowed;"' : ''}>
         ${state.loading ? '<span style="display:inline-flex;align-items:center;gap:8px;"><span class="spinner" style="width:14px;height:14px;border-width:2px;margin:0;"></span>Searching…</span>' : 'Search →'}
@@ -1557,17 +1552,39 @@ function renderSearchBar(query = '') {
 
 function renderResults() {
   const results = state.results;
+  const filter = state.resultFilter || 'all';
+
+  // Apply filter
+  const filtered = results.filter(r => {
+    if (filter === 'bank') return r.type === 'bank';
+    if (filter === 'cu')   return r.type === 'cu';
+    return true;
+  });
+
+  const bankCount = results.filter(r => r.type === 'bank').length;
+  const cuCount   = results.filter(r => r.type === 'cu').length;
+
+  const pillStyle = (active) => active
+    ? 'padding:5px 14px;border-radius:20px;font-family:var(--mono);font-size:11px;cursor:pointer;border:1px solid var(--accent);background:rgba(77,184,255,0.15);color:var(--accent);letter-spacing:0.05em;'
+    : 'padding:5px 14px;border-radius:20px;font-family:var(--mono);font-size:11px;cursor:pointer;border:1px solid rgba(255,255,255,0.15);background:transparent;color:var(--muted);letter-spacing:0.05em;';
+
   return `
     <div class="search-section">
       <h1 class="search-heading">Results for <em>"${state.query}"</em></h1>
       <p class="search-sub">// ${results.length} institution${results.length !== 1 ? 's' : ''} found</p>
       ${renderSearchBar(state.query)}
     </div>
-    ${state.loading ? `<div class="state-msg"><div class="spinner"></div><br>Searching${state.instType === 'cu' ? ' NCUA credit unions…' : state.instType === 'both' ? ' banks &amp; credit unions…' : ' FDIC banks…'}</div>`  : ''}
+    ${state.loading ? `<div class="state-msg"><div class="spinner"></div><br>Searching banks &amp; credit unions…</div>` : ''}
     ${state.error ? `<div class="state-msg">${state.error}</div>` : ''}
     ${!state.loading && results.length === 0 ? '<div class="state-msg"><span class="big">∅</span>No results found. Try a broader search.</div>' : ''}
+    ${!state.loading && results.length > 0 ? `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
+      <button style="${pillStyle(filter==='all')}" onclick="state.resultFilter='all';render();">All (${results.length})</button>
+      ${bankCount > 0 ? `<button style="${pillStyle(filter==='bank')}" onclick="state.resultFilter='bank';render();">🏦 Banks (${bankCount})</button>` : ''}
+      ${cuCount > 0   ? `<button style="${pillStyle(filter==='cu')}"   onclick="state.resultFilter='cu';render();">🤝 Credit Unions (${cuCount})</button>` : ''}
+    </div>` : ''}
     <div class="results-list">
-      ${results.map(r => r.ncuaFallback ? `
+      ${filtered.map(r => r.ncuaFallback ? `
         <a href="${r.ncuaUrl}" target="_blank" style="text-decoration:none;">
           <div class="result-item" style="border-color:rgba(139,92,246,0.35);background:rgba(139,92,246,0.06);">
             <div>
@@ -1903,12 +1920,6 @@ function bindEvents() {
     state.view = state.results.length ? 'results' : 'search';
     render();
   });
-  document.querySelectorAll('.type-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      state.instType = btn.dataset.type;
-      render();
-    });
-  });
   document.querySelectorAll('.result-item').forEach(item => {
     item.addEventListener('click', () => {
       if (item.dataset.type === 'cu') {
@@ -1937,31 +1948,26 @@ function bindEvents() {
 async function doSearch() {
   const q = document.getElementById('searchInput')?.value?.trim();
   if (!q) return;
-  // Track search event
-  if (window.plausible) plausible('Search', { props: { query: q, type: state.instType } });
-  if (window.gtag) gtag('event', 'search', { search_term: q, institution_type: state.instType });
+  if (window.plausible) plausible('Search', { props: { query: q, type: 'all' } });
+  if (window.gtag) gtag('event', 'search', { search_term: q, institution_type: 'all' });
   state.query = q;
   state.loading = true;
   state.error = null;
   state.results = [];
+  state.resultFilter = 'all'; // reset filter on new search
   state.view = 'results';
   render();
 
   try {
-    let results = [];
-    if (state.instType === 'bank' || state.instType === 'both') {
-      const banks = await searchFDIC(q);
-      results = results.concat(banks);
-    }
-    if (state.instType === 'cu' || state.instType === 'both') {
-      try {
-        const cus = await searchNCUA(q);
-        results = results.concat(cus);
-      } catch(e) {
-        console.warn('NCUA search failed:', e);
-      }
-    }
-    results.sort((a,b) => (b.assets||0) - (a.assets||0));
+    // Always search both FDIC banks and NCUA credit unions in parallel
+    const [banks, cus] = await Promise.allSettled([
+      searchFDIC(q),
+      searchNCUA(q).catch(() => []),
+    ]);
+    const bankResults = banks.status === 'fulfilled' ? banks.value : [];
+    const cuResults   = cus.status   === 'fulfilled' ? cus.value   : [];
+    const results = [...bankResults, ...cuResults];
+    results.sort((a, b) => (b.assets || 0) - (a.assets || 0));
     state.results = results;
   } catch(e) {
     state.error = 'Search failed: ' + e.message;
