@@ -642,13 +642,27 @@ async function searchFDIC(query) {
     });
   });
 
-  // If still empty, fall back to last meaningful word wildcard
-  if (seen.size === 0) {
-    const lastWord = tokenWords[tokenWords.length - 1];
-    const fallbackUrl = `${FDIC_BASE}/institutions?filters=NAME%3A${encodeURIComponent(lastWord)}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=30&sort_by=ASSET&sort_order=DESC`;
-    const fb = await fetch(fallbackUrl).then(r => r.json()).catch(() => ({ data: [] }));
-    (fb.data || []).forEach(d => {
-      if (d.data?.CERT) seen.set(d.data.CERT, { ...d, score: fuzzyScore(d.data.NAME, q) });
+  // If still empty OR fewer results than expected, run individual word searches and merge
+  // This catches cases where FDIC fulltext and AND-chain both fail (e.g. "First Fidelity Bank")
+  const needsFallback = seen.size === 0;
+  const needsWordSearch = seen.size < 3 && tokenWords.length > 1;
+
+  if (needsFallback || needsWordSearch) {
+    // Search each meaningful word independently — guaranteed to find partial matches
+    const wordFetches = tokenWords.map(w =>
+      fetch(`${FDIC_BASE}/institutions?filters=NAME%3A${encodeURIComponent(w)}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=50&sort_by=ASSET&sort_order=DESC`)
+        .then(r => r.json()).catch(() => ({ data: [] }))
+    );
+    const wordResults = await Promise.all(wordFetches);
+    wordResults.forEach(data => {
+      (data.data || []).forEach(d => {
+        const cert = d.data?.CERT;
+        if (!cert) return;
+        const score = fuzzyScore(d.data.NAME, q);
+        if (score >= 30 && (!seen.has(cert) || seen.get(cert).score < score)) {
+          seen.set(cert, { ...d, score });
+        }
+      });
     });
   }
 
