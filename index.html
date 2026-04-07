@@ -586,12 +586,25 @@ function fuzzyScore(name, query) {
   const acronym = words.map(w => w[0]).join('');
   if (acronym.includes(q.toLowerCase())) return 75;
   if (acronym.startsWith(q.toLowerCase())) return 85;
-  // Token match: all query words appear somewhere in name
-  const qTokens = q.split(/\s+/);
-  if (qTokens.every(t => n.includes(t))) return 70;
-  // Partial token match
+  // Token match — but weight distinctive words more heavily
+  // Common banking words that shouldn't drive score on their own
+  const commonWords = new Set(['first','bank','national','federal','savings','trust','state',
+    'community','commercial','peoples','heritage','home','liberty','union','american',
+    'united','citizens','central','western','eastern','northern','southern','premier']);
+  const qTokens = q.split(/\s+/).filter(t => t.length > 1);
+  const distinctiveQ = qTokens.filter(t => !commonWords.has(t));
+  // If query has distinctive words, require at least one to match
+  if (distinctiveQ.length > 0) {
+    const distinctiveMatches = distinctiveQ.filter(t => n.includes(t)).length;
+    if (distinctiveMatches === 0) return 0; // no distinctive word matched — irrelevant
+    if (qTokens.every(t => n.includes(t))) return 70; // all words match
+    const matchCount = qTokens.filter(t => n.includes(t)).length;
+    return Math.round(10 + (distinctiveMatches / distinctiveQ.length) * 50 + (matchCount / qTokens.length) * 20);
+  }
+  // All query words are common (e.g. "First Bank") — standard partial match
+  if (qTokens.every(t => n.includes(t))) return 60;
   const matchCount = qTokens.filter(t => n.includes(t)).length;
-  return Math.round((matchCount / qTokens.length) * 60);
+  return Math.round((matchCount / qTokens.length) * 40);
 }
 
 async function searchFDIC(query) {
@@ -659,7 +672,7 @@ async function searchFDIC(query) {
         const cert = d.data?.CERT;
         if (!cert) return;
         const score = fuzzyScore(d.data.NAME, q);
-        if (score >= 30 && (!seen.has(cert) || seen.get(cert).score < score)) {
+        if (score >= 50 && (!seen.has(cert) || seen.get(cert).score < score)) {
           seen.set(cert, { ...d, score });
         }
       });
@@ -667,7 +680,7 @@ async function searchFDIC(query) {
   }
 
   return [...seen.values()]
-    .filter(d => d.score >= 20) // drop completely irrelevant results
+    .filter(d => d.score >= 40) // drop irrelevant results
     .sort((a, b) => b.score - a.score || (b.data?.ASSET || 0) - (a.data?.ASSET || 0))
     .map(d => ({
       type: 'bank',
