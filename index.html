@@ -595,49 +595,66 @@ function fuzzyScore(name, query) {
 }
 
 async function searchFDIC(query) {
-  const fields = 'NAME,CERT,CITY,STALP,ASSET,REPDTE,ACTIVE,INSTCAT';
+  const fields = 'NAME,CERT,CITY,STALP,ASSET,REPDTE,ACTIVE,INSTCAT,WEBADDR';
   const q = query.trim();
-  const qNoThe = q.replace(/^the\s+/i, ''); // strip leading "The" for broader match
+  const qNoThe = q.replace(/^the\s+/i, '');
 
-  // Run three searches in parallel: wildcard, full-text, and "The"-prefixed wildcard
-  // Strip stop words from wildcard tokens — "of", "the", "and" etc. break FDIC AND chain
-  const stopWords = new Set(['of','the','and','a','an','at','in','for','by','to','de','la','le']);
+  // Stop words to strip from wildcard token queries
+  const stopWords = new Set(['of','the','and','a','an','at','in','for','by','to','de','la','le','&']);
   const meaningfulWords = qNoThe.split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w.toLowerCase()));
-  // Fall back to all words if stripping leaves nothing (e.g. query is just "The")
   const tokenWords = meaningfulWords.length > 0 ? meaningfulWords : qNoThe.split(/\s+/);
-  const tokens      = tokenWords.map(w => `NAME:${encodeURIComponent(w)}*`).join('%20AND%20');
-  const theTokens   = `The%20${tokenWords.map(w => `NAME:${encodeURIComponent(w)}*`).join('%20AND%20')}`;
-  const wildcardUrl  = `${FDIC_BASE}/institutions?filters=${tokens}%20AND%20ACTIVE%3A1&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC`;
-  const theUrl       = `${FDIC_BASE}/institutions?filters=NAME%3AThe*${encodeURIComponent(qNoThe.split(/\s+/)[0])}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC`;
-  const fulltextUrl  = `${FDIC_BASE}/institutions?search=${encodeURIComponent(q)}&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC&filters=ACTIVE%3A1`;
 
-  const [r1, r2, r3] = await Promise.allSettled([fetch(wildcardUrl), fetch(fulltextUrl), fetch(theUrl)]);
-  
-  const results1 = r1.status === 'fulfilled' ? (await r1.value.json()).data || [] : [];
-  const results2 = r2.status === 'fulfilled' ? (await r2.value.json()).data || [] : [];
-  const results3 = r3.status === 'fulfilled' ? (await r3.value.json()).data || [] : [];
-  
+  // Build URLs — fulltext is the most reliable, wildcard supplements it
+  const fulltextUrl  = `${FDIC_BASE}/institutions?search=${encodeURIComponent(q)}&fields=${fields}&limit=30&sort_by=ASSET&sort_order=DESC&filters=ACTIVE%3A1`;
+  const wildcardUrl  = `${FDIC_BASE}/institutions?filters=NAME%3A${tokenWords.map(w => encodeURIComponent(w)+'*').join('%20AND%20NAME%3A')}%20AND%20ACTIVE%3A1&fields=${fields}&limit=30&sort_by=ASSET&sort_order=DESC`;
+  const theUrl       = `${FDIC_BASE}/institutions?filters=NAME%3AThe*${encodeURIComponent(tokenWords[0])}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC`;
+
+  // Acronym expansion — if query looks like an acronym (2-5 uppercase/short chars),
+  // also search by each letter as first letter of a word e.g. FFB → First* Fidelity* Bank*
+  // We can't know expansion so just do a broad first-letter wildcard on the last token word
+  const isAcronym = /^[A-Za-z]{2,6}$/.test(q) && q === q.toUpperCase();
+  const acronymUrl = isAcronym
+    ? `${FDIC_BASE}/institutions?search=${encodeURIComponent(q)}&fields=${fields}&limit=30&sort_by=ASSET&sort_order=DESC`
+    : null;
+
+  // Website domain search — catches "ffb" → "ffb.com" style queries
+  const domainQ = q.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const webUrl = domainQ.length >= 3
+    ? `${FDIC_BASE}/institutions?filters=WEBADDR%3A${domainQ}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=10&sort_by=ASSET&sort_order=DESC`
+    : null;
+
+  const fetches = [fulltextUrl, wildcardUrl, theUrl, acronymUrl, webUrl]
+    .filter(Boolean)
+    .map(url => fetch(url).then(r => r.json()).catch(() => ({ data: [] })));
+
+  const allData = await Promise.all(fetches);
+
   // Merge and deduplicate by CERT, prefer higher fuzzy score
   const seen = new Map();
-  [...results1, ...results2, ...results3].forEach(d => {
-    const cert = d.data.CERT;
-    const score = fuzzyScore(d.data.NAME, q);
-    if (!seen.has(cert) || seen.get(cert).score < score) {
-      seen.set(cert, { ...d, score });
-    }
+  allData.forEach(data => {
+    (data.data || []).forEach(d => {
+      const cert = d.data?.CERT;
+      if (!cert) return;
+      const score = fuzzyScore(d.data.NAME, q);
+      if (!seen.has(cert) || seen.get(cert).score < score) {
+        seen.set(cert, { ...d, score });
+      }
+    });
   });
-  
-  // If still empty, try single first-word wildcard fallback
+
+  // If still empty, fall back to last meaningful word wildcard
   if (seen.size === 0) {
-    const firstWord = tokenWords[tokenWords.length - 1] || qNoThe.split(/\s+/)[0]; // use last meaningful word (most distinctive)
-    const fallbackUrl = `${FDIC_BASE}/institutions?filters=NAME%3A${firstWord}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC`;
-    const r4 = await fetch(fallbackUrl);
-    const data4 = await r4.json();
-    (data4.data || []).forEach(d => seen.set(d.data.CERT, { ...d, score: fuzzyScore(d.data.NAME, q) }));
+    const lastWord = tokenWords[tokenWords.length - 1];
+    const fallbackUrl = `${FDIC_BASE}/institutions?filters=NAME%3A${encodeURIComponent(lastWord)}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=30&sort_by=ASSET&sort_order=DESC`;
+    const fb = await fetch(fallbackUrl).then(r => r.json()).catch(() => ({ data: [] }));
+    (fb.data || []).forEach(d => {
+      if (d.data?.CERT) seen.set(d.data.CERT, { ...d, score: fuzzyScore(d.data.NAME, q) });
+    });
   }
 
   return [...seen.values()]
-    .sort((a, b) => b.score - a.score || (b.data.ASSET || 0) - (a.data.ASSET || 0))
+    .filter(d => d.score >= 20) // drop completely irrelevant results
+    .sort((a, b) => b.score - a.score || (b.data?.ASSET || 0) - (a.data?.ASSET || 0))
     .map(d => ({
       type: 'bank',
       id: d.data.CERT,
