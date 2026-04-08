@@ -659,9 +659,9 @@ async function searchFDIC(query) {
         `${FDIC_BASE}/institutions?filters=NAME%3A*${encodeURIComponent(w)}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=50&sort_by=ASSET&sort_order=DESC`
       ) : []),
       // Combined multi-word contains — ALWAYS run for multi-word queries
-      // e.g. *First*Fidelity* finds "First Fidelity Bank" even when fulltext fails
-      ...(searchWords.length > 1 ? [
-        `${FDIC_BASE}/institutions?filters=NAME%3A*${searchWords.map(w=>encodeURIComponent(w)).join('*')}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC`
+      // Use tokenWords (not searchWords) so "First" isn't stripped — *First*Fidelity* not just *Fidelity*
+      ...(tokenWords.length > 1 ? [
+        `${FDIC_BASE}/institutions?filters=NAME%3A*${tokenWords.map(w=>encodeURIComponent(w)).join('*')}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC`
       ] : []),
     ];
     if (containsUrls.length > 0) {

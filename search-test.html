@@ -80,8 +80,8 @@ async function searchFDIC(query) {
       ...(seen.size < 5 ? searchWords.map(w =>
         `${FDIC}/institutions?filters=NAME%3A*${encodeURIComponent(w)}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=50&sort_by=ASSET&sort_order=DESC`
       ) : []),
-      ...(searchWords.length > 1 ? [
-        `${FDIC}/institutions?filters=NAME%3A*${searchWords.map(w=>encodeURIComponent(w)).join('*')}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC`
+      ...(tokenWords.length > 1 ? [
+        `${FDIC}/institutions?filters=NAME%3A*${tokenWords.map(w=>encodeURIComponent(w)).join('*')}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC`
       ] : []),
     ];
     if (containsUrls.length > 0) (await Promise.all(containsUrls.map(get))).forEach(d => merge(seen, d));
