@@ -76,9 +76,14 @@ async function searchFDIC(query) {
   const seen = new Map();
   (await Promise.all(round1Urls.map(get))).forEach(d => merge(seen, d));
   if (seen.size < 5 && searchWords.length > 0) {
-    const containsUrls = searchWords.map(w =>
-      `${FDIC}/institutions?filters=NAME%3A*${encodeURIComponent(w)}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=50&sort_by=ASSET&sort_order=DESC`
-    );
+    const containsUrls = [
+      ...searchWords.map(w =>
+        `${FDIC}/institutions?filters=NAME%3A*${encodeURIComponent(w)}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=50&sort_by=ASSET&sort_order=DESC`
+      ),
+      ...(searchWords.length > 1 ? [
+        `${FDIC}/institutions?filters=NAME%3A*${searchWords.map(w=>encodeURIComponent(w)).join('*')}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC`
+      ] : []),
+    ];
     (await Promise.all(containsUrls.map(get))).forEach(d => merge(seen, d));
   }
   return [...seen.values()]
@@ -123,9 +128,9 @@ async function runAll() {
     ['MidFirst Bank',       'MidFirst Bank',                  4063],  // Oklahoma City, OK
     ['Triad Bank',          'Triad Bank, National Assoc.',   24677],  // Tulsa, OK
     ['Citizens Bank',       'The Citizens Bank',             17211],  // Batesville, AR — "The" prefix
-    ['Bank of the Plains',  'Bank of the Plains',             2434],  // needs contains search - verify CERT
+    ['Bank of the Plains',  'Bank of the Plains',            18118],  // needs contains search - verify CERT
     ['Wells Fargo',         'Wells Fargo Bank',               3511],  // national
-    ['Bank of Oklahoma',    'BANK OF OKLAHOMA',               4214],  // needs contains search
+    ['Bank of Oklahoma',    'BOKF, National Association',     4214],  // needs contains search
     ['JPMorgan Chase',      'JPMorgan Chase Bank',             628],  // full name works
     ['Fidelity Bank',       'Fidelity Bank, National Assoc.',30895],  // Wichita, KS
   ];
