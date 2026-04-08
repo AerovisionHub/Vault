@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Search Debug</title>
+<style>body{font-family:monospace;background:#0f1240;color:#fff;padding:24px;max-width:1000px;margin:0 auto;}
+.r{background:rgba(255,255,255,0.05);padding:6px 10px;border-radius:4px;margin:3px 0;font-size:11px;}
+h3{color:#4db8ff;margin:12px 0 4px;}</style></head><body>
+<h2 style="color:#4db8ff">Search Debug — Raw FDIC responses</h2>
+<div id="out"></div>
+<script>
+const FDIC = 'https://banks.data.fdic.gov/api';
+const F = 'NAME,CERT,CITY,STALP,ASSET,WEBADDR';
+
+async function q(label, url) {
+  const d = await fetch(url).then(r=>r.json()).catch(()=>({data:[]}));
+  const rows = (d.data||[]).map(x=>x.data);
+  document.getElementById('out').innerHTML += `<h3>${label} (${rows.length} results)</h3>`
+    + (rows.length ? rows.slice(0,8).map(r=>`<div class="r">CERT ${r.CERT} — ${r.NAME} · ${r.CITY}, ${r.STALP} · $${(r.ASSET/1000).toFixed(0)}M</div>`).join('') : '<div class="r" style="color:#f87171">No results</div>');
+}
+
+async function run() {
+  // Debug First Fidelity Bank failure
+  await q('fulltext "First Fidelity Bank"',
+    `${FDIC}/institutions?search=First%20Fidelity%20Bank&fields=${F}&limit=10&sort_by=ASSET&sort_order=DESC&filters=ACTIVE%3A1`);
+  await q('wildcard NAME:Fidelity* (active)',
+    `${FDIC}/institutions?filters=NAME%3AFidelity*%20AND%20ACTIVE%3A1&fields=${F}&limit=10&sort_by=ASSET&sort_order=DESC`);
+  await q('wildcard NAME:First* AND NAME:Fidelity*',
+    `${FDIC}/institutions?filters=NAME%3AFirst*%20AND%20NAME%3AFidelity*%20AND%20ACTIVE%3A1&fields=${F}&limit=10&sort_by=ASSET&sort_order=DESC`);
+  await q('CERT lookup 23473 (First Fidelity OK)',
+    `${FDIC}/institutions?filters=CERT%3A23473&fields=${F}&limit=1`);
+
+  // Debug Bank of the Plains failure
+  await q('fulltext "Bank of the Plains"',
+    `${FDIC}/institutions?search=Bank%20of%20the%20Plains&fields=${F}&limit=10&sort_by=ASSET&sort_order=DESC&filters=ACTIVE%3A1`);
+  await q('wildcard NAME:Plains*',
+    `${FDIC}/institutions?filters=NAME%3APlains*%20AND%20ACTIVE%3A1&fields=${F}&limit=10&sort_by=ASSET&sort_order=DESC`);
+  await q('CERT lookup 22647 (Bank of the Plains)',
+    `${FDIC}/institutions?filters=CERT%3A22647&fields=${F}&limit=1`);
+
+  // Debug Chase failure
+  await q('fulltext "Chase"',
+    `${FDIC}/institutions?search=Chase&fields=${F}&limit=10&sort_by=ASSET&sort_order=DESC&filters=ACTIVE%3A1`);
+  await q('wildcard NAME:Chase*',
+    `${FDIC}/institutions?filters=NAME%3AChase*%20AND%20ACTIVE%3A1&fields=${F}&limit=10&sort_by=ASSET&sort_order=DESC`);
+
+  // Debug Bank of Oklahoma
+  await q('fulltext "Bank of Oklahoma"',
+    `${FDIC}/institutions?search=Bank%20of%20Oklahoma&fields=${F}&limit=10&sort_by=ASSET&sort_order=DESC&filters=ACTIVE%3A1`);
+  await q('wildcard NAME:Oklahoma*',
+    `${FDIC}/institutions?filters=NAME%3AOklahoma*%20AND%20ACTIVE%3A1&fields=${F}&limit=10&sort_by=ASSET&sort_order=DESC`);
+}
+run();
+</script></body></html>
