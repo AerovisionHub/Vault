@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>CERT Check</title>
+<style>body{font-family:monospace;background:#0f1240;color:#fff;padding:24px;max-width:800px;margin:0 auto;}
+.r{background:rgba(255,255,255,0.05);padding:10px 14px;border-radius:6px;margin:6px 0;font-size:12px;line-height:1.8;}
+h3{color:#4db8ff;margin:16px 0 6px;}</style></head><body>
+<h2 style="color:#4db8ff">CERT 59363 Diagnostic</h2>
+<div id="out">Loading…</div>
+<script>
+const FDIC = 'https://banks.data.fdic.gov/api';
+async function run() {
+  const out = document.getElementById('out');
+  out.innerHTML = '';
+
+  // Full institution record
+  let d = await fetch(`${FDIC}/institutions?filters=CERT%3A59363&fields=NAME,CERT,CITY,STALP,ASSET,ACTIVE,INSTCAT,ESTYMD,REPDTE,WEBADDR,ADDRESS,ZIP,CHRTAGNT,INSDATE&limit=1`).then(r=>r.json());
+  const inst = d.data?.[0]?.data;
+  out.innerHTML += `<h3>Institution Record</h3><div class="r">${inst ? JSON.stringify(inst, null, 2) : 'NOT FOUND'}</div>`;
+
+  // Financials
+  d = await fetch(`${FDIC}/financials?filters=CERT%3A59363&fields=REPDTE,ASSET,DEP,NETINC,ROA,ROE,RBC1AAJ&limit=4&sort_by=REPDTE&sort_order=DESC`).then(r=>r.json());
+  const fins = d.data || [];
+  out.innerHTML += `<h3>Financials (${fins.length} quarters)</h3>`;
+  if (!fins.length) out.innerHTML += '<div class="r" style="color:#f87171">No financial data found</div>';
+  else fins.forEach(f => out.innerHTML += `<div class="r">${JSON.stringify(f.data)}</div>`);
+}
+run();
+</script></body></html>
