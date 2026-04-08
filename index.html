@@ -612,75 +612,56 @@ async function searchFDIC(query) {
   const q = query.trim();
   const qNoThe = q.replace(/^the\s+/i, '');
 
-  // Stop words to strip from wildcard token queries
+  // Strip stop words for wildcard queries
   const stopWords = new Set(['of','the','and','a','an','at','in','for','by','to','de','la','le','&']);
   const meaningfulWords = qNoThe.split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w.toLowerCase()));
   const tokenWords = meaningfulWords.length > 0 ? meaningfulWords : qNoThe.split(/\s+/);
 
-  // Build URLs — fulltext is the most reliable, wildcard supplements it
-  const fulltextUrl  = `${FDIC_BASE}/institutions?search=${encodeURIComponent(q)}&fields=${fields}&limit=30&sort_by=ASSET&sort_order=DESC&filters=ACTIVE%3A1`;
-  const wildcardUrl  = `${FDIC_BASE}/institutions?filters=NAME%3A${tokenWords.map(w => encodeURIComponent(w)+'*').join('%20AND%20NAME%3A')}%20AND%20ACTIVE%3A1&fields=${fields}&limit=30&sort_by=ASSET&sort_order=DESC`;
-  const theUrl       = `${FDIC_BASE}/institutions?filters=NAME%3AThe*${encodeURIComponent(tokenWords[0])}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC`;
+  // Common banking words — used to identify distinctive words
+  const commonBankWords = new Set(['first','bank','national','federal','savings','trust','state',
+    'community','commercial','peoples','heritage','home','liberty','union','american',
+    'united','citizens','central','western','eastern','northern','southern','premier','financial']);
+  const distinctiveWords = tokenWords.filter(w => !commonBankWords.has(w.toLowerCase()));
+  const searchWords = distinctiveWords.length > 0 ? distinctiveWords : tokenWords;
 
-  // Acronym expansion — if query looks like an acronym (2-5 uppercase/short chars),
-  // also search by each letter as first letter of a word e.g. FFB → First* Fidelity* Bank*
-  // We can't know expansion so just do a broad first-letter wildcard on the last token word
-  const isAcronym = /^[A-Za-z]{2,6}$/.test(q) && q === q.toUpperCase();
-  const acronymUrl = isAcronym
-    ? `${FDIC_BASE}/institutions?search=${encodeURIComponent(q)}&fields=${fields}&limit=30&sort_by=ASSET&sort_order=DESC`
-    : null;
-
-  // Website domain search — catches "ffb" → "ffb.com" style queries
-  const domainQ = q.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const webUrl = domainQ.length >= 3
-    ? `${FDIC_BASE}/institutions?filters=WEBADDR%3A${domainQ}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=10&sort_by=ASSET&sort_order=DESC`
-    : null;
-
-  const fetches = [fulltextUrl, wildcardUrl, theUrl, acronymUrl, webUrl]
-    .filter(Boolean)
-    .map(url => fetch(url).then(r => r.json()).catch(() => ({ data: [] })));
-
-  const allData = await Promise.all(fetches);
-
-  // Merge and deduplicate by CERT, prefer higher fuzzy score
-  const seen = new Map();
-  allData.forEach(data => {
+  const merge = (seen, data, q) => {
     (data.data || []).forEach(d => {
-      const cert = d.data?.CERT;
-      if (!cert) return;
+      const cert = d.data?.CERT; if (!cert) return;
       const score = fuzzyScore(d.data.NAME, q);
-      if (!seen.has(cert) || seen.get(cert).score < score) {
-        seen.set(cert, { ...d, score });
-      }
+      if (!seen.has(cert) || seen.get(cert).score < score) seen.set(cert, { ...d, score });
     });
-  });
+  };
 
-  // If still empty OR fewer results than expected, run individual word searches and merge
-  // This catches cases where FDIC fulltext and AND-chain both fail (e.g. "First Fidelity Bank")
-  const needsFallback = seen.size === 0;
-  const needsWordSearch = seen.size < 3 && tokenWords.length > 1;
+  const get = url => fetch(url).then(r => r.json()).catch(() => ({ data: [] }));
 
-  if (needsFallback || needsWordSearch) {
-    // Search each meaningful word independently — guaranteed to find partial matches
-    const wordFetches = tokenWords.map(w =>
-      fetch(`${FDIC_BASE}/institutions?filters=NAME%3A${encodeURIComponent(w)}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=50&sort_by=ASSET&sort_order=DESC`)
-        .then(r => r.json()).catch(() => ({ data: [] }))
+  // Round 1: FDIC fulltext + starts-with wildcard on each token word (parallel)
+  const round1Urls = [
+    // FDIC fulltext search
+    `${FDIC_BASE}/institutions?search=${encodeURIComponent(q)}&fields=${fields}&limit=30&sort_by=ASSET&sort_order=DESC&filters=ACTIVE%3A1`,
+    // Starts-with on each distinctive/meaningful word independently (OR-style, not AND)
+    ...searchWords.map(w => `${FDIC_BASE}/institutions?filters=NAME%3A${encodeURIComponent(w)}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=50&sort_by=ASSET&sort_order=DESC`),
+    // "The"-prefixed starts-with
+    `${FDIC_BASE}/institutions?filters=NAME%3AThe*${encodeURIComponent(searchWords[0])}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC`,
+    // Website domain search
+    `${FDIC_BASE}/institutions?filters=WEBADDR%3A${q.toLowerCase().replace(/[^a-z0-9]/g,'')}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=10&sort_by=ASSET&sort_order=DESC`,
+  ];
+
+  const seen = new Map();
+  const round1 = await Promise.all(round1Urls.map(get));
+  round1.forEach(data => merge(seen, data, q));
+
+  // Round 2: If still thin, add contains-style wildcard (*word*) for distinctive words
+  // This catches "Chase" in "JPMorgan Chase Bank", "Plains" in "Bank of the Plains"
+  if (seen.size < 5 && searchWords.length > 0) {
+    const containsUrls = searchWords.map(w =>
+      `${FDIC_BASE}/institutions?filters=NAME%3A*${encodeURIComponent(w)}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=50&sort_by=ASSET&sort_order=DESC`
     );
-    const wordResults = await Promise.all(wordFetches);
-    wordResults.forEach(data => {
-      (data.data || []).forEach(d => {
-        const cert = d.data?.CERT;
-        if (!cert) return;
-        const score = fuzzyScore(d.data.NAME, q);
-        if (score >= 50 && (!seen.has(cert) || seen.get(cert).score < score)) {
-          seen.set(cert, { ...d, score });
-        }
-      });
-    });
+    const round2 = await Promise.all(containsUrls.map(get));
+    round2.forEach(data => merge(seen, data, q));
   }
 
   return [...seen.values()]
-    .filter(d => d.score >= 40) // drop irrelevant results
+    .filter(d => d.score >= 40)
     .sort((a, b) => b.score - a.score || (b.data?.ASSET || 0) - (a.data?.ASSET || 0))
     .map(d => ({
       type: 'bank',
