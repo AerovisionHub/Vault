@@ -518,6 +518,9 @@
     <a onclick="showLenders()" style="text-decoration:none;cursor:pointer;">
       <span class="badge" style="background:rgba(74,222,128,0.12);color:#4ade80;border:1px solid rgba(74,222,128,0.25);">Find a Lender</span>
     </a>
+    <a onclick="showCharters()" style="text-decoration:none;cursor:pointer;">
+      <span class="badge" style="background:rgba(251,191,36,0.12);color:#fbbf24;border:1px solid rgba(251,191,36,0.25);">New Charters</span>
+    </a>
     <a onclick="showAbout()" style="text-decoration:none;cursor:pointer;">
       <span class="badge" style="background:rgba(139,92,246,0.12);color:#c4b5fd;border:1px solid rgba(139,92,246,0.25);">About</span>
     </a>
@@ -1360,6 +1363,12 @@ const PAGE_META = {
     canonical: 'https://vaultbot.ai/lenders',
     image: 'https://vaultbot.ai/og-lenders.png?v=4'
   },
+  charters: {
+    title: 'New Bank Charters — Vault',
+    desc:  'Every new FDIC-insured bank chartered in 2023, 2024, and 2025. Track the de novo banking revival with data and news for each new institution.',
+    canonical: 'https://vaultbot.ai/charters',
+    image: 'https://vaultbot.ai/og-charters.png?v=1'
+  },
   about: {
     title: 'About Vault — Built with AI by iDENTIFY',
     desc:  'Vault was built entirely with Claude AI. Free bank and credit union intelligence powered by FDIC BankFind and NCUA public data. No login, no paywall.',
@@ -1393,6 +1402,7 @@ function navigate(path, view) {
 function showHome()     { navigate('/', 'home'); }
 function showIndustry() { navigate('/industry', 'industry'); }
 function showLenders()  { navigate('/lenders', 'lenders'); }
+function showCharters() { navigate('/charters', 'charters'); }
 function showAbout()    { navigate('/about', 'about'); }
 
 // Handle browser back/forward
@@ -1406,6 +1416,7 @@ window.addEventListener('popstate', (e) => {
 function pathToView(path) {
   if (path.startsWith('/industry')) return 'industry';
   if (path.startsWith('/lenders'))  return 'lenders';
+  if (path.startsWith('/charters')) return 'charters';
   if (path.startsWith('/about'))    return 'about';
   return 'home';
 }
@@ -1417,6 +1428,7 @@ function render() {
   else if (state.view === 'detail') app.innerHTML = renderDetail();
   else if (state.view === 'about') app.innerHTML = renderAbout();
   else if (state.view === 'lenders') { app.innerHTML = renderLenders(); setTimeout(initLenders, 50); }
+  else if (state.view === 'charters') { app.innerHTML = renderCharters(); setTimeout(initCharters, 50); }
   else if (state.view === 'industry') { app.innerHTML = renderIndustry(); setTimeout(drawIndustryCharts, 50); }
   bindEvents();
   // Draw chart after DOM is updated
@@ -2710,6 +2722,207 @@ async function runLenderSearch() {
       </div>`;
   } catch(e) {
     el.innerHTML = `<div style="color:#f87171;font-family:var(--mono);font-size:13px;padding:20px 0;">Error loading data: ${e.message}</div>`;
+  }
+}
+
+// ── New Charters page ────────────────────────────────────────────────────────
+function renderCharters() {
+  return `
+  <div style="max-width:900px;margin:0 auto;padding:32px 0 80px;">
+    <button class="back-btn" onclick="showHome()">← Back to Search</button>
+
+    <div style="margin-bottom:8px;">
+      <h1 style="font-family:var(--serif);font-size:36px;letter-spacing:-0.5px;margin-bottom:10px;">New Bank Charters</h1>
+      <p style="color:var(--muted);font-size:14px;max-width:640px;line-height:1.7;">
+        Every new FDIC-insured bank chartered since 2023. After a decade of near-zero de novo activity —
+        just <strong style="color:var(--text);">1 charter in 2012</strong> — the industry is quietly rebuilding.
+        Community gaps, fintech sponsorship needs, and post-SVB regulatory recalibration are driving the revival.
+      </p>
+    </div>
+
+    <!-- Year selector -->
+    <div style="display:flex;gap:8px;margin-bottom:28px;flex-wrap:wrap;">
+      <button onclick="setCharterYear(2025)" id="charterBtn2025"
+        style="padding:6px 18px;border-radius:20px;font-family:var(--mono);font-size:12px;cursor:pointer;border:1px solid var(--accent);background:rgba(77,184,255,0.15);color:var(--accent);">2025</button>
+      <button onclick="setCharterYear(2024)" id="charterBtn2024"
+        style="padding:6px 18px;border-radius:20px;font-family:var(--mono);font-size:12px;cursor:pointer;border:1px solid rgba(255,255,255,0.15);background:transparent;color:var(--muted);">2024</button>
+      <button onclick="setCharterYear(2023)" id="charterBtn2023"
+        style="padding:6px 18px;border-radius:20px;font-family:var(--mono);font-size:12px;cursor:pointer;border:1px solid rgba(255,255,255,0.15);background:transparent;color:var(--muted);">2023</button>
+      <button onclick="setCharterYear('all')" id="charterBtnall"
+        style="padding:6px 18px;border-radius:20px;font-family:var(--mono);font-size:12px;cursor:pointer;border:1px solid rgba(255,255,255,0.15);background:transparent;color:var(--muted);">All Years</button>
+    </div>
+
+    <!-- Stats row — filled async -->
+    <div id="charterStats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:32px;"></div>
+
+    <!-- Charter list -->
+    <div id="charterList">
+      <div style="display:flex;align-items:center;gap:10px;padding:40px 0;justify-content:center;color:var(--muted);font-family:var(--mono);font-size:13px;">
+        <div class="spinner"></div>Loading new charters…
+      </div>
+    </div>
+  </div>`;
+}
+
+let _charterYear = 2025;
+let _charterCache = {};
+
+function setCharterYear(year) {
+  _charterYear = year;
+  // Update button styles
+  ['2025','2024','2023','all'].forEach(y => {
+    const btn = document.getElementById(`charterBtn${y}`);
+    if (!btn) return;
+    const active = String(y) === String(year);
+    btn.style.border = active ? '1px solid var(--accent)' : '1px solid rgba(255,255,255,0.15)';
+    btn.style.background = active ? 'rgba(77,184,255,0.15)' : 'transparent';
+    btn.style.color = active ? 'var(--accent)' : 'var(--muted)';
+  });
+  loadCharters(year);
+}
+
+async function initCharters() {
+  loadCharters(2025);
+}
+
+async function loadCharters(year) {
+  const listEl = document.getElementById('charterList');
+  const statsEl = document.getElementById('charterStats');
+  if (!listEl) return;
+
+  listEl.innerHTML = '<div style="display:flex;align-items:center;gap:10px;padding:40px 0;justify-content:center;color:var(--muted);font-family:var(--mono);font-size:13px;"><div class="spinner"></div>Loading…</div>';
+
+  // Check cache
+  if (_charterCache[year]) { renderCharterData(_charterCache[year], year); return; }
+
+  const fields = 'NAME,CERT,CITY,STALP,ASSET,ESTYMD,INSTCAT,CHRTAGNT,WEBADDR,NAMEHCR,ADDRESS,ZIP,DEP';
+  let filters;
+  if (year === 'all') {
+    filters = `ESTYMD%3A%5B20230101%20TO%2099999999%5D%20AND%20ACTIVE%3A1`;
+  } else {
+    filters = `ESTYMD%3A%5B${year}0101%20TO%20${year}1231%5D%20AND%20ACTIVE%3A1`;
+  }
+
+  try {
+    const r = await fetch(`${FDIC_BASE}/institutions?filters=${filters}&fields=${fields}&limit=100&sort_by=ESTYMD&sort_order=DESC`);
+    const data = await r.json();
+    const banks = (data.data || []).map(d => d.data).filter(Boolean);
+    _charterCache[year] = banks;
+    renderCharterData(banks, year);
+  } catch(e) {
+    listEl.innerHTML = `<div style="color:#f87171;font-family:var(--mono);font-size:13px;padding:20px 0;">Error loading charter data: ${e.message}</div>`;
+  }
+}
+
+function renderCharterData(banks, year) {
+  const listEl = document.getElementById('charterList');
+  const statsEl = document.getElementById('charterStats');
+  if (!listEl) return;
+
+  // Stats
+  const totalAssets = banks.reduce((s, b) => s + (Number(b.ASSET) || 0), 0);
+  const states = [...new Set(banks.map(b => b.STALP))].length;
+  const independent = banks.filter(b => !b.NAMEHCR).length;
+  const avgAssets = banks.length ? totalAssets / banks.length : 0;
+
+  if (statsEl) {
+    statsEl.innerHTML = [
+      { label: 'New Charters', val: banks.length, sub: year === 'all' ? '2023–2025' : `In ${year}`, color: '#fbbf24' },
+      { label: 'Total Assets', val: `$${(totalAssets/1000).toFixed(0)}M`, sub: 'Combined', color: '#4db8ff' },
+      { label: 'States', val: states, sub: 'Represented', color: '#b06ef3' },
+      { label: 'Independent', val: independent, sub: 'No holding co.', color: '#4ade80' },
+    ].map(s => `
+      <div style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:12px;padding:16px;text-align:center;">
+        <div style="font-family:var(--serif);font-size:28px;color:${s.color};margin-bottom:4px;">${s.val}</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text);">${s.label}</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);">${s.sub}</div>
+      </div>`).join('');
+  }
+
+  if (!banks.length) {
+    listEl.innerHTML = '<div style="color:var(--muted);font-family:var(--mono);font-size:13px;padding:40px 0;text-align:center;">No new charters found for this period.</div>';
+    return;
+  }
+
+  listEl.innerHTML = banks.map(b => {
+    const assets = Number(b.ASSET) || 0;
+    const estDate = b.ESTYMD ? new Date(b.ESTYMD).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+    const isIndependent = !b.NAMEHCR;
+    const web = b.WEBADDR ? b.WEBADDR.replace(/^https?:\/\//i,'').replace(/\/$/,'').toLowerCase() : null;
+
+    return `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:12px;cursor:pointer;transition:border-color 0.2s,background 0.2s;"
+      onmouseover="this.style.borderColor='var(--accent)';this.style.background='rgba(77,184,255,0.05)'"
+      onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface)'"
+      onclick="loadDetail('${b.CERT}','bank')">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:4px;">${b.NAME}</div>
+          <div style="font-family:var(--mono);font-size:12px;color:var(--muted);">
+            ${b.CITY}, ${b.STALP} · CERT ${b.CERT} · Chartered ${estDate}
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+            <span style="font-family:var(--mono);font-size:10px;padding:2px 8px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.25);border-radius:4px;color:#fbbf24;">
+              ✦ New Charter
+            </span>
+            ${isIndependent ? `<span style="font-family:var(--mono);font-size:10px;padding:2px 8px;background:rgba(74,222,128,0.1);border:1px solid rgba(74,222,128,0.25);border-radius:4px;color:#4ade80;">Independent</span>` : `<span style="font-family:var(--mono);font-size:10px;padding:2px 8px;background:rgba(77,184,255,0.1);border:1px solid rgba(77,184,255,0.25);border-radius:4px;color:var(--accent);">${b.NAMEHCR}</span>`}
+            ${b.CHRTAGNT ? `<span style="font-family:var(--mono);font-size:10px;padding:2px 8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:4px;color:var(--muted);">${b.CHRTAGNT} Charter</span>` : ''}
+          </div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;">
+          <div style="font-family:var(--serif);font-size:22px;color:var(--accent);">${fmt$(thousands(assets))}</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);">Total Assets</div>
+          ${web ? `<a href="https://${web}" target="_blank" onclick="event.stopPropagation()" style="font-family:var(--mono);font-size:10px;color:var(--muted);text-decoration:underline;text-underline-offset:2px;">${web} ↗</a>` : ''}
+        </div>
+      </div>
+      <!-- News placeholder — loads async per card -->
+      <div id="charterNews_${b.CERT}" style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.06);">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);">Loading news…</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Load news async for each charter
+  banks.forEach(b => loadCharterNews(b));
+}
+
+async function loadCharterNews(bank) {
+  const el = document.getElementById(`charterNews_${bank.CERT}`);
+  if (!el) return;
+  try {
+    const q = `"${bank.NAME}" bank charter`;
+    const innerRss = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
+    const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(innerRss)}`;
+    const r = await fetch(apiUrl);
+    if (!r.ok) { el.innerHTML = ''; return; }
+    const data = await r.json();
+    if (data.status !== 'ok' || !data.items?.length) { el.innerHTML = ''; return; }
+
+    // Filter: must mention bank name, cutoff 3 years
+    const cutoff = new Date(); cutoff.setFullYear(cutoff.getFullYear() - 3);
+    const nameWords = bank.NAME.toLowerCase().split(/\s+/).filter(w => w.length > 3 && !['bank','trust','national','federal','savings'].includes(w));
+    const relevant = data.items.filter(item => {
+      const t = item.title?.toLowerCase() || '';
+      const fresh = !item.pubDate || new Date(item.pubDate) >= cutoff;
+      return fresh && nameWords.some(w => t.includes(w));
+    }).slice(0, 2);
+
+    if (!relevant.length) { el.innerHTML = ''; return; }
+
+    el.innerHTML = relevant.map(item => {
+      const dashIdx = item.title?.lastIndexOf(' - ') ?? -1;
+      const title = dashIdx > 0 ? item.title.slice(0, dashIdx) : item.title;
+      const source = dashIdx > 0 ? item.title.slice(dashIdx + 3) : 'News';
+      const date = item.pubDate ? new Date(item.pubDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+      return `<a href="${item.link}" target="_blank" rel="noopener" onclick="event.stopPropagation()"
+        style="display:flex;justify-content:space-between;align-items:center;gap:12px;text-decoration:none;padding:6px 0;"
+        onmouseover="this.style.opacity='0.75'" onmouseout="this.style.opacity='1'">
+        <div style="font-size:12px;color:var(--text);line-height:1.4;">${title}</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;">${source} · ${date}</div>
+      </a>`;
+    }).join('<div style="border-top:1px solid rgba(255,255,255,0.05);"></div>');
+  } catch(e) {
+    el.innerHTML = '';
   }
 }
 
