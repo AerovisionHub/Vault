@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>New Charters Check</title>
+<style>body{font-family:monospace;background:#0f1240;color:#fff;padding:24px;max-width:900px;margin:0 auto;}
+.r{background:rgba(255,255,255,0.05);padding:8px 12px;border-radius:6px;margin:4px 0;font-size:11px;line-height:1.7;}
+h3{color:#4db8ff;margin:14px 0 6px;}</style></head><body>
+<h2 style="color:#4db8ff">New Charter Data Check</h2>
+<div id="out">Loading…</div>
+<script>
+const FDIC = 'https://banks.data.fdic.gov/api';
+async function run() {
+  const out = document.getElementById('out');
+  out.innerHTML = '';
+  const fields = 'NAME,CERT,CITY,STALP,ASSET,ESTYMD,ACTIVE,INSTCAT,CHRTAGNT,WEBADDR,NAMEHCR,DEP';
+
+  // 2025 charters
+  let d = await fetch(`${FDIC}/institutions?filters=ESTYMD%3A%5B20250101%20TO%2020251231%5D%20AND%20ACTIVE%3A1&fields=${fields}&limit=50&sort_by=ESTYMD&sort_order=DESC`).then(r=>r.json());
+  const c2025 = (d.data||[]).map(x=>x.data);
+  out.innerHTML += `<h3>2025 New Charters (${c2025.length} found)</h3>`;
+  c2025.forEach(b => out.innerHTML += `<div class="r"><strong>${b.NAME}</strong> · ${b.CITY}, ${b.STALP} · Est: ${b.ESTYMD} · $${(b.ASSET/1000).toFixed(1)}M · ${b.CHRTAGNT||'—'} · ${b.WEBADDR||'no web'}</div>`);
+
+  // 2024 charters
+  d = await fetch(`${FDIC}/institutions?filters=ESTYMD%3A%5B20240101%20TO%2020241231%5D%20AND%20ACTIVE%3A1&fields=${fields}&limit=50&sort_by=ESTYMD&sort_order=DESC`).then(r=>r.json());
+  const c2024 = (d.data||[]).map(x=>x.data);
+  out.innerHTML += `<h3>2024 New Charters (${c2024.length} found)</h3>`;
+  c2024.forEach(b => out.innerHTML += `<div class="r"><strong>${b.NAME}</strong> · ${b.CITY}, ${b.STALP} · Est: ${b.ESTYMD} · $${(b.ASSET/1000).toFixed(1)}M · ${b.CHRTAGNT||'—'} · HC: ${b.NAMEHCR||'independent'}</div>`);
+
+  // 2023 charters  
+  d = await fetch(`${FDIC}/institutions?filters=ESTYMD%3A%5B20230101%20TO%2020231231%5D%20AND%20ACTIVE%3A1&fields=${fields}&limit=50&sort_by=ESTYMD&sort_order=DESC`).then(r=>r.json());
+  const c2023 = (d.data||[]).map(x=>x.data);
+  out.innerHTML += `<h3>2023 New Charters (${c2023.length} found)</h3>`;
+  c2023.forEach(b => out.innerHTML += `<div class="r"><strong>${b.NAME}</strong> · ${b.CITY}, ${b.STALP} · Est: ${b.ESTYMD} · $${(b.ASSET/1000).toFixed(1)}M · ${b.CHRTAGNT||'—'}</div>`);
+}
+run();
+</script></body></html>
