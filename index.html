@@ -109,7 +109,7 @@
     --accent-glow: rgba(77,184,255,0.35);
     --accent2: #b06ef3;
     --text: #ffffff;
-    --muted: rgba(255,255,255,0.65);
+    --muted: rgba(255,255,255,0.80);
     --red: #ff6b6b;
     --yellow: #fbbf24;
     --blue: #7dd3fc;
@@ -1467,7 +1467,7 @@ function renderSearch() {
         <div class="home-stat-label">FDIC Banks</div>
       </div>
       <div class="home-stat">
-        <div class="home-stat-value">4,600+</div>
+        <div class="home-stat-value">4,750+</div>
         <div class="home-stat-label">Credit Unions</div>
       </div>
       <div class="home-stat">
@@ -2388,16 +2388,25 @@ function renderLenders() {
 
     <!-- Filters -->
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;padding:20px;background:var(--surface);border:1px solid var(--border);border-radius:12px;">
-      <!-- Search box — full width row -->
-      <div style="width:100%;display:flex;flex-direction:column;gap:6px;">
-        <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">Search by Name or City</label>
-        <input id="lenderSearch" type="text" placeholder="e.g. First National Bank, Tulsa, Bank of Oklahoma…"
-          style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:10px 14px;font-size:14px;font-family:var(--mono);outline:none;transition:border-color 0.2s;"
-          onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
-          onkeydown="if(event.key==='Enter') runLenderSearch()" />
+      <!-- Row 1: Name + City search boxes -->
+      <div style="width:100%;display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">Institution Name</label>
+          <input id="lenderSearch" type="text" placeholder="e.g. First National Bank, MidFirst…"
+            style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:10px 14px;font-size:13px;font-family:var(--mono);outline:none;transition:border-color 0.2s;"
+            onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
+            onkeydown="if(event.key==='Enter') runLenderSearch()" />
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">City</label>
+          <input id="lenderCity" type="text" placeholder="e.g. Tulsa, Oklahoma City…"
+            style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:10px 14px;font-size:13px;font-family:var(--mono);outline:none;transition:border-color 0.2s;"
+            onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
+            onkeydown="if(event.key==='Enter') runLenderSearch()" />
+        </div>
       </div>
-      <!-- Dropdowns row -->
-      <div style="display:flex;flex-direction:column;gap:6px;flex:1;min-width:140px;">
+      <!-- Row 2: Dropdowns -->
+      <div style="display:flex;flex-direction:column;gap:6px;flex:1;min-width:120px;">
         <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">State</label>
         <select id="lenderState" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px;font-family:var(--mono);">
           <option value="">All States</option>
@@ -2462,6 +2471,7 @@ async function runLenderSearch() {
   el.innerHTML = '<div style="display:flex;align-items:center;gap:10px;padding:40px 0;justify-content:center;color:var(--muted);font-family:var(--mono);font-size:13px;"><div class="spinner"></div>Loading lender data…</div>';
 
   const searchTerm  = (document.getElementById('lenderSearch')?.value || '').trim();
+  const cityTerm    = (document.getElementById('lenderCity')?.value || '').trim();
   const stateVal    = document.getElementById('lenderState')?.value || '';
   const loanType    = document.getElementById('lenderLoanType')?.value || 'residential';
   const assetSize   = document.getElementById('lenderAssetSize')?.value || 'community';
@@ -2484,20 +2494,17 @@ async function runLenderSearch() {
       const q = searchTerm.trim();
       const firstWord = q.split(/\s+/)[0];
 
-      // Cast a wide net — wildcard on first word + fulltext + city, all in parallel
-      const [wcR, ftR, cityR] = await Promise.all([
+      // Build search URLs — name search + separate city filter
+      const fetchUrls = [
         fetch(`${FDIC_BASE}/institutions?filters=NAME%3A${encodeURIComponent(firstWord)}*%20AND%20ACTIVE%3A1&fields=${instFields}&limit=100&sort_by=ASSET&sort_order=DESC`),
         fetch(`${FDIC_BASE}/institutions?search=${encodeURIComponent(q)}&fields=${instFields}&limit=50&sort_by=ASSET&sort_order=DESC&filters=ACTIVE%3A1`),
-        fetch(`${FDIC_BASE}/institutions?filters=CITY%3A${encodeURIComponent(q)}*%20AND%20ACTIVE%3A1&fields=${instFields}&limit=100&sort_by=ASSET&sort_order=DESC`),
-      ]);
-      const [wcData, ftData, cityData] = await Promise.all([wcR.json(), ftR.json(), cityR.json()]);
-
-      // Merge all results, dedupe by CERT
-      const all = [
-        ...(wcData.data   || []).map(d => d.data),
-        ...(ftData.data   || []).map(d => d.data),
-        ...(cityData.data || []).map(d => d.data),
-      ].filter(Boolean);
+      ];
+      // If city field also filled, filter name results by city
+      if (cityTerm) {
+        fetchUrls.push(fetch(`${FDIC_BASE}/institutions?filters=NAME%3A${encodeURIComponent(firstWord)}*%20AND%20CITY%3A${encodeURIComponent(cityTerm)}*%20AND%20ACTIVE%3A1&fields=${instFields}&limit=100&sort_by=ASSET&sort_order=DESC`));
+      }
+      const results = await Promise.all(fetchUrls.map(p => p.then(r => r.json()).catch(() => ({ data: [] }))));
+      const all = results.flatMap(d => (d.data || []).map(x => x.data)).filter(Boolean);
       const seenCerts = new Set();
       const merged = all.filter(i => {
         if (seenCerts.has(i.CERT)) return false;
@@ -2505,14 +2512,14 @@ async function runLenderSearch() {
         return true;
       });
 
-      // Re-rank client-side with fuzzyScore — same logic as home page search
+      // Re-rank client-side — city match boosts score
       const scored = merged
         .map(i => ({
           inst: i,
           score: Math.max(
             fuzzyScore(i.NAME || '', q),
-            fuzzyScore(i.CITY || '', q)
-          )
+            cityTerm ? fuzzyScore(i.CITY || '', cityTerm) * 0.8 : 0
+          ) + (cityTerm && (i.CITY || '').toLowerCase().includes(cityTerm.toLowerCase()) ? 20 : 0)
         }))
         .filter(({ score }) => score >= 30)
         .sort((a, b) => b.score - a.score);
@@ -2522,6 +2529,17 @@ async function runLenderSearch() {
         return;
       }
       certSet = new Map(scored.map(({ inst }) => [inst.CERT, inst]));
+    } else if (cityTerm) {
+      // City-only search — no name term
+      const instFields = 'NAME,CERT,CITY,STALP,ASSET,ACTIVE';
+      const stateFilter = stateVal ? `%20AND%20STALP%3A${stateVal}` : '';
+      const cityData = await fetch(`${FDIC_BASE}/institutions?filters=CITY%3A${encodeURIComponent(cityTerm)}*%20AND%20ACTIVE%3A1${stateFilter}&fields=${instFields}&limit=200&sort_by=ASSET&sort_order=DESC`).then(r => r.json()).catch(() => ({ data: [] }));
+      const cityResults = (cityData.data || []).map(d => d.data).filter(Boolean);
+      if (!cityResults.length) {
+        el.innerHTML = '<div style="color:var(--muted);font-family:var(--mono);font-size:13px;padding:40px 0;text-align:center;">No institutions found in that city. Try a different city or check the spelling.</div>';
+        return;
+      }
+      certSet = new Map(cityResults.map(i => [i.CERT, i]));
     }
 
     // Build financials query
@@ -2613,7 +2631,7 @@ async function runLenderSearch() {
 
     el.innerHTML = `
       <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:12px;">
-        Showing top ${top.length} lenders${searchTerm ? ` matching "${searchTerm}"` : ''}${stateVal ? ` in ${stateVal}` : ''} · Sorted by Lending Score · ${loanLabel} focus
+        Showing top ${top.length} lenders${searchTerm ? ` matching "${searchTerm}"` : ''}${cityTerm ? ` in ${cityTerm}` : ''}${stateVal ? `, ${stateVal}` : ''} · Sorted by Lending Score · ${loanLabel} focus
       </div>
       <div style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;font-size:13px;">
@@ -3257,12 +3275,12 @@ function renderAbout() {
       <div class="ai-section-label">// Session overview</div>
       <div class="ai-stat-grid">
         <div class="ai-stat-card">
-          <div class="ai-stat-val" style="color:#7c6ef5">~45 hrs</div>
+          <div class="ai-stat-val" style="color:#7c6ef5">~55 hrs</div>
           <div class="ai-stat-label">Total session time</div>
-          <div class="ai-stat-sub">Across 7 conversations</div>
+          <div class="ai-stat-sub">Across 8 conversations</div>
         </div>
         <div class="ai-stat-card">
-          <div class="ai-stat-val">300+</div>
+          <div class="ai-stat-val">400+</div>
           <div class="ai-stat-label">Messages exchanged</div>
           <div class="ai-stat-sub">Human + Claude turns</div>
         </div>
@@ -3272,7 +3290,7 @@ function renderAbout() {
           <div class="ai-stat-sub">To vaultbot.ai — all successful</div>
         </div>
         <div class="ai-stat-card">
-          <div class="ai-stat-val" style="color:#34d399">70+</div>
+          <div class="ai-stat-val" style="color:#34d399">85+</div>
           <div class="ai-stat-label">Features shipped</div>
           <div class="ai-stat-sub">Zero to production</div>
         </div>
@@ -3287,17 +3305,17 @@ function renderAbout() {
           <div class="ai-stat-sub">API, browser, bash, file</div>
         </div>
         <div class="ai-stat-card">
-          <div class="ai-stat-val">3,347</div>
+          <div class="ai-stat-val">3,571</div>
           <div class="ai-stat-label">Lines of code</div>
           <div class="ai-stat-sub">Single-file app</div>
         </div>
         <div class="ai-stat-card">
-          <div class="ai-stat-val">175 KB</div>
+          <div class="ai-stat-val">189K</div>
           <div class="ai-stat-label">Final file size</div>
           <div class="ai-stat-sub">HTML + JS + CSS</div>
         </div>
         <div class="ai-stat-card">
-          <div class="ai-stat-val">~1.2M</div>
+          <div class="ai-stat-val">~1.5M</div>
           <div class="ai-stat-label">Tokens processed</div>
           <div class="ai-stat-sub">Estimated</div>
         </div>
@@ -3356,7 +3374,7 @@ function renderAbout() {
           <div class="ai-cost-detail">Discovery, design system, dev, QA, UAT. Typical rate for a data product MVP.</div>
         </div>
       </div>
-      <div class="ai-cost-note">Claude Pro subscription cost for this build: ~$20/mo across 7 days &nbsp;·&nbsp; Savings vs solo freelancer: $2,980–$5,980</div>
+      <div class="ai-cost-note">Claude Pro subscription cost for this build: ~$20/mo across 8 days &nbsp;·&nbsp; Savings vs solo freelancer: $2,980–$5,980</div>
 
       <hr class="ai-inner-divider">
 
@@ -3391,6 +3409,8 @@ function renderAbout() {
             <div class="ai-feature-item ai-done">Find a Lender page (/lenders)</div>
             <div class="ai-feature-item ai-done">Lending Score — composite FDIC ranking</div>
             <div class="ai-feature-item ai-done">Lender search by name + city (fuzzy)</div>
+            <div class="ai-feature-item ai-done">City filter on Find a Lender page</div>
+            <div class="ai-feature-item ai-done">Search overhaul — contains wildcard, combined multi-word</div>
             <div class="ai-feature-item ai-done">Loan type + state + asset size filters</div>
           </div>
         </div>
@@ -3426,7 +3446,7 @@ function renderAbout() {
 
           <div class="ai-feature-heading" style="margin-top:24px">// Roadmap</div>
           <div class="ai-feature-list">
-            <div class="ai-feature-item ai-soon">City / zip proximity filter on Find a Lender</div>
+            <div class="ai-feature-item ai-soon">ZIP code proximity filter on Find a Lender</div>
             <div class="ai-feature-item ai-soon">CSV export on search results</div>
             <div class="ai-feature-item ai-soon">NCUA historical charter data</div>
             <div class="ai-feature-item ai-planned">Live mortgage rate integration (CRS Data / ICE)</div>
