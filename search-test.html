@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Vault Search QA</title>
+<style>
+body{font-family:monospace;background:#0f1240;color:#fff;padding:24px;max-width:1000px;margin:0 auto;}
+h2{color:#4db8ff;margin-bottom:4px;}
+.sub{color:#6b7280;font-size:12px;margin-bottom:20px;}
+.pass{color:#4ade80;} .fail{color:#f87171;} .warn{color:#fbbf24;}
+.result{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:6px 10px;margin:3px 0;font-size:11px;}
+.target{border-color:#4ade80 !important;background:rgba(74,222,128,0.08) !important;}
+.section{border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:12px 16px;margin:8px 0;}
+button{background:#4db8ff;color:#0f1240;border:none;padding:10px 24px;border-radius:6px;cursor:pointer;font-family:monospace;font-weight:700;font-size:13px;margin-bottom:16px;}
+#summary{font-size:15px;padding:14px;border-radius:8px;margin:12px 0;font-weight:700;}
+</style></head><body>
+<h2>Vault Search QA</h2>
+<p class="sub">Hosted on vaultbot.ai so FDIC API calls work. Tests exact search logic deployed to Vault.</p>
+<button onclick="runAll()">▶ Run All Tests</button>
+<div id="summary"></div>
+<div id="out"></div>
+<script>
+const FDIC = 'https://banks.data.fdic.gov/api';
+let passed = 0, failed = 0;
+
+function fuzzyScore(name, query) {
+  const n = name.toLowerCase().replace(/^the\s+/, '');
+  const q = query.toLowerCase().trim().replace(/^the\s+/, '');
+  if (n === q) return 100;
+  if (n.startsWith(q)) return 90;
+  if (n.includes(q)) return 80;
+  const words = n.replace(/[^a-z0-9 ]/g, '').split(/\s+/);
+  const acronym = words.map(w => w[0]).join('');
+  if (acronym.includes(q.toLowerCase())) return 75;
+  if (acronym.startsWith(q.toLowerCase())) return 85;
+  const commonWords = new Set(['first','bank','national','federal','savings','trust','state',
+    'community','commercial','peoples','heritage','home','liberty','union','american',
+    'united','citizens','central','western','eastern','northern','southern','premier']);
+  const qTokens = q.split(/\s+/).filter(t => t.length > 1);
+  const distinctiveQ = qTokens.filter(t => !commonWords.has(t));
+  if (distinctiveQ.length > 0) {
+    const distinctiveMatches = distinctiveQ.filter(t => n.includes(t)).length;
+    if (distinctiveMatches === 0) return 0;
+    if (qTokens.every(t => n.includes(t))) return 70;
+    const matchCount = qTokens.filter(t => n.includes(t)).length;
+    return Math.round(10 + (distinctiveMatches / distinctiveQ.length) * 50 + (matchCount / qTokens.length) * 20);
+  }
+  if (qTokens.every(t => n.includes(t))) return 60;
+  const matchCount = qTokens.filter(t => n.includes(t)).length;
+  return Math.round((matchCount / qTokens.length) * 40);
+}
+
+async function searchFDIC(query) {
+  const fields = 'NAME,CERT,CITY,STALP,ASSET,WEBADDR';
+  const q = query.trim();
+  const qNoThe = q.replace(/^the\s+/i, '');
+  const stopWords = new Set(['of','the','and','a','an','at','in','for','by','to','de','la','le','&']);
+  const meaningfulWords = qNoThe.split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w.toLowerCase()));
+  const tokenWords = meaningfulWords.length > 0 ? meaningfulWords : qNoThe.split(/\s+/);
+  const fulltextUrl = `${FDIC}/institutions?search=${encodeURIComponent(q)}&fields=${fields}&limit=30&sort_by=ASSET&sort_order=DESC&filters=ACTIVE%3A1`;
+  const wildcardUrl = `${FDIC}/institutions?filters=NAME%3A${tokenWords.map(w=>encodeURIComponent(w)+'*').join('%20AND%20NAME%3A')}%20AND%20ACTIVE%3A1&fields=${fields}&limit=30&sort_by=ASSET&sort_order=DESC`;
+  const theUrl = `${FDIC}/institutions?filters=NAME%3AThe*${encodeURIComponent(tokenWords[0])}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC`;
+  const domainQ = q.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const webUrl = domainQ.length >= 3 ? `${FDIC}/institutions?filters=WEBADDR%3A${domainQ}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=10&sort_by=ASSET&sort_order=DESC` : null;
+  const fetches = [fulltextUrl, wildcardUrl, theUrl, webUrl].filter(Boolean)
+    .map(url => fetch(url).then(r=>r.json()).catch(()=>({data:[]})));
+  const allData = await Promise.all(fetches);
+  const seen = new Map();
+  allData.forEach(data => {
+    (data.data||[]).forEach(d => {
+      const cert = d.data?.CERT; if (!cert) return;
+      const score = fuzzyScore(d.data.NAME, q);
+      if (!seen.has(cert) || seen.get(cert).score < score) seen.set(cert, {...d, score});
+    });
+  });
+  if (seen.size === 0 || (seen.size < 3 && tokenWords.length > 1)) {
+    const wf = await Promise.all(tokenWords.map(w =>
+      fetch(`${FDIC}/institutions?filters=NAME%3A${encodeURIComponent(w)}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=50&sort_by=ASSET&sort_order=DESC`)
+        .then(r=>r.json()).catch(()=>({data:[]}))
+    ));
+    wf.forEach(data => {
+      (data.data||[]).forEach(d => {
+        const cert = d.data?.CERT; if (!cert) return;
+        const score = fuzzyScore(d.data.NAME, q);
+        if (score >= 50 && (!seen.has(cert) || seen.get(cert).score < score)) seen.set(cert, {...d, score});
+      });
+    });
+  }
+  return [...seen.values()]
+    .filter(d => d.score >= 40)
+    .sort((a,b) => b.score - a.score || (b.data?.ASSET||0) - (a.data?.ASSET||0))
+    .map(d => ({name:d.data.NAME, cert:d.data.CERT, city:d.data.CITY, state:d.data.STALP, score:d.score}));
+}
+
+async function runTest(query, expectedName, expectedCert) {
+  const out = document.getElementById('out');
+  const div = document.createElement('div');
+  div.className = 'section';
+  out.appendChild(div);
+  try {
+    const results = await searchFDIC(query);
+    const pos = results.findIndex(r => String(r.cert) === String(expectedCert));
+    const inTop5 = pos >= 0 && pos < 5;
+    const cls = inTop5 ? 'pass' : pos >= 0 ? 'warn' : 'fail';
+    const msg = inTop5 ? `✓ PASS — #${pos+1}` : pos >= 0 ? `⚠ position ${pos+1}` : `✗ FAIL — not in ${results.length} results`;
+    div.innerHTML = `<h3>"${query}" → ${expectedName} (${expectedCert}) <span class="${cls}">${msg}</span></h3>`;
+    if (inTop5) passed++; else failed++;
+    results.slice(0,5).forEach((r,i) => {
+      const isTarget = String(r.cert) === String(expectedCert);
+      div.innerHTML += `<div class="result ${isTarget?'target':''}">#${i+1} [${r.score}] ${r.name} · ${r.city}, ${r.state} · CERT ${r.cert}</div>`;
+    });
+    if (results.length === 0) div.innerHTML += `<div class="result fail">No results</div>`;
+  } catch(e) {
+    div.innerHTML = `<h3>"${query}" <span class="fail">✗ ERROR: ${e.message}</span></h3>`;
+    failed++;
+  }
+}
+
+async function runAll() {
+  passed = 0; failed = 0;
+  document.getElementById('out').innerHTML = '';
+  document.getElementById('summary').innerHTML = '<span style="color:#fbbf24">Running…</span>';
+  // Test cases — CERTs verified from FDIC deep search
+  await runTest('First Fidelity Bank', 'First Fidelity Bank', 23473);    // Oklahoma City OK
+  await runTest('FFB',                 'First Fidelity Bank', 23473);    // acronym
+  await runTest('Sutton Bank',         'Sutton Bank',          5962);    // Attica OH
+  await runTest('MidFirst Bank',       'MidFirst Bank',        4063);    // Oklahoma City OK
+  await runTest('Triad Bank',          'Triad Bank',          24677);    // Tulsa OK
+  await runTest('Bank of the Plains',  'Bank of the Plains',  22647);    // Kansas
+  await runTest('Citizens Bank',       'The Citizens Bank',   17211);    // Batesville AR
+  await runTest('Wells Fargo',         'Wells Fargo Bank',     3511);    // national
+  await runTest('Chase',               'JPMorgan Chase Bank',   628);    // national
+  await runTest('Bank of Oklahoma',    'BANK OF OKLAHOMA',     4214);    // Oklahoma
+  const total = passed + failed;
+  const pct = Math.round(passed/total*100);
+  const c = pct===100?'#4ade80':pct>=70?'#fbbf24':'#f87171';
+  const bg = pct===100?'rgba(74,222,128,0.1)':pct>=70?'rgba(251,191,36,0.1)':'rgba(248,113,113,0.1)';
+  document.getElementById('summary').style.cssText = `background:${bg};border:1px solid ${c};padding:14px;border-radius:8px;`;
+  document.getElementById('summary').innerHTML = `<span style="color:${c}">${passed}/${total} passed (${pct}%)</span>`;
+}
+</script>
+</body></html>
