@@ -2411,7 +2411,7 @@ function renderNewsSection(name, city, state) {
 // ── Find a Lender page ────────────────────────────────────────────────────────
 function renderLenders() {
   return `
-  <div style="max-width:900px;margin:0 auto;padding:32px 0 80px;">
+  <div style="max-width:900px;margin:0 auto;padding:32px 16px 80px;">
     <button class="back-btn" onclick="showHome()">← Back to Search</button>
 
     <div style="margin-bottom:32px;">
@@ -2732,7 +2732,7 @@ function renderCharters() {
     <button class="back-btn" onclick="showHome()">← Back to Search</button>
 
     <div style="margin-bottom:8px;">
-      <h1 style="font-family:var(--serif);font-size:36px;letter-spacing:-0.5px;margin-bottom:10px;">New Bank Charters</h1>
+      <h1 style="font-family:var(--serif);font-size:clamp(24px,5vw,36px);letter-spacing:-0.5px;margin-bottom:10px;">New Bank Charters</h1>
       <p style="color:var(--muted);font-size:14px;max-width:640px;line-height:1.7;">
         Every new FDIC-insured bank chartered since 2023. After a decade of near-zero de novo activity —
         just <strong style="color:var(--text);">1 charter in 2012</strong> — the industry is quietly rebuilding.
@@ -2753,7 +2753,7 @@ function renderCharters() {
     </div>
 
     <!-- Stats row — filled async -->
-    <div id="charterStats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:32px;"></div>
+    <div id="charterStats" class="industry-kpis" style="margin-bottom:32px;"></div>
 
     <!-- Charter list -->
     <div id="charterList">
@@ -2855,7 +2855,7 @@ function renderCharterData(banks, year) {
       onmouseover="this.style.borderColor='var(--accent)';this.style.background='rgba(77,184,255,0.05)'"
       onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface)'"
       onclick="loadDetail('${b.CERT}','bank')">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
         <div>
           <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:4px;">${b.NAME}</div>
           <div style="font-family:var(--mono);font-size:12px;color:var(--muted);">
@@ -2869,7 +2869,7 @@ function renderCharterData(banks, year) {
             ${b.CHRTAGNT ? `<span style="font-family:var(--mono);font-size:10px;padding:2px 8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:4px;color:var(--muted);">${b.CHRTAGNT} Charter</span>` : ''}
           </div>
         </div>
-        <div style="text-align:right;flex-shrink:0;">
+        <div style="text-align:right;flex-shrink:0;min-width:100px;">
           <div style="font-family:var(--serif);font-size:22px;color:var(--accent);">${fmt$(thousands(assets))}</div>
           <div style="font-family:var(--mono);font-size:10px;color:var(--muted);">Total Assets</div>
           ${web ? `<a href="https://${web}" target="_blank" onclick="event.stopPropagation()" style="font-family:var(--mono);font-size:10px;color:var(--muted);text-decoration:underline;text-underline-offset:2px;">${web} ↗</a>` : ''}
@@ -2915,9 +2915,9 @@ async function loadCharterNews(bank) {
       const source = dashIdx > 0 ? item.title.slice(dashIdx + 3) : 'News';
       const date = item.pubDate ? new Date(item.pubDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
       return `<a href="${item.link}" target="_blank" rel="noopener" onclick="event.stopPropagation()"
-        style="display:flex;justify-content:space-between;align-items:center;gap:12px;text-decoration:none;padding:6px 0;"
+        style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;text-decoration:none;padding:6px 0;flex-wrap:wrap;"
         onmouseover="this.style.opacity='0.75'" onmouseout="this.style.opacity='1'">
-        <div style="font-size:12px;color:var(--text);line-height:1.4;">${title}</div>
+        <div style="font-size:12px;color:var(--text);line-height:1.4;min-width:0;flex:1;">${title}</div>
         <div style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;">${source} · ${date}</div>
       </a>`;
     }).join('<div style="border-top:1px solid rgba(255,255,255,0.05);"></div>');
