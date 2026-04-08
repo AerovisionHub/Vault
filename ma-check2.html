@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>M&A Deep Check</title>
+<style>body{font-family:monospace;background:#0f1240;color:#fff;padding:24px;max-width:900px;margin:0 auto;}
+.r{background:rgba(255,255,255,0.05);padding:8px 12px;border-radius:6px;margin:4px 0;font-size:11px;line-height:1.7;}
+h3{color:#4db8ff;margin:14px 0 6px;font-size:13px;}
+.none{color:#f87171;font-size:11px;}</style></head><body>
+<h2 style="color:#4db8ff">M&A Deep Dive</h2>
+<div id="out">Loading…</div>
+<script>
+const FDIC = 'https://banks.data.fdic.gov/api';
+const get = url => fetch(url).then(r=>r.json()).catch(()=>({data:[]}));
+
+async function run() {
+  const out = document.getElementById('out');
+  out.innerHTML = '';
+
+  // 1. Get ALL fields from history to understand structure
+  let d = await get(`${FDIC}/history?limit=3&sort_by=EFFDATE&sort_order=DESC`);
+  let rows = (d.data||[]).map(x=>x.data);
+  out.innerHTML += `<h3>History — ALL fields (first 3 records)</h3>`;
+  rows.forEach(r=>out.innerHTML+=`<div class="r">${JSON.stringify(r,null,2)}</div>`);
+
+  // 2. CHANGECODE decoder — get sample of each code
+  // Known codes: 1xx=new, 2xx=merger into, 5xx=closed, 7xx=name/class change, 8xx=merger from
+  const codes = [
+    {code:210, label:'Merger (absorbed)'}, {code:220, label:'Merger (into existing)'},
+    {code:230, label:'Merger (new institution)'}, {code:520, label:'Failure'},
+    {code:710, label:'Name change'}, {code:810, label:'Charter conversion'},
+  ];
+  for (const {code, label} of codes) {
+    d = await get(`${FDIC}/history?filters=CHANGECODE%3A${code}&fields=CERT,INSTNAME,PCITY,PSTALP,EFFDATE,CHANGECODE,PROCDATE&limit=3&sort_by=EFFDATE&sort_order=DESC`);
+    rows = (d.data||[]).map(x=>x.data);
+    out.innerHTML += `<h3>CHANGECODE ${code} — ${label} (${rows.length} results, sample)</h3>`;
+    rows.length ? rows.forEach(r=>out.innerHTML+=`<div class="r"><strong>${r.INSTNAME||'—'}</strong> · ${r.PCITY}, ${r.PSTALP} · CERT ${r.CERT} · Eff: ${r.EFFDATE?.slice(0,10)}</div>`) 
+               : out.innerHTML+='<div class="none">No results for this code</div>';
+  }
+
+  // 3. Check what CHANGECODE values actually exist in recent data
+  d = await get(`${FDIC}/history?fields=CHANGECODE,INSTNAME,EFFDATE&limit=100&sort_by=EFFDATE&sort_order=DESC&filters=EFFDATE%3A%5B20240101%20TO%2099999999%5D`);
+  rows = (d.data||[]).map(x=>x.data);
+  const codeCounts = {};
+  rows.forEach(r => { codeCounts[r.CHANGECODE] = (codeCounts[r.CHANGECODE]||0)+1; });
+  out.innerHTML += `<h3>CHANGECODE distribution (2024+): ${JSON.stringify(codeCounts)}</h3>`;
+
+  // 4. NCUA merger/acquisition data
+  // NCUA publishes merger data — check if our proxy can surface it
+  const ncuaR = await fetch('https://vaultbot.ai/.netlify/functions/ncua?q=test&limit=1').then(r=>r.json()).catch(()=>({}));
+  out.innerHTML += `<h3>NCUA proxy fields available</h3>`;
+  const sample = ncuaR.results?.[0];
+  out.innerHTML += `<div class="r">Fields: ${sample ? Object.keys(sample).join(', ') : 'no results'}</div>`;
+
+  // 5. Try NCUA CALL Report data for merger fields
+  // NCUA FS220 has fields for mergers
+  out.innerHTML += `<h3>NCUA merger data — checking FFIEC CDR</h3>`;
+  const ncuaMerger = await fetch('https://www.ncua.gov/analysis/Pages/call-report-data/merger-data.aspx', {mode:'no-cors'}).then(()=>'reachable').catch(()=>'blocked');
+  out.innerHTML += `<div class="r">NCUA merger page: ${ncuaMerger}</div>`;
+
+  // 6. Check FDIC history for bank<->CU conversions specifically
+  d = await get(`${FDIC}/history?fields=CERT,INSTNAME,CLASS,PCITY,PSTALP,EFFDATE,CHANGECODE&limit=20&sort_by=EFFDATE&sort_order=DESC&filters=EFFDATE%3A%5B20230101%20TO%2099999999%5D%20AND%20CHANGECODE%3A%5B200%20TO%20299%5D`);
+  rows = (d.data||[]).map(x=>x.data);
+  out.innerHTML += `<h3>Recent Mergers/Acquisitions (CHANGECODE 200-299, 2023+) — ${rows.length} results</h3>`;
+  rows.length ? rows.forEach(r=>out.innerHTML+=`<div class="r"><strong>${r.INSTNAME||'CERT '+r.CERT}</strong> · ${r.PCITY||'—'}, ${r.PSTALP||'—'} · Code: ${r.CHANGECODE} · ${r.EFFDATE?.slice(0,10)}</div>`)
+             : out.innerHTML+='<div class="none">No results</div>';
+}
+run();
+</script></body></html>
