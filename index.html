@@ -170,6 +170,69 @@
   .tagline { font-size: 12px; color: var(--muted); font-family: var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
 
   .data-badge { display: flex; gap: 8px; align-items: center; }
+
+  /* Hamburger menu */
+  .nav-hamburger {
+    display: none;
+    flex-direction: column;
+    gap: 5px;
+    background: none;
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 8px;
+    padding: 8px 10px;
+    cursor: pointer;
+  }
+  .nav-hamburger span {
+    display: block;
+    width: 20px;
+    height: 2px;
+    background: var(--text);
+    border-radius: 2px;
+    transition: all 0.25s;
+  }
+  .nav-hamburger.open span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+  .nav-hamburger.open span:nth-child(2) { opacity: 0; }
+  .nav-hamburger.open span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+  /* Mobile slide-down nav */
+  .nav-mobile {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: rgba(15,18,64,0.98);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    padding: 16px 20px;
+    flex-direction: column;
+    gap: 4px;
+    z-index: 100;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+  .nav-mobile.open { display: flex; }
+  .nav-mobile a {
+    display: block;
+    padding: 12px 16px;
+    border-radius: 8px;
+    color: var(--text);
+    text-decoration: none;
+    font-family: var(--mono);
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    transition: background 0.15s;
+    cursor: pointer;
+  }
+  .nav-mobile a:hover { background: rgba(255,255,255,0.06); }
+  .nav-mobile .nav-mobile-divider {
+    height: 1px;
+    background: rgba(255,255,255,0.08);
+    margin: 6px 0;
+  }
+  .nav-mobile .nav-mobile-external {
+    color: var(--muted);
+    font-size: 11px;
+  }
   .badge { font-family: var(--mono); font-size: 10px; padding: 4px 10px; border-radius: 20px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 500; }
   .badge-fdic { background: rgba(59,130,246,0.15); color: var(--blue); border: 1px solid rgba(59,130,246,0.3); }
   .badge-ncua { background: rgba(139,92,246,0.12); color: var(--accent2); border: 1px solid rgba(139,92,246,0.25); }
@@ -476,7 +539,9 @@
     .kpi-grid { grid-template-columns: 1fr 1fr; }
     .inst-header { flex-direction: column; }
     .inst-name { font-size: 24px; }
-    .data-badge { gap: 6px; flex-wrap: wrap; }
+    .nav-desktop { display: none !important; }
+    .nav-hamburger { display: flex !important; }
+    header { position: relative; }
     .badge { font-size: 9px; padding: 3px 7px; }
     .logo { font-size: 24px; }
     .tagline { font-size: 10px; }
@@ -505,7 +570,8 @@
       <div class="tagline">Bank & Credit Union Intelligence</div>
     </a>
   </div>
-  <div class="data-badge" style="display:flex;gap:8px;align-items:center;">
+  <!-- Desktop nav -->
+  <div class="data-badge nav-desktop" style="display:flex;gap:8px;align-items:center;">
     <a href="https://banks.data.fdic.gov/docs/" target="_blank" style="text-decoration:none;">
       <span class="badge badge-fdic" style="cursor:pointer;" title="FDIC BankFind API">FDIC Data ↗</span>
     </a>
@@ -528,7 +594,25 @@
       <span class="badge" style="background:rgba(139,92,246,0.12);color:#c4b5fd;border:1px solid rgba(139,92,246,0.25);">About</span>
     </a>
   </div>
+  <!-- Hamburger button — mobile only -->
+  <button class="nav-hamburger" onclick="toggleMobileNav()" aria-label="Menu">
+    <span></span><span></span><span></span>
+  </button>
 </header>
+
+<!-- Mobile nav menu -->
+<nav class="nav-mobile" id="mobileNav">
+  <a onclick="showHome();closeMobileNav()">🏠 Home / Search</a>
+  <div class="nav-mobile-divider"></div>
+  <a onclick="showIndustry();closeMobileNav()" style="color:#4db8ff;">📊 Industry Analytics</a>
+  <a onclick="showLenders();closeMobileNav()" style="color:#4ade80;">🏦 Find a Lender</a>
+  <a onclick="showCharters();closeMobileNav()" style="color:#fbbf24;">✦ New Charters</a>
+  <a onclick="showMA();closeMobileNav()" style="color:#f87171;">📋 M&amp;A Activity</a>
+  <a onclick="showAbout();closeMobileNav()" style="color:#c4b5fd;">ℹ About Vault</a>
+  <div class="nav-mobile-divider"></div>
+  <a href="https://banks.data.fdic.gov/docs/" target="_blank" class="nav-mobile-external">FDIC Data ↗</a>
+  <a href="https://mapping.ncua.gov/ResearchCreditUnion" target="_blank" class="nav-mobile-external">NCUA Data ↗</a>
+</nav>
 
 <div class="container">
   
@@ -1344,6 +1428,28 @@ function renderCUChart(cu) {
 // ── Render functions ──────────────────────────────────────────────────────────
 
 let state; window._vaultState = state = { view: 'search', query: '', resultFilter: 'all', results: [], loading: false, error: null, detail: null };
+
+function toggleMobileNav() {
+  const nav = document.getElementById('mobileNav');
+  const btn = document.querySelector('.nav-hamburger');
+  if (!nav || !btn) return;
+  nav.classList.toggle('open');
+  btn.classList.toggle('open');
+}
+function closeMobileNav() {
+  const nav = document.getElementById('mobileNav');
+  const btn = document.querySelector('.nav-hamburger');
+  if (nav) nav.classList.remove('open');
+  if (btn) btn.classList.remove('open');
+}
+// Close nav on outside click
+document.addEventListener('click', function(e) {
+  const nav = document.getElementById('mobileNav');
+  const btn = document.querySelector('.nav-hamburger');
+  if (nav && btn && nav.classList.contains('open')) {
+    if (!nav.contains(e.target) && !btn.contains(e.target)) closeMobileNav();
+  }
+});
 
 function showHome() { state = { view: 'search', query: '', resultFilter: 'all', results: [], loading: false, error: null, detail: null }; render(); }
 // ── URL routing ──────────────────────────────────────────────────────────────
@@ -2863,7 +2969,7 @@ function renderMAData(deals, year) {
       <table style="width:100%;border-collapse:collapse;font-size:13px;">
         <thead>
           <tr style="border-bottom:1px solid var(--border);">
-            <th style="text-align:left;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;white-space:nowrap;">Date</th>
+            <th style="text-align:left;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;white-space:nowrap;min-width:90px;">Date</th>
             <th style="text-align:left;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">Acquirer</th>
             <th style="text-align:left;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">Acquired</th>
             <th style="text-align:center;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;white-space:nowrap;">Type</th>
