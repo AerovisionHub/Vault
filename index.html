@@ -521,6 +521,9 @@
     <a onclick="showCharters()" style="text-decoration:none;cursor:pointer;">
       <span class="badge" style="background:rgba(251,191,36,0.12);color:#fbbf24;border:1px solid rgba(251,191,36,0.25);">New Charters</span>
     </a>
+    <a onclick="showMA()" style="text-decoration:none;cursor:pointer;">
+      <span class="badge" style="background:rgba(248,113,113,0.12);color:#f87171;border:1px solid rgba(248,113,113,0.25);">M&amp;A</span>
+    </a>
     <a onclick="showAbout()" style="text-decoration:none;cursor:pointer;">
       <span class="badge" style="background:rgba(139,92,246,0.12);color:#c4b5fd;border:1px solid rgba(139,92,246,0.25);">About</span>
     </a>
@@ -1363,6 +1366,12 @@ const PAGE_META = {
     canonical: 'https://vaultbot.ai/lenders',
     image: 'https://vaultbot.ai/og-lenders.png?v=4'
   },
+  ma: {
+    title: 'Bank M&A Activity — Vault',
+    desc:  'Track recent bank mergers and acquisitions from FDIC data. See who acquired whom, when deals closed, and which institutions disappeared.',
+    canonical: 'https://vaultbot.ai/ma',
+    image: 'https://vaultbot.ai/og-image.png?v=4'
+  },
   charters: {
     title: 'New Bank Charters — Vault',
     desc:  'Every new FDIC-insured bank chartered in 2023, 2024, and 2025. Track the de novo banking revival with data and news for each new institution.',
@@ -1403,6 +1412,7 @@ function showHome()     { navigate('/', 'home'); }
 function showIndustry() { navigate('/industry', 'industry'); }
 function showLenders()  { navigate('/lenders', 'lenders'); }
 function showCharters() { navigate('/charters', 'charters'); }
+function showMA()       { navigate('/ma', 'ma'); }
 function showAbout()    { navigate('/about', 'about'); }
 
 // Handle browser back/forward
@@ -1417,6 +1427,7 @@ function pathToView(path) {
   if (path.startsWith('/industry')) return 'industry';
   if (path.startsWith('/lenders'))  return 'lenders';
   if (path.startsWith('/charters')) return 'charters';
+  if (path.startsWith('/ma'))       return 'ma';
   if (path.startsWith('/about'))    return 'about';
   return 'home';
 }
@@ -1429,6 +1440,7 @@ function render() {
   else if (state.view === 'about') app.innerHTML = renderAbout();
   else if (state.view === 'lenders') { app.innerHTML = renderLenders(); setTimeout(initLenders, 50); }
   else if (state.view === 'charters') { app.innerHTML = renderCharters(); setTimeout(initCharters, 50); }
+  else if (state.view === 'ma') { app.innerHTML = renderMA(); setTimeout(initMA, 50); }
   else if (state.view === 'industry') { app.innerHTML = renderIndustry(); setTimeout(drawIndustryCharts, 50); }
   bindEvents();
   // Draw chart after DOM is updated
@@ -2723,6 +2735,173 @@ async function runLenderSearch() {
   } catch(e) {
     el.innerHTML = `<div style="color:#f87171;font-family:var(--mono);font-size:13px;padding:20px 0;">Error loading data: ${e.message}</div>`;
   }
+}
+
+// ── M&A Activity page ─────────────────────────────────────────────────────────
+function renderMA() {
+  return `
+  <div style="max-width:900px;margin:0 auto;padding:32px 16px 80px;">
+    <button class="back-btn" onclick="showHome()">← Back to Search</button>
+
+    <div style="margin-bottom:16px;">
+      <h1 style="font-family:var(--serif);font-size:clamp(24px,5vw,36px);letter-spacing:-0.5px;margin-bottom:10px;">Bank M&amp;A Activity</h1>
+      <p style="color:var(--muted);font-size:14px;max-width:640px;line-height:1.7;">
+        Recent bank mergers and acquisitions from FDIC regulatory filings.
+        Every deal shows the acquirer, the absorbed institution, and when it closed.
+        The U.S. loses roughly <strong style="color:var(--text);">200–300 banks per year</strong> to consolidation — this is where they go.
+      </p>
+    </div>
+
+    <!-- Year filter -->
+    <div style="display:flex;gap:8px;margin-bottom:24px;flex-wrap:wrap;">
+      ${[2026,2025,2024,2023,'All'].map((y,i) => `
+        <button onclick="setMAYear(${typeof y==='number'?y:'"all"'})" id="maBtn${y}"
+          style="padding:6px 18px;border-radius:20px;font-family:var(--mono);font-size:12px;cursor:pointer;
+                 border:1px solid ${i===0?'var(--accent)':'rgba(255,255,255,0.15)'};
+                 background:${i===0?'rgba(248,113,113,0.15)':'transparent'};
+                 color:${i===0?'#f87171':'var(--muted)'};">${y}</button>`).join('')}
+    </div>
+
+    <!-- Stats -->
+    <div id="maStats" class="industry-kpis" style="margin-bottom:28px;"></div>
+
+    <!-- Table -->
+    <div id="maList">
+      <div style="display:flex;align-items:center;gap:10px;padding:40px 0;justify-content:center;color:var(--muted);font-family:var(--mono);font-size:13px;">
+        <div class="spinner"></div>Loading M&amp;A activity…
+      </div>
+    </div>
+  </div>`;
+}
+
+let _maYear = 2026;
+let _maCache = {};
+
+function setMAYear(year) {
+  _maYear = year;
+  [2026,2025,2024,2023,'All'].forEach(y => {
+    const btn = document.getElementById(`maBtn${y}`);
+    if (!btn) return;
+    const active = String(y).toLowerCase() === String(year).toLowerCase();
+    btn.style.border  = active ? '1px solid #f87171' : '1px solid rgba(255,255,255,0.15)';
+    btn.style.background = active ? 'rgba(248,113,113,0.15)' : 'transparent';
+    btn.style.color   = active ? '#f87171' : 'var(--muted)';
+  });
+  loadMA(year);
+}
+
+async function initMA() { loadMA(2026); }
+
+async function loadMA(year) {
+  const listEl = document.getElementById('maList');
+  const statsEl = document.getElementById('maStats');
+  if (!listEl) return;
+  listEl.innerHTML = '<div style="display:flex;align-items:center;gap:10px;padding:40px 0;justify-content:center;color:var(--muted);font-family:var(--mono);font-size:13px;"><div class="spinner"></div>Loading…</div>';
+
+  const cacheKey = String(year);
+  if (_maCache[cacheKey]) { renderMAData(_maCache[cacheKey], year); return; }
+
+  // REPORT_TYPE:223 = merger transaction records (acquirer + acquired)
+  const fields = 'TRANSNUM,EFFDATE,CHANGECODE_DESC,ACQ_INSTNAME,ACQ_CERT,ACQ_PCITY,ACQ_PSTALP,ACQ_BRANCHES,OUT_INSTNAME,OUT_CERT,OUT_PCITY,OUT_PSTALP,UNASSIST_COM_TO_COM_FLAG,CLASS_CHANGE_FLAG,ASSISTED_PAYOUT_FLAG';
+  let filters = 'REPORT_TYPE%3A223';
+  if (year !== 'all') {
+    filters += `%20AND%20EFFDATE%3A%5B${year}0101%20TO%20${year}1231%5D`;
+  } else {
+    filters += `%20AND%20EFFDATE%3A%5B20230101%20TO%2099999999%5D`;
+  }
+
+  try {
+    const r = await fetch(`${FDIC_BASE}/history?filters=${filters}&fields=${fields}&limit=200&sort_by=EFFDATE&sort_order=DESC`);
+    const data = await r.json();
+    const deals = (data.data || []).map(d => d.data).filter(d => d?.ACQ_INSTNAME || d?.OUT_INSTNAME);
+
+    // Deduplicate by TRANSNUM — each deal has multiple records
+    const seen = new Map();
+    deals.forEach(d => {
+      if (!seen.has(d.TRANSNUM)) seen.set(d.TRANSNUM, d);
+    });
+    const unique = [...seen.values()];
+    _maCache[cacheKey] = unique;
+    renderMAData(unique, year);
+  } catch(e) {
+    listEl.innerHTML = `<div style="color:#f87171;font-family:var(--mono);font-size:13px;padding:20px 0;">Error: ${e.message}</div>`;
+  }
+}
+
+function renderMAData(deals, year) {
+  const listEl = document.getElementById('maList');
+  const statsEl = document.getElementById('maStats');
+  if (!listEl) return;
+
+  const assisted = deals.filter(d => d.ASSISTED_PAYOUT_FLAG).length;
+  const unassisted = deals.length - assisted;
+  const states = [...new Set(deals.map(d => d.ACQ_PSTALP).filter(Boolean))].length;
+  const branches = deals.reduce((s,d) => s + (Number(d.ACQ_BRANCHES)||0), 0);
+
+  if (statsEl) {
+    statsEl.innerHTML = [
+      { label: 'Total Deals',      val: deals.length,  sub: year === 'all' ? '2023–present' : `In ${year}`,  color: '#f87171' },
+      { label: 'Unassisted',       val: unassisted,    sub: 'Market-driven',    color: '#4db8ff' },
+      { label: 'Assisted/Failure', val: assisted,      sub: 'FDIC-assisted',    color: '#fbbf24' },
+      { label: 'States',           val: states,        sub: 'Represented',      color: '#b06ef3' },
+    ].map(s => `
+      <div style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:12px;padding:16px;text-align:center;">
+        <div style="font-family:var(--serif);font-size:28px;color:${s.color};margin-bottom:4px;">${s.val}</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text);">${s.label}</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);">${s.sub}</div>
+      </div>`).join('');
+  }
+
+  if (!deals.length) {
+    listEl.innerHTML = '<div style="color:var(--muted);font-family:var(--mono);font-size:13px;padding:40px 0;text-align:center;">No M&A activity found for this period.</div>';
+    return;
+  }
+
+  // Table header
+  listEl.innerHTML = `
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border);">
+            <th style="text-align:left;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;white-space:nowrap;">Date</th>
+            <th style="text-align:left;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">Acquirer</th>
+            <th style="text-align:left;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">Acquired</th>
+            <th style="text-align:center;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;white-space:nowrap;">Type</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${deals.map(d => {
+            const date = d.EFFDATE ? new Date(d.EFFDATE).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—';
+            const isAssisted = d.ASSISTED_PAYOUT_FLAG;
+            const typeLabel = isAssisted ? 'Failure' : 'Merger';
+            const typeColor = isAssisted ? '#f87171' : '#4db8ff';
+            const typeBg    = isAssisted ? 'rgba(248,113,113,0.1)' : 'rgba(77,184,255,0.1)';
+            const typeBorder= isAssisted ? 'rgba(248,113,113,0.3)' : 'rgba(77,184,255,0.3)';
+            return `<tr style="border-bottom:1px solid rgba(255,255,255,0.05);transition:background 0.15s;"
+              onmouseover="this.style.background='rgba(255,255,255,0.03)'" onmouseout="this.style.background=''">
+              <td style="padding:12px;font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap;">${date}</td>
+              <td style="padding:12px;">
+                <div style="font-weight:600;color:var(--text);cursor:pointer;" onclick="loadDetail('${d.ACQ_CERT}','bank')"
+                  onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text)'"
+                >${d.ACQ_INSTNAME || '—'}</div>
+                <div style="font-family:var(--mono);font-size:10px;color:var(--muted);">${d.ACQ_PCITY||'—'}, ${d.ACQ_PSTALP||'—'} · CERT ${d.ACQ_CERT||'—'}</div>
+              </td>
+              <td style="padding:12px;">
+                <div style="font-weight:500;color:var(--muted);">${d.OUT_INSTNAME || '—'}</div>
+                <div style="font-family:var(--mono);font-size:10px;color:var(--muted);">${d.OUT_PCITY||'—'}, ${d.OUT_PSTALP||'—'} · CERT ${d.OUT_CERT||'—'}</div>
+              </td>
+              <td style="padding:12px;text-align:center;">
+                <span style="font-family:var(--mono);font-size:10px;padding:3px 8px;border-radius:4px;
+                  background:${typeBg};border:1px solid ${typeBorder};color:${typeColor};">${typeLabel}</span>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:12px;font-family:var(--mono);font-size:10px;color:var(--muted);">
+      Source: FDIC /history · REPORT_TYPE 223 · Click acquirer name to view full profile
+    </div>`;
 }
 
 // ── New Charters page ────────────────────────────────────────────────────────

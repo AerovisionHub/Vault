@@ -19,6 +19,11 @@
   status = 200
 
 [[redirects]]
+  from = "/ma"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
   from = "/search-test"
   to = "/search-test.html"
   status = 200
