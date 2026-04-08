@@ -160,9 +160,14 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background: rgba(15,18,64,0.6);
+    background: rgba(15,18,64,0.92);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 200;
   }
 
   .logo { font-family: var(--serif); font-size: 28px; letter-spacing: -0.5px; color: var(--text); }
@@ -197,18 +202,19 @@
   /* Mobile slide-down nav */
   .nav-mobile {
     display: none;
-    position: absolute;
-    top: 100%;
+    position: fixed;
+    top: 80px;
     left: 0;
     right: 0;
     background: rgba(15,18,64,0.98);
     backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     border-bottom: 1px solid rgba(255,255,255,0.1);
-    padding: 16px 20px;
+    padding: 12px 16px 20px;
     flex-direction: column;
     gap: 4px;
-    z-index: 100;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    z-index: 199;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
   }
   .nav-mobile.open { display: flex; }
   .nav-mobile a {
@@ -237,7 +243,7 @@
   .badge-fdic { background: rgba(59,130,246,0.15); color: var(--blue); border: 1px solid rgba(59,130,246,0.3); }
   .badge-ncua { background: rgba(139,92,246,0.12); color: var(--accent2); border: 1px solid rgba(139,92,246,0.25); }
 
-  .container { max-width: 1100px; margin: 0 auto; padding: 48px 40px; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 48px 40px; padding-top: calc(48px + 80px); }
   .search-section { margin-bottom: 48px; }
 
   .search-heading { font-family: var(--serif); font-size: 42px; line-height: 1.15; margin-bottom: 8px; letter-spacing: -0.5px; }
@@ -531,8 +537,8 @@
   }
 
   @media (max-width: 640px) {
-    header { padding: 14px 16px; flex-wrap: wrap; gap: 10px; }
-    .container { padding: 24px 16px; }
+    header { padding: 14px 20px; }
+    .container { padding: 24px 16px; padding-top: calc(24px + 62px); }
     .search-heading { font-size: 26px; }
     .search-row { flex-direction: column; }
     .type-toggle { order: -1; }
@@ -541,7 +547,7 @@
     .inst-name { font-size: 24px; }
     .nav-desktop { display: none !important; }
     .nav-hamburger { display: flex !important; }
-    header { position: relative; }
+    .nav-mobile { top: 62px; }
     .badge { font-size: 9px; padding: 3px 7px; }
     .logo { font-size: 24px; }
     .tagline { font-size: 10px; }
