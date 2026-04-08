@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Debug2</title>
+<style>body{font-family:monospace;background:#0f1240;color:#fff;padding:24px;max-width:900px;margin:0 auto;}
+.r{background:rgba(255,255,255,0.05);padding:6px 10px;border-radius:4px;margin:3px 0;font-size:11px;}
+h3{color:#4db8ff;margin:12px 0 4px;}</style></head><body>
+<h2 style="color:#4db8ff">Debug — Remaining Failures</h2>
+<div id="out"></div>
+<script>
+const FDIC = 'https://banks.data.fdic.gov/api';
+const F = 'NAME,CERT,CITY,STALP,ASSET';
+const get = url => fetch(url).then(r=>r.json()).catch(()=>({data:[]}));
+const show = (label, rows) => {
+  document.getElementById('out').innerHTML += `<h3>${label} (${rows.length})</h3>`
+    + (rows.length ? rows.slice(0,8).map(r=>`<div class="r">CERT ${r.CERT} — ${r.NAME} · ${r.CITY}, ${r.STALP} · $${(r.ASSET/1000).toFixed(0)}M</div>`).join('') : '<div class="r" style="color:#f87171">No results</div>');
+};
+async function run() {
+  // First Fidelity Bank — why is CERT 23473 not in the contains results?
+  let d = await get(`${FDIC}/institutions?filters=NAME%3A*Fidelity*%20AND%20ACTIVE%3A1&fields=${F}&limit=50&sort_by=ASSET&sort_order=DESC`);
+  show('*Fidelity* contains — does 23473 appear?', (d.data||[]).map(x=>x.data));
+  // Check if 23473 is active
+  d = await get(`${FDIC}/institutions?filters=CERT%3A23473&fields=${F}&limit=1`);
+  show('CERT 23473 direct lookup', (d.data||[]).map(x=>x.data));
+  // Try *First*Fidelity* 
+  d = await get(`${FDIC}/institutions?filters=NAME%3A*First*Fidelity*%20AND%20ACTIVE%3A1&fields=${F}&limit=20&sort_by=ASSET&sort_order=DESC`);
+  show('*First*Fidelity* contains', (d.data||[]).map(x=>x.data));
+
+  // Bank of Oklahoma — verify CERT 4214
+  d = await get(`${FDIC}/institutions?filters=CERT%3A4214&fields=${F}&limit=1`);
+  show('CERT 4214 direct lookup', (d.data||[]).map(x=>x.data));
+  d = await get(`${FDIC}/institutions?filters=NAME%3A*Oklahoma*%20AND%20ACTIVE%3A1&fields=${F}&limit=20&sort_by=ASSET&sort_order=DESC`);
+  show('*Oklahoma* contains', (d.data||[]).map(x=>x.data));
+}
+run();
+</script></body></html>
