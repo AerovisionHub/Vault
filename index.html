@@ -691,8 +691,7 @@ async function getFDICDetail(cert) {
   const instUrl = `${FDIC_BASE}/institutions?filters=CERT%3A${cert}&fields=${instFields}&limit=1`;
   const instR = await fetch(instUrl);
   const instData = await instR.json();
-  const inst = instData.data?.[0]?.data;
-  if (!inst) throw new Error('Institution not found');
+  let inst = instData.data?.[0]?.data;
 
   // Financial history (last 8 quarters)
   const finFields = 'REPDTE,ASSET,DEP,EQ,NETINC,INTINC,NONII,NONIX,LNLSNET,RBC1AAJ,ROA,ROE,INTEXP,NIMY,LNLSDEPR,EFFRATIO,SC,NUMEMP';
@@ -700,6 +699,26 @@ async function getFDICDetail(cert) {
   const finR = await fetch(finUrl);
   const finData = await finR.json();
   const history = (finData.data || []).map(d => d.data);
+
+  // Some CERTs exist in financials but not institutions table
+  // (new charters, special purpose entities, data lag)
+  // Build a minimal stub so the profile page still renders
+  if (!inst && history.length > 0) {
+    const latest = history[0];
+    inst = {
+      CERT: cert,
+      NAME: `FDIC Institution CERT ${cert}`,
+      CITY: '—', STALP: '—', STNAME: '—',
+      ADDRESS: '—', ZIP: '—',
+      ASSET: latest.ASSET || 0,
+      DEP: latest.DEP || 0,
+      REPDTE: latest.REPDTE || '—',
+      INSTCAT: '—', CHRTAGNT: '—', INSDATE: '—',
+      _stub: true, // flag so we can show a notice in the UI
+    };
+  }
+
+  if (!inst) throw new Error('Institution not found — CERT may be inactive or not FDIC-insured');
 
   return { inst, history };
 }
@@ -1693,6 +1712,9 @@ function renderBankDetail(d) {
       <button class="back-btn" id="backBtn">← Back</button>
     </div>
 
+    ${inst._stub ? `<div style="padding:12px 16px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.25);border-radius:10px;margin-bottom:24px;font-family:var(--mono);font-size:12px;color:#fbbf24;line-height:1.6;">
+      ⚠ Limited data — CERT ${inst.CERT} has financial filings but no institution profile in FDIC BankFind. May be a new charter, special purpose entity, or data lag.
+    </div>` : ''}
     ${narrative ? `<div class="narrative-box">${narrative}</div>` : ''}
 
     <div class="kpi-grid">
@@ -1867,6 +1889,9 @@ function renderCUDetail(d) {
       <button class="back-btn" id="backBtn">← Back</button>
     </div>
 
+    ${inst._stub ? `<div style="padding:12px 16px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.25);border-radius:10px;margin-bottom:24px;font-family:var(--mono);font-size:12px;color:#fbbf24;line-height:1.6;">
+      ⚠ Limited data — CERT ${inst.CERT} has financial filings but no institution profile in FDIC BankFind. May be a new charter, special purpose entity, or data lag.
+    </div>` : ''}
     ${narrative ? `<div class="narrative-box">${narrative}</div>` : ''}
 
     <div class="kpi-grid">
