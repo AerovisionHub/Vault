@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>M&A Data Check</title>
+<style>body{font-family:monospace;background:#0f1240;color:#fff;padding:24px;max-width:900px;margin:0 auto;}
+.r{background:rgba(255,255,255,0.05);padding:8px 12px;border-radius:6px;margin:4px 0;font-size:11px;line-height:1.7;}
+h3{color:#4db8ff;margin:14px 0 6px;font-size:13px;}
+.ok{color:#4ade80;} .none{color:#f87171;font-size:11px;}</style></head><body>
+<h2 style="color:#4db8ff">M&A Data Sources Check</h2>
+<div id="out">Loading…</div>
+<script>
+const FDIC = 'https://banks.data.fdic.gov/api';
+async function get(url) { return fetch(url).then(r=>r.json()).catch(()=>({data:[]})); }
+async function run() {
+  const out = document.getElementById('out');
+  out.innerHTML = '';
+
+  // 1. FDIC /history endpoint — tracks mergers, failures, name changes
+  let d = await get(`${FDIC}/history?fields=CERT,INSTNAME,CLASS,PCITY,PSTALP,EFFDATE,PROCDATE,RESTYPE,RESTYPE1,CHARTER,CHANGECODE&limit=10&sort_by=EFFDATE&sort_order=DESC&filters=RESTYPE%3AMerger`);
+  let rows = (d.data||[]).map(x=>x.data);
+  out.innerHTML += `<h3>FDIC /history — Recent Mergers (${rows.length} results)</h3>`;
+  rows.length ? rows.forEach(r=>out.innerHTML+=`<div class="r">${JSON.stringify(r)}</div>`) : out.innerHTML+='<div class="none">No results</div>';
+
+  // 2. FDIC /history with different RESTYPE values
+  d = await get(`${FDIC}/history?fields=CERT,INSTNAME,CLASS,PCITY,PSTALP,EFFDATE,RESTYPE,RESTYPE1,CHANGECODE&limit=5&sort_by=EFFDATE&sort_order=DESC`);
+  rows = (d.data||[]).map(x=>x.data);
+  out.innerHTML += `<h3>FDIC /history — All Types sample (${rows.length} results)</h3>`;
+  rows.length ? rows.forEach(r=>out.innerHTML+=`<div class="r">${JSON.stringify(r)}</div>`) : out.innerHTML+='<div class="none">No results</div>';
+
+  // 3. What RESTYPE values exist?
+  d = await get(`${FDIC}/history?fields=RESTYPE,RESTYPE1&limit=100&sort_by=EFFDATE&sort_order=DESC`);
+  rows = (d.data||[]).map(x=>x.data);
+  const types = [...new Set(rows.map(r=>r.RESTYPE))].filter(Boolean);
+  out.innerHTML += `<h3>RESTYPE values found: ${types.join(', ')}</h3>`;
+
+  // 4. FDIC /summary — has acquirer info?
+  d = await get(`${FDIC}/summary?fields=CERT,REPDTE,NAMEHCR,HCTMULT&limit=5&sort_by=REPDTE&sort_order=DESC&filters=REPDTE%3A%5B20240101%20TO%2099999999%5D`);
+  rows = (d.data||[]).map(x=>x.data);
+  out.innerHTML += `<h3>FDIC /summary sample (${rows.length} results)</h3>`;
+  rows.length ? rows.forEach(r=>out.innerHTML+=`<div class="r">${JSON.stringify(r)}</div>`) : out.innerHTML+='<div class="none">No results</div>';
+
+  // 5. Try acquisitions endpoint
+  d = await get(`${FDIC}/acquisitions?fields=CERT,INSTNAME,ACQUIREE_CERT,ACQUIREE_NAME,EFFDATE&limit=10&sort_by=EFFDATE&sort_order=DESC`);
+  rows = (d.data||[]).map(x=>x.data);
+  out.innerHTML += `<h3>FDIC /acquisitions endpoint (${rows.length} results)</h3>`;
+  rows.length ? rows.forEach(r=>out.innerHTML+=`<div class="r">${JSON.stringify(r)}</div>`) : out.innerHTML+='<div class="none">No results / endpoint not found</div>';
+
+  // 6. NCUA merger data via our proxy
+  const nr = await fetch('https://vaultbot.ai/.netlify/functions/ncua?q=merger&limit=5').then(r=>r.json()).catch(()=>({}));
+  out.innerHTML += `<h3>NCUA proxy — merger search</h3><div class="r">${JSON.stringify(nr).slice(0,300)}</div>`;
+}
+run();
+</script></body></html>
