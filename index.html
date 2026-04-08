@@ -650,21 +650,24 @@ async function searchFDIC(query) {
   const round1 = await Promise.all(round1Urls.map(get));
   round1.forEach(data => merge(seen, data, q));
 
-  // Round 2: If still thin, add contains-style wildcard (*word*) for distinctive words
-  // This catches "Chase" in "JPMorgan Chase Bank", "Plains" in "Bank of the Plains"
-  if (seen.size < 5 && searchWords.length > 0) {
+  // Round 2: Contains-style wildcard (*word*) — catches mid-name words like "Chase", "Plains"
+  // Always run combined multi-word query for multi-word searches (e.g. *First*Fidelity*)
+  {
     const containsUrls = [
-      // Individual word contains searches
-      ...searchWords.map(w =>
+      // Individual word contains searches (only if thin results)
+      ...(seen.size < 5 ? searchWords.map(w =>
         `${FDIC_BASE}/institutions?filters=NAME%3A*${encodeURIComponent(w)}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=50&sort_by=ASSET&sort_order=DESC`
-      ),
-      // Combined multi-word contains e.g. *First*Fidelity* catches "First Fidelity Bank" when fulltext fails
+      ) : []),
+      // Combined multi-word contains — ALWAYS run for multi-word queries
+      // e.g. *First*Fidelity* finds "First Fidelity Bank" even when fulltext fails
       ...(searchWords.length > 1 ? [
         `${FDIC_BASE}/institutions?filters=NAME%3A*${searchWords.map(w=>encodeURIComponent(w)).join('*')}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC`
       ] : []),
     ];
-    const round2 = await Promise.all(containsUrls.map(get));
-    round2.forEach(data => merge(seen, data, q));
+    if (containsUrls.length > 0) {
+      const round2 = await Promise.all(containsUrls.map(get));
+      round2.forEach(data => merge(seen, data, q));
+    }
   }
 
   return [...seen.values()]

@@ -75,16 +75,16 @@ async function searchFDIC(query) {
   ];
   const seen = new Map();
   (await Promise.all(round1Urls.map(get))).forEach(d => merge(seen, d));
-  if (seen.size < 5 && searchWords.length > 0) {
+  {
     const containsUrls = [
-      ...searchWords.map(w =>
+      ...(seen.size < 5 ? searchWords.map(w =>
         `${FDIC}/institutions?filters=NAME%3A*${encodeURIComponent(w)}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=50&sort_by=ASSET&sort_order=DESC`
-      ),
+      ) : []),
       ...(searchWords.length > 1 ? [
         `${FDIC}/institutions?filters=NAME%3A*${searchWords.map(w=>encodeURIComponent(w)).join('*')}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC`
       ] : []),
     ];
-    (await Promise.all(containsUrls.map(get))).forEach(d => merge(seen, d));
+    if (containsUrls.length > 0) (await Promise.all(containsUrls.map(get))).forEach(d => merge(seen, d));
   }
   return [...seen.values()]
     .filter(d => d.score >= 40)
@@ -130,7 +130,7 @@ async function runAll() {
     ['Citizens Bank',       'The Citizens Bank',             17211],  // Batesville, AR — "The" prefix
     ['Bank of the Plains',  'Bank of the Plains',            18118],  // needs contains search - verify CERT
     ['Wells Fargo',         'Wells Fargo Bank',               3511],  // national
-    ['Bank of Oklahoma',    'BOKF, National Association',     4214],  // needs contains search
+    ['First National Bank Oklahoma', 'First National Bank of Oklahoma', 4211],  // OKC — contains search
     ['JPMorgan Chase',      'JPMorgan Chase Bank',             628],  // full name works
     ['Fidelity Bank',       'Fidelity Bank, National Assoc.',30895],  // Wichita, KS
   ];
