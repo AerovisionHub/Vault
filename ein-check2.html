@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>EIN EDGAR Check</title>
+<style>body{font-family:monospace;background:#0f1240;color:#fff;padding:24px;max-width:800px;margin:0 auto;}
+.r{background:rgba(255,255,255,0.05);padding:8px 12px;border-radius:6px;margin:4px 0;font-size:11px;line-height:1.8;}
+h3{color:#4db8ff;margin:14px 0 6px;}</style></head><body>
+<h2 style="color:#4db8ff">EIN via SEC EDGAR — Feasibility Test</h2>
+<div id="out">Loading…</div>
+<script>
+const FDIC = 'https://banks.data.fdic.gov/api';
+const get = url => fetch(url).then(r=>r.json()).catch(e=>({error:e.message}));
+
+async function run() {
+  const out = document.getElementById('out');
+  out.innerHTML = '';
+
+  // Test banks: First Fidelity (private), Wells Fargo (public), MidFirst (private)
+  const banks = [
+    { name:'First Fidelity Bank', cert:23473, hcName:'First Fidelity Bancorp' },
+    { name:'MidFirst Bank', cert:4063, hcName:'MidFirst Financial Group' },
+    { name:'Bank of Oklahoma (BOKF)', cert:4214, hcName:'BOK Financial' },
+    { name:'Sutton Bank', cert:5962, hcName:'Sutton' },
+  ];
+
+  for (const bank of banks) {
+    out.innerHTML += `<h3>${bank.name}</h3>`;
+
+    // Step 1: Get RSSD/holding company from FDIC
+    const fdic = await get(`${FDIC}/institutions?filters=CERT%3A${bank.cert}&fields=NAME,CERT,RSSDHCR,FED_RSSD,NAMEHCR&limit=1`);
+    const inst = fdic.data?.[0]?.data;
+    out.innerHTML += `<div class="r">FDIC: NAMEHCR=${inst?.NAMEHCR||'—'} · RSSDHCR=${inst?.RSSDHCR||'—'} · FED_RSSD=${inst?.FED_RSSD||'—'}</div>`;
+
+    // Step 2: Search EDGAR for holding company name
+    const edgarSearch = await get(`https://efts.sec.gov/LATEST/search-index?q=%22${encodeURIComponent(bank.hcName)}%22&forms=10-K&dateRange=custom&startdt=2023-01-01`);
+    const hits = edgarSearch.hits?.hits || [];
+    const cik = hits[0]?._source?.period_of_report ? null : hits[0]?._source?.file_num;
+    out.innerHTML += `<div class="r">EDGAR search hits: ${hits.length} · First: ${hits[0]?._source?.display_names?.[0] || 'none'}</div>`;
+
+    // Step 3: Try EDGAR company search by name
+    const co = await get(`https://efts.sec.gov/LATEST/search-index?q=%22${encodeURIComponent(bank.hcName)}%22&forms=10-K`);
+    out.innerHTML += `<div class="r">EDGAR 10-K hits: ${co.hits?.total?.value||0}</div>`;
+
+    // Step 4: Try EDGAR company facts directly if we know CIK
+    // Wells Fargo = 72971, BOK Financial = 875357
+    if (bank.name.includes('BOK')) {
+      const facts = await get('https://data.sec.gov/submissions/CIK0000875357.json');
+      out.innerHTML += `<div class="r" style="color:#4ade80">BOKF EIN: ${facts.ein||'—'} · Name: ${facts.name||'—'} · Tickers: ${facts.tickers?.join(',')||'—'}</div>`;
+    }
+  }
+
+  // Step 5: Can we search EDGAR by bank name to get CIK automatically?
+  out.innerHTML += `<h3>EDGAR company search API test</h3>`;
+  const search = await get('https://efts.sec.gov/LATEST/search-index?q=%22BOK+Financial%22&forms=10-K&dateRange=custom&startdt=2024-01-01');
+  out.innerHTML += `<div class="r">${JSON.stringify(search).slice(0,500)}</div>`;
+
+  // Step 6: Try EDGAR full-text search for company lookup
+  const coSearch = await get('https://efts.sec.gov/LATEST/search-index?q=%22First+Fidelity+Bancorp%22+Oklahoma&forms=10-K');
+  out.innerHTML += `<h3>EDGAR search — First Fidelity Bancorp Oklahoma</h3>`;
+  out.innerHTML += `<div class="r">${JSON.stringify(coSearch?.hits?.hits?.[0]?._source || 'no results').slice(0,400)}</div>`;
+}
+run();
+</script></body></html>
