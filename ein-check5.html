@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>CIK Correct Lookup</title>
+<style>body{font-family:monospace;background:#0f1240;color:#fff;padding:24px;max-width:900px;margin:0 auto;}
+.r{background:rgba(255,255,255,0.05);padding:6px 12px;border-radius:6px;margin:3px 0;font-size:11px;}
+.ok{color:#4ade80;} h3{color:#4db8ff;margin:12px 0 4px;}</style></head><body>
+<h2 style="color:#4db8ff">Find Correct CIKs for Failed/Wrong Entries</h2>
+<div id="out">Loading…</div>
+<script>
+// Banks where we need to find the correct CIK
+// Strategy: search EDGAR company search by known ticker or exact name
+const toFix = [
+  // Wrong name returned — need correct CIK
+  { name:'Truist Financial',       ticker:'TFC',  rssd:'1120754' },
+  { name:'TD Bank (TD Group US)',  ticker:'TD',   rssd:'2618780' },
+  { name:'Citizens Financial',     ticker:'CFG',  rssd:'3303298' },
+  { name:'Glacier Bancorp',        ticker:'GBCI', rssd:'42682'   },
+  { name:'Heartland Financial',    ticker:'HTLF', rssd:'46619'   },
+  { name:'Independent Bank Group', ticker:'IBTX', rssd:'3162667' },
+  { name:'Banner Bank',            ticker:'BANR', rssd:'353469'  },
+  { name:'Renasant Corp',          ticker:'RNST', rssd:'715579'  },
+  { name:'Eagle Bancorp',          ticker:'EAGL', rssd:'2843897' },
+  { name:'Seacoast Banking',       ticker:'SBCF', rssd:'3530782' },
+  { name:'Nicolet Bankshares',     ticker:'NIC',  rssd:'3561723' },
+  { name:'Origin Bancorp',         ticker:'OBNK', rssd:'3545912' },
+  { name:'East West Bancorp',      ticker:'EWBC', rssd:'2514031' },
+  { name:'Prosperity Bancshares',  ticker:'PB',   rssd:'1430723' },
+  { name:'First Horizon',          ticker:'FHN',  rssd:'1254815' },
+  { name:'Valley National Bancorp',ticker:'VLY',  rssd:'74260'   },
+  { name:'Associated Banc-Corp',   ticker:'ASB',  rssd:'835324'  },
+  { name:'First Merchants Corp',   ticker:'FRME', rssd:'36029'   },
+  { name:'PNC Financial',          ticker:'PNC',  rssd:'713950'  },
+  { name:'Cullen/Frost Bankers',   ticker:'CFR',  rssd:'277348'  },
+  { name:'Sandy Spring Bancorp',   ticker:'SASR', rssd:'754192'  },
+  { name:'Community Bank System',  ticker:'CBU',  rssd:'49092'   },
+  { name:'MidWestOne Financial',   ticker:'MOFG', rssd:'62955'   },
+  { name:'First Busey Corp',       ticker:'BUSE', rssd:'315959'  },
+  { name:'Lakeland Bancorp',       ticker:'LBAI', rssd:'844726'  },
+  { name:'Tompkins Financial',     ticker:'TMP',  rssd:'49782'   },
+  { name:'Carter Bankshares',      ticker:'CARE', rssd:'3507026' },
+  { name:'National Bankshares',    ticker:'NKSH', rssd:'796343'  },
+  { name:'Shore Bankshares',       ticker:'SHBI', rssd:'3527638' },
+];
+
+// EDGAR ticker search — finds the correct CIK for a given ticker
+async function findCIKByTicker(ticker) {
+  try {
+    // EDGAR company tickers JSON — maps ticker to CIK
+    const d = await fetch('https://www.sec.gov/files/company_tickers.json').then(r=>r.json());
+    const entry = Object.values(d).find(e => e.ticker === ticker);
+    return entry ? String(entry.cik_str).padStart(10,'0') : null;
+  } catch(e) { return null; }
+}
+
+async function run() {
+  const out = document.getElementById('out');
+  out.innerHTML = '<div style="color:#fbbf24">Loading EDGAR ticker map…</div>';
+  
+  // Load the full EDGAR ticker→CIK map once
+  let tickerMap = {};
+  try {
+    const d = await fetch('https://www.sec.gov/files/company_tickers.json').then(r=>r.json());
+    Object.values(d).forEach(e => { tickerMap[e.ticker] = String(e.cik_str).padStart(10,'0'); });
+    out.innerHTML = `<div style="color:#4ade80">Loaded ${Object.keys(tickerMap).length} tickers from EDGAR ✓</div>`;
+  } catch(e) {
+    out.innerHTML = `<div style="color:#f87171">Failed to load ticker map: ${e.message}</div>`;
+    return;
+  }
+
+  out.innerHTML += `<h3>Corrected CIK Lookups</h3>`;
+  
+  const corrections = [];
+  for (const bank of toFix) {
+    const cik = tickerMap[bank.ticker];
+    if (!cik) {
+      out.innerHTML += `<div class="r" style="color:#f87171">✗ ${bank.name} (${bank.ticker}) — not in ticker map</div>`;
+      continue;
+    }
+    // Verify with EDGAR
+    const d = await fetch(`https://data.sec.gov/submissions/CIK${cik}.json`).then(r=>r.json()).catch(()=>({}));
+    const ok = d.ein && !d.error;
+    corrections.push({ name: bank.name, rssd: bank.rssd, cik, ein: d.ein, edgarName: d.name, tickers: d.tickers?.join(',') });
+    out.innerHTML += `<div class="r ${ok?'ok':''}">
+      ${ok?'✓':'?'} ${bank.name} | RSSD: ${bank.rssd} | CIK: ${cik} | EIN: ${d.ein||'—'} | EDGAR: ${d.name||'—'} | Tickers: ${d.tickers?.join(',')||'—'}
+    </div>`;
+  }
+  
+  // Output corrected map for copy-paste
+  out.innerHTML += `<h3>Corrected map entries (copy into code)</h3>`;
+  out.innerHTML += `<div class="r" style="white-space:pre-wrap;font-size:10px;">${corrections.map(c=>
+    `  ['${c.name}', '${c.rssd}', '${c.cik}'], // ${c.ein} — ${c.edgarName}`
+  ).join('\n')}</div>`;
+}
+run();
+</script></body></html>
