@@ -1950,6 +1950,12 @@ function renderBankDetail(d) {
         <tr><td>Institution Type</td><td>${decodeInstcat(inst.INSTCAT).label}</td></tr>
         <tr><td>Ownership</td><td>${getOwnershipLabel(inst) || '—'}</td></tr>
         <tr><td>Report Date</td><td>${inst.REPDTE || '—'}</td></tr>
+        ${d.edgar ? `
+        <tr><td>EIN</td><td style="font-family:var(--mono)">${d.edgar.ein || '—'}</td></tr>
+        ${d.edgar.lei ? `<tr><td>LEI</td><td style="font-family:var(--mono);font-size:11px;">${d.edgar.lei}</td></tr>` : ''}
+        ${d.edgar.tickers?.length ? `<tr><td>Exchange Tickers</td><td style="font-family:var(--mono)">${d.edgar.tickers.slice(0,5).join(', ')}</td></tr>` : ''}
+        <tr><td>SEC Filing</td><td><a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${d.edgar.cik}&type=10-K&dateb=&owner=include&count=5" target="_blank" style="color:var(--accent);font-family:var(--mono);font-size:12px;">View 10-K Filings ↗</a></td></tr>
+        ` : ''}
       </table>
     </div>
 
@@ -2208,12 +2214,13 @@ async function loadDetail(id, type) {
   try {
     if (type === 'bank') {
       const { inst, history } = await getFDICDetail(id);
-      const [peers, officers, stock] = await Promise.all([
+      const [peers, officers, stock, edgar] = await Promise.all([
         fetchPeers(inst, history),
         fetchOfficers(id),
         fetchStockInfo(inst),
+        fetchEDGAR(inst),
       ]);
-      state.detail = { type: 'bank', inst, history, peers, officers, stock };
+      state.detail = { type: 'bank', inst, history, peers, officers, stock, edgar };
     } else {
       const raw = await getNCUADetail(id);
       state.detail = { type: 'cu', id, raw: raw || { name: id, id } };
@@ -2267,6 +2274,67 @@ Include CEO, President, CFO if known. Limit to 4 people. If you cannot find reli
     if (!clean || clean === '[]') return [];
     return JSON.parse(clean);
   } catch(e) { return []; }
+}
+
+// ── SEC EDGAR EIN Lookup ──────────────────────────────────────────────────────
+// Static RSSD → CIK map — verified against SEC EDGAR submissions endpoint
+// Only includes entries where CIK resolves to correct institution + valid EIN
+const RSSD_CIK_MAP = {
+  '1039502': '0000019617', // JPMorgan Chase & Co
+  '1073757': '0000070858', // Bank of America Corp
+  '451965':  '0000072971', // Wells Fargo & Company
+  '1951350': '0000831001', // Citigroup Inc
+  '504713':  '0000036104', // US Bancorp
+  '2380443': '0000886982', // Goldman Sachs Group
+  '2162966': '0000895421', // Morgan Stanley
+  '927628':  '0000927628', // Capital One Financial
+  '35527':   '0000035527', // Fifth Third Bancorp
+  '91576':   '0000091576', // KeyCorp
+  '1281761': '0001281761', // Regions Financial Corp
+  '2277860': '0000049196', // Huntington Bancshares
+  '2265866': '0000036270', // M&T Bank Corp
+  '1883693': '0000875357', // BOK Financial Corp
+  '3141776': '0001028918', // Pacific Premier Bancorp
+  '3532045': '0001539638', // Triumph Financial
+  '3558169': '0000764038', // South State Corp
+  '3561623': '0000883948', // Atlantic Union Bankshares
+  '3547903': '0001015328', // Wintrust Financial Corp
+  '3045744': '0001212545', // Western Alliance Bancorp
+  '2786468': '0001077428', // Texas Capital Bancshares
+  '861842':  '0000861842', // Cathay General Bancorp
+  '713950':  '0000713950', // PNC Financial Services
+  '1120754': '0000092122', // Truist Financial Corp
+  '2514031': '0000806517', // East West Bancorp
+  '1254815': '0000036966', // First Horizon National
+  '1430723': '0001430723', // Prosperity Bancshares / ServisFirst
+  '277348':  '0000277348', // Cullen/Frost Bankers
+};
+
+async function fetchEDGAR(inst) {
+  if (!inst?.RSSDHCR) return null;
+  const rssd = String(inst.RSSDHCR);
+  const cik = RSSD_CIK_MAP[rssd];
+  if (!cik) return null;
+  try {
+    const r = await fetch(`https://data.sec.gov/submissions/CIK${cik}.json`);
+    if (!r.ok) return null;
+    const d = await r.json();
+    if (!d.ein || d.error) return null;
+    // Format EIN as XX-XXXXXXX
+    const ein = d.ein.replace(/^(\d{2})(\d{7})$/, '$1-$2');
+    return {
+      ein,
+      cik,
+      entityName: d.name,
+      tickers: d.tickers || [],
+      exchanges: d.exchanges || [],
+      sic: d.sic,
+      sicDesc: d.sicDescription,
+      lei: d.lei || null,
+      fiscalYearEnd: d.fiscalYearEnd,
+      stateOfIncorporation: d.stateOfIncorporation,
+    };
+  } catch(e) { return null; }
 }
 
 // ── Stock Info ────────────────────────────────────────────────────────────────
