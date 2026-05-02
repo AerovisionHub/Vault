@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>CIK Verify</title>
+<style>body{font-family:monospace;background:#0f1240;color:#fff;padding:24px;max-width:900px;margin:0 auto;}
+.r{background:rgba(255,255,255,0.05);padding:6px 12px;border-radius:6px;margin:3px 0;font-size:11px;}
+.ok{color:#4ade80;} .err{color:#f87171;}
+h3{color:#4db8ff;margin:12px 0 4px;}</style></head><body>
+<h2 style="color:#4db8ff">CIK Verification — Top Bank Holding Companies</h2>
+<div id="out">Loading…</div>
+<script>
+// Verify CIKs for top BHCs — RSSD from FDIC, CIK from SEC EDGAR
+// Format: [name, rssd, cik]
+const BHC_MAP = [
+  ['JPMorgan Chase',           '1039502', '0000019617'],
+  ['Bank of America',          '1073757', '0000070858'],
+  ['Wells Fargo',              '451965',  '0000072971'],
+  ['Citigroup',                '1951350', '0000831001'],
+  ['U.S. Bancorp',             '504713',  '0000036104'],
+  ['Goldman Sachs',            '2380443', '0000886982'],
+  ['Morgan Stanley',           '2162966', '0000895421'],
+  ['Truist Financial',         '1120754', '0001281761'],
+  ['PNC Financial',            '713950',  '0000713950'],
+  ['Capital One',              '927628',  '0000927628'],
+  ['TD Group US (TD Bank)',     '2618780', '0001282266'],
+  ['Citizens Financial',       '3303298', '0001556801'],
+  ['Fifth Third Bancorp',      '35527',   '0000035527'],
+  ['KeyCorp',                  '91576',   '0000091576'],
+  ['Regions Financial',        '49196',   '0001281761'],
+  ['Huntington Bancshares',    '2277860', '0000049196'],
+  ['M&T Bank',                 '2265866', '0000036270'],
+  ['First Horizon',            '1254815', '0001102266'],
+  ['Cullen/Frost Bankers',     '277348',  '0000277348'],
+  ['BOK Financial',            '1883693', '0000875357'],
+  ['Glacier Bancorp',          '42682',   '0000042682'],
+  ['Heartland Financial',      '46619',   '0000046619'],
+  ['Independent Bank Group',   '3162667', '0001512673'],
+  ['Banner Bank',              '353469',  '0000835324'],
+  ['Pacific Premier Bancorp',  '3141776', '0001028918'],
+  ['Veritex Holdings',         '3548287', '0001649989'],
+  ['Triumph Financial',        '3532045', '0001539638'],
+  ['South State Corp',         '3558169', '0000764038'],
+  ['Atlantic Union Bancshares','3561623', '0000883948'],
+  ['Renasant Corp',            '715579',  '0000715579'],
+  ['Sandy Spring Bancorp',     '754192',  '0000754192'],
+  ['Eagle Bancorp',            '2843897', '0001026214'],
+  ['Seacoast Banking',         '3530782', '0001102266'],
+  ['Brookline Bancorp',        '3587090', '0001049782'],
+  ['Enterprise Bancorp',       '1049782', '0001049782'],
+  ['Community Bank System',    '49092',   '0000049092'],
+  ['Nicolet Bankshares',       '3561723', '0001522767'],
+  ['MidWestOne Financial',     '62955',   '0000062955'],
+  ['Byline Bancorp',           '3575887', '0001683088'],
+  ['Origin Bancorp',           '3545912', '0001692819'],
+  ['Wintrust Financial',       '3547903', '0001015328'],
+  ['Western Alliance Bancorp', '3045744', '0001212545'],
+  ['East West Bancorp',        '2514031', '0000806517'],
+  ['Prosperity Bancshares',    '1430723', '0001430723'],
+  ['Texas Capital Bancshares', '2786468', '0001077428'],
+  ['Silvergate Capital',       '3533783', '0001312109'],
+  ['Sterling Bancorp',         '2762148', '0000836433'],
+  ['Valley National Bancorp',  '74260',   '0000074260'],
+  ['Associated Banc-Corp',     '835324',  '0000835324'],
+  ['First Busey Corp',         '315959',  '0000315959'],
+  ['Cathay General Bancorp',   '861842',  '0000861842'],
+  ['Glacier Hills Bankshares', '42682',   '0000042682'],
+  ['First Merchants Corp',     '36029',   '0000036029'],
+  ['Lakeland Bancorp',         '844726',  '0000844726'],
+  ['Tompkins Financial',       '49782',   '0000049782'],
+  ['Arrow Financial',          '3673',    '0000003673'],
+  ['National Bankshares',      '796343',  '0000796343'],
+  ['Carter Bankshares',        '3507026', '0001371920'],
+  ['Shore Bankshares',         '3527638', '0001060349'],
+  ['Primis Financial',         '3563757', '0001374773'],
+];
+
+async function run() {
+  const out = document.getElementById('out');
+  out.innerHTML = '<div style="color:#fbbf24;font-size:12px;margin-bottom:12px;">Verifying ' + BHC_MAP.length + ' CIKs against SEC EDGAR…</div>';
+  
+  let passed = 0, failed = 0, results = [];
+  
+  for (const [name, rssd, cik] of BHC_MAP) {
+    try {
+      const d = await fetch(`https://data.sec.gov/submissions/CIK${cik}.json`).then(r=>r.json());
+      const ok = !d.error && d.ein;
+      if (ok) passed++;
+      else failed++;
+      results.push({ name, rssd, cik, actualName: d.name, ein: d.ein, tickers: d.tickers?.join(','), ok });
+    } catch(e) {
+      failed++;
+      results.push({ name, rssd, cik, ok: false, error: e.message });
+    }
+  }
+  
+  out.innerHTML = `<h3>${passed}/${BHC_MAP.length} CIKs verified ✓ · ${failed} failed</h3>`;
+  results.forEach(r => {
+    const nameMatch = r.actualName?.toLowerCase().includes(r.name.split(' ')[0].toLowerCase());
+    out.innerHTML += `<div class="r ${r.ok ? 'ok' : 'err'}">
+      ${r.ok ? '✓' : '✗'} ${r.name} | RSSD: ${r.rssd} | CIK: ${r.cik} | EIN: ${r.ein||'—'} | EDGAR name: ${r.actualName||'ERROR'} | Tickers: ${r.tickers||'—'}
+    </div>`;
+  });
+}
+run();
+</script></body></html>
