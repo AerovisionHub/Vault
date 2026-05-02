@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>EIN Check</title>
+<style>body{font-family:monospace;background:#0f1240;color:#fff;padding:24px;max-width:800px;margin:0 auto;}
+.r{background:rgba(255,255,255,0.05);padding:8px 12px;border-radius:6px;margin:4px 0;font-size:11px;line-height:1.8;}
+h3{color:#4db8ff;margin:14px 0 6px;}</style></head><body>
+<h2 style="color:#4db8ff">EIN Data Availability Check</h2>
+<div id="out">Loading…</div>
+<script>
+const FDIC = 'https://banks.data.fdic.gov/api';
+const get = url => fetch(url).then(r=>r.json()).catch(()=>({data:[]}));
+async function run() {
+  const out = document.getElementById('out');
+  out.innerHTML = '';
+
+  // 1. All fields on FDIC institutions — scan for EIN
+  let d = await get(`${FDIC}/institutions?filters=CERT%3A23473&limit=1`);
+  const allFields = Object.keys(d.data?.[0]?.data || {});
+  const einFields = allFields.filter(f => /ein|tax|tin|irs|fein|employer/i.test(f));
+  out.innerHTML += `<h3>FDIC institution fields (${allFields.length} total) — EIN-related: ${einFields.length || 'none'}</h3>`;
+  out.innerHTML += `<div class="r"><strong>All fields:</strong> ${allFields.sort().join(', ')}</div>`;
+
+  // 2. Try requesting EIN fields explicitly
+  d = await get(`${FDIC}/institutions?filters=CERT%3A4063&fields=NAME,CERT,EIN,TAX_ID,TAXID,FEIN&limit=1`);
+  out.innerHTML += `<h3>FDIC explicit EIN field request (MidFirst Bank)</h3>`;
+  out.innerHTML += `<div class="r">${JSON.stringify(d.data?.[0]?.data || 'No data returned')}</div>`;
+
+  // 3. NCUA proxy fields
+  const ncua = await fetch('/functions/ncua?q=navy+federal&limit=1').then(r=>r.json()).catch(()=>({}));
+  const ncuaFields = Object.keys(ncua.results?.[0] || {});
+  const einNcua = ncuaFields.filter(f => /ein|tax|tin|irs|fein|employer/i.test(f));
+  out.innerHTML += `<h3>NCUA proxy fields (${ncuaFields.length}) — EIN-related: ${einNcua.length || 'none'}</h3>`;
+  out.innerHTML += `<div class="r">${ncuaFields.join(', ')}</div>`;
+
+  // 4. SEC EDGAR — EINs for publicly traded holding companies
+  // EDGAR company search API is public and CORS-friendly
+  const edgar = await fetch('https://efts.sec.gov/LATEST/search-index?q=%22First+Fidelity+Bancorp%22&forms=10-K&dateRange=custom&startdt=2024-01-01').then(r=>r.json()).catch(e=>({error:e.message}));
+  out.innerHTML += `<h3>SEC EDGAR search (public API — First Fidelity Bancorp)</h3>`;
+  out.innerHTML += `<div class="r">${JSON.stringify(edgar).slice(0,400)}</div>`;
+
+  // 5. SEC EDGAR company facts API — gives EIN for public companies
+  // Try with known bank holding company CIK
+  const facts = await fetch('https://data.sec.gov/submissions/CIK0000036270.json').then(r=>r.json()).catch(e=>({error:e.message}));
+  out.innerHTML += `<h3>SEC EDGAR company facts (Wells Fargo CIK 36270) — EIN field</h3>`;
+  out.innerHTML += `<div class="r">EIN: ${facts.ein || 'not found'} · Name: ${facts.name || '—'} · Fields: ${Object.keys(facts).join(', ')}</div>`;
+}
+run();
+</script></body></html>
