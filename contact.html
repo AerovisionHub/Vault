@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Contact — Vault</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #0f1240; color: #fff; margin: 0; padding: 40px 20px; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+  .card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 16px; padding: 40px; max-width: 480px; width: 100%; }
+  h1 { font-size: 24px; margin: 0 0 8px; }
+  p { color: rgba(255,255,255,0.6); font-size: 14px; margin: 0 0 28px; }
+  label { display: block; font-size: 12px; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; font-family: monospace; }
+  input, select, textarea { width: 100%; box-sizing: border-box; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: #fff; padding: 12px 14px; font-size: 14px; margin-bottom: 18px; outline: none; font-family: inherit; }
+  input:focus, select:focus, textarea:focus { border-color: #4db8ff; }
+  select option { background: #1a1a3e; }
+  textarea { resize: vertical; min-height: 80px; }
+  button { width: 100%; padding: 14px; background: linear-gradient(135deg, #4db8ff, #7c3aed); border: none; border-radius: 8px; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; letter-spacing: 0.04em; }
+  button:hover { opacity: 0.9; }
+  .back { display: block; text-align: center; margin-top: 20px; color: rgba(255,255,255,0.4); font-size: 13px; text-decoration: none; }
+  .back:hover { color: #4db8ff; }
+  /* Hidden honeypot */
+  .ohnohoney { opacity: 0; position: absolute; top: 0; left: 0; height: 0; width: 0; z-index: -1; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Get in touch</h1>
+  <p>Questions about Vault, feature requests, or want to work with iDENTIFY? We'd love to hear from you.</p>
+  <form name="vault-lead" method="POST" data-netlify="true" netlify-honeypot="bot-field" action="/contact-success.html">
+    <input type="hidden" name="form-name" value="vault-lead" />
+    <p class="ohnohoney"><label>Don't fill this out: <input name="bot-field" /></label></p>
+    <label>Name *</label>
+    <input type="text" name="name" required placeholder="Your name" />
+    <label>Work Email *</label>
+    <input type="email" name="email" required placeholder="you@company.com" />
+    <label>Institution / Company</label>
+    <input type="text" name="institution" placeholder="Bank, credit union, or company" />
+    <label>Role</label>
+    <select name="role">
+      <option value="">Select role…</option>
+      <option>CEO / President</option>
+      <option>CFO / Finance</option>
+      <option>CTO / Technology</option>
+      <option>COO / Operations</option>
+      <option>Analyst / Data</option>
+      <option>Sales / BD</option>
+      <option>Consultant</option>
+      <option>Other</option>
+    </select>
+    <label>Message (optional)</label>
+    <textarea name="feedback" placeholder="Feature request, feedback, or question…"></textarea>
+    <button type="submit">Send Message →</button>
+  </form>
+  <a href="/" class="back">← Back to Vault</a>
+</div>
+</body>
+</html>
