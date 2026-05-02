@@ -622,6 +622,16 @@
 
 <div class="container">
   
+<!-- Hidden Netlify form for form detection & submission storage -->
+<form name="vault-lead" netlify netlify-honeypot="bot-field" hidden>
+  <input type="hidden" name="form-name" value="vault-lead" />
+  <input name="name" type="text" />
+  <input name="email" type="email" />
+  <input name="institution" type="text" />
+  <input name="role" type="text" />
+  <textarea name="feedback"></textarea>
+</form>
+
 <div id="app"></div>
 </div>
 
@@ -4127,17 +4137,30 @@ async function submitLead() {
   const btn = document.getElementById('leadSubmit');
   if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
 
-  // Submit to Netlify Function
+  // Submit to both Netlify Function (email) and Netlify Forms (storage)
   try {
-    const body = new URLSearchParams({ name, email,
-      institution: institution || '', role: role || '', feedback: feedback || '' });
-    await fetch('/.netlify/functions/submit-lead', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body.toString()
+    const formBody = new URLSearchParams({
+      'form-name': 'vault-lead',
+      name, email,
+      institution: institution || '',
+      role: role || '',
+      feedback: feedback || ''
     });
+    // Fire both in parallel — function sends email, form endpoint stores submission
+    await Promise.allSettled([
+      fetch('/.netlify/functions/submit-lead', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formBody.toString()
+      }),
+      fetch('/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formBody.toString()
+      }),
+    ]);
   } catch(e) {
-    console.warn('Netlify form submit error:', e);
+    console.warn('Form submit error:', e);
   }
 
   // Also save locally as backup
