@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>EIN RSSD→CIK</title>
+<style>body{font-family:monospace;background:#0f1240;color:#fff;padding:24px;max-width:800px;margin:0 auto;}
+.r{background:rgba(255,255,255,0.05);padding:8px 12px;border-radius:6px;margin:4px 0;font-size:11px;line-height:1.8;}
+.ok{color:#4ade80;} h3{color:#4db8ff;margin:14px 0 6px;}</style></head><body>
+<h2 style="color:#4db8ff">RSSD → CIK → EIN Resolution Test</h2>
+<div id="out">Loading…</div>
+<script>
+const get = url => fetch(url).then(r=>r.json()).catch(e=>({error:e.message}));
+
+// Known RSSD → CIK mappings to test
+const testBanks = [
+  { name:'BOK Financial',        rssd:'1883693', cik:'0000875357' },
+  { name:'First Fidelity Bcorp', rssd:'1064728', cik:null },
+  { name:'Wells Fargo',          rssd:'451965',  cik:'0000072971' },
+  { name:'JPMorgan Chase',       rssd:'1039502', cik:'0000070858' },
+];
+
+async function run() {
+  const out = document.getElementById('out');
+  out.innerHTML = '';
+
+  // 1. Confirm direct CIK → EIN works for known CIKs
+  out.innerHTML += `<h3>Direct CIK lookup (data.sec.gov)</h3>`;
+  for (const bank of testBanks.filter(b => b.cik)) {
+    const d = await get(`https://data.sec.gov/submissions/CIK${bank.cik}.json`);
+    const ok = !d.error && d.ein;
+    out.innerHTML += `<div class="r ${ok?'ok':''}">
+      ${bank.name} · CIK ${bank.cik} · EIN: ${d.ein||'not found'} · LEI: ${d.lei||'—'} · Tickers: ${d.tickers?.join(',')||'—'}
+    </div>`;
+  }
+
+  // 2. Can we get CIK from RSSD via Fed/FFIEC?
+  out.innerHTML += `<h3>RSSD → CIK via Federal Reserve NIC (nicpubweb.federalreserve.gov)</h3>`;
+  const nic = await get('https://www.ffiec.gov/nicpubweb/content/NICXBRL.aspx?rpt=BHC&selectedyear=2024');
+  out.innerHTML += `<div class="r">FFIEC NIC: ${nic.error ? 'blocked: '+nic.error : JSON.stringify(nic).slice(0,200)}</div>`;
+
+  // 3. Try Fed Reserve NIC API directly
+  const nicApi = await get('https://www.federalreserve.gov/releases/lbr/20241231/default.htm');
+  out.innerHTML += `<div class="r">Fed Reserve LBR: ${nicApi.error || 'reachable'}</div>`;
+
+  // 4. EDGAR company search via EDGAR API (different from efts)
+  const edgarCo = await get('https://company.sec.gov/LATEST/search-index?company=BOK+Financial&CIK=&type=10-K&dateb=&owner=include&count=10&search_text=&action=getcompany');
+  out.innerHTML += `<div class="r">EDGAR co search: ${edgarCo.error || JSON.stringify(edgarCo).slice(0,200)}</div>`;
+
+  // 5. Try EDGAR company name search API
+  const nameSearch = await get('https://efts.sec.gov/LATEST/search-index?q=%22BOK+Financial%22&forms=10-K');
+  out.innerHTML += `<div class="r">EDGAR name search: ${nameSearch.error || JSON.stringify(nameSearch).slice(0,200)}</div>`;
+
+  // 6. Key question: can we search EDGAR by company name to get CIK?
+  // The EDGAR full company search is at a different endpoint
+  const coSearch = await get('https://data.sec.gov/submissions/CIK0000875357.json');
+  out.innerHTML += `<h3>Confirmed: BOKF via known CIK</h3>`;
+  out.innerHTML += `<div class="r ok">EIN: ${coSearch.ein} · Name: ${coSearch.name} · SIC: ${coSearch.sic} (${coSearch.sicDescription})</div>`;
+
+  // 7. Can we search EDGAR by company name to find unknown CIKs?
+  const search2 = await get('https://efts.sec.gov/LATEST/search-index?q=%22First+Fidelity+Bancorp%22&forms=10-K&dateRange=custom&startdt=2020-01-01');
+  out.innerHTML += `<h3>EDGAR search First Fidelity Bancorp (efts)</h3>`;
+  out.innerHTML += `<div class="r">${search2.error || JSON.stringify(search2?.hits?.total)}</div>`;
+
+  // The real answer: EDGAR has a company name → CIK lookup
+  const companyCIK = await get('https://efts.sec.gov/LATEST/search-index?q=%22BOK+Financial%22&forms=10-K');
+  out.innerHTML += `<h3>EDGAR efts for BOK Financial</h3>`;
+  out.innerHTML += `<div class="r">${companyCIK.error || JSON.stringify(companyCIK).slice(0,300)}</div>`;
+}
+run();
+</script></body></html>
