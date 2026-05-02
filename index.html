@@ -3864,58 +3864,57 @@ function renderAbout() {
 
     <div class="about-ai-report">
       <div class="ai-report-header">
-        <div class="ai-report-eyebrow">// Built with AI</div>
-        <h2 class="ai-report-title">This product was built entirely with Claude.</h2>
-        <p class="ai-report-sub">No dev team. No agency. No sprints. Just a founder, an AI, and a weekend.</p>
+        <div class="ai-report-eyebrow">// Built with AI · Project Status</div>
+        <h2 class="ai-report-title">Built entirely with Claude. Zero engineers.</h2>
+        <p class="ai-report-sub">No dev team. No agency. No sprints. A founder, an AI, and a clear vision — from blank page to production in days.</p>
       </div>
 
-      <!-- Row 1: Session overview -->
-      <div class="ai-section-label">// Session overview</div>
+      <!-- KPI highlight bar -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin-bottom:32px;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);">
+        <div style="padding:20px 16px;background:rgba(124,110,245,0.12);text-align:center;">
+          <div style="font-family:var(--serif);font-size:36px;color:#7c6ef5;line-height:1;">~70 hrs</div>
+          <div style="font-size:11px;color:var(--text);font-weight:600;margin-top:6px;">Build Time</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:3px;">10 sessions</div>
+        </div>
+        <div style="padding:20px 16px;background:rgba(248,113,113,0.10);text-align:center;">
+          <div style="font-family:var(--serif);font-size:36px;color:#f87171;line-height:1;">105+</div>
+          <div style="font-size:11px;color:var(--text);font-weight:600;margin-top:6px;">Deploys</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:3px;">All successful</div>
+        </div>
+        <div style="padding:20px 16px;background:rgba(52,211,153,0.10);text-align:center;">
+          <div style="font-family:var(--serif);font-size:36px;color:#34d399;line-height:1;">110+</div>
+          <div style="font-size:11px;color:var(--text);font-weight:600;margin-top:6px;">Features</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:3px;">Zero to production</div>
+        </div>
+        <div style="padding:20px 16px;background:rgba(77,184,255,0.10);text-align:center;">
+          <div style="font-family:var(--serif);font-size:36px;color:#4db8ff;line-height:1;">4,194</div>
+          <div style="font-size:11px;color:var(--text);font-weight:600;margin-top:6px;">Lines of Code</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:3px;">Single HTML file · 221KB</div>
+        </div>
+      </div>
+
+      <!-- Row 2: Technical workload -->
+      <div class="ai-section-label">// Claude's workload</div>
       <div class="ai-stat-grid">
         <div class="ai-stat-card">
-          <div class="ai-stat-val" style="color:#7c6ef5">~65 hrs</div>
-          <div class="ai-stat-label">Total session time</div>
-          <div class="ai-stat-sub">Across 9 conversations</div>
+          <div class="ai-stat-val">1,000+</div>
+          <div class="ai-stat-label">Tool calls executed</div>
+          <div class="ai-stat-sub">Bash, file, git, API</div>
         </div>
         <div class="ai-stat-card">
-          <div class="ai-stat-val">500+</div>
+          <div class="ai-stat-val">600+</div>
           <div class="ai-stat-label">Messages exchanged</div>
           <div class="ai-stat-sub">Human + Claude turns</div>
         </div>
         <div class="ai-stat-card">
-          <div class="ai-stat-val">96</div>
-          <div class="ai-stat-label">Production deploys</div>
-          <div class="ai-stat-sub">To vaultbot.ai — all successful</div>
-        </div>
-        <div class="ai-stat-card">
-          <div class="ai-stat-val" style="color:#34d399">100+</div>
-          <div class="ai-stat-label">Features shipped</div>
-          <div class="ai-stat-sub">Zero to production</div>
-        </div>
-      </div>
-
-      <!-- Row 2: Claude's workload -->
-      <div class="ai-section-label">// Claude's workload</div>
-      <div class="ai-stat-grid">
-        <div class="ai-stat-card">
-          <div class="ai-stat-val">900+</div>
-          <div class="ai-stat-label">Tool calls executed</div>
-          <div class="ai-stat-sub">API, browser, bash, file</div>
-        </div>
-        <div class="ai-stat-card">
-          <div class="ai-stat-val">4,121</div>
-          <div class="ai-stat-label">Lines of code</div>
-          <div class="ai-stat-sub">Single-file app</div>
-        </div>
-        <div class="ai-stat-card">
-          <div class="ai-stat-val">218K</div>
-          <div class="ai-stat-label">Final file size</div>
-          <div class="ai-stat-sub">HTML + JS + CSS</div>
-        </div>
-        <div class="ai-stat-card">
-          <div class="ai-stat-val">~1.9M</div>
+          <div class="ai-stat-val">~2.2M</div>
           <div class="ai-stat-label">Tokens processed</div>
-          <div class="ai-stat-sub">Estimated</div>
+          <div class="ai-stat-sub">Estimated across sessions</div>
+        </div>
+        <div class="ai-stat-card">
+          <div class="ai-stat-val">5</div>
+          <div class="ai-stat-label">Data sources integrated</div>
+          <div class="ai-stat-sub">FDIC · NCUA · SEC · Google News · Yahoo</div>
         </div>
       </div>
 
@@ -3972,7 +3971,7 @@ function renderAbout() {
           <div class="ai-cost-detail">Discovery, design system, dev, QA, UAT. Typical rate for a data product MVP.</div>
         </div>
       </div>
-      <div class="ai-cost-note">Claude Pro subscription cost for this build: ~$20/mo across 9 days &nbsp;·&nbsp; Savings vs solo freelancer: $2,980–$5,980</div>
+      <div class="ai-cost-note">Claude Pro subscription cost for this build: ~$20/mo across 10 sessions &nbsp;·&nbsp; Equivalent agency build cost: $30K–$60K &nbsp;·&nbsp; ROI: priceless</div>
 
       <hr class="ai-inner-divider">
 
@@ -4009,10 +4008,12 @@ function renderAbout() {
             <div class="ai-feature-item ai-done">Lender search by name + city (fuzzy)</div>
             <div class="ai-feature-item ai-done">City filter on Find a Lender page</div>
             <div class="ai-feature-item ai-done">Search overhaul — contains wildcard, combined multi-word</div>
-            <div class="ai-feature-item ai-done">M&amp;A Activity page (/ma) — FDIC deal tracker</div>
-            <div class="ai-feature-item ai-done">New Charters page (/charters) — de novo tracker 2023–2025</div>
             <div class="ai-feature-item ai-done">Hamburger menu for mobile navigation</div>
             <div class="ai-feature-item ai-done">Live QA test suite at /search-test</div>
+            <div class="ai-feature-item ai-done">EIN + LEI + SEC filings via EDGAR</div>
+            <div class="ai-feature-item ai-done">M&amp;A Activity page (/ma) — FDIC deal tracker</div>
+            <div class="ai-feature-item ai-done">New Charters page (/charters)</div>
+            <div class="ai-feature-item ai-done">Problem Banks + NIM + ROA/ROE industry charts</div>
             <div class="ai-feature-item ai-done">Loan type + state + asset size filters</div>
           </div>
         </div>
