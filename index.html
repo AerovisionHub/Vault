@@ -2688,6 +2688,7 @@ function renderLenders() {
         Select filters above and click Search to find lenders.
       </div>
     </div>
+    ${renderContactSection()}
   </div>`;
 }
 
@@ -2961,6 +2962,7 @@ function renderMA() {
         <div class="spinner"></div>Loading M&amp;A activity…
       </div>
     </div>
+    ${renderContactSection()}
   </div>`;
 }
 
@@ -3131,6 +3133,7 @@ function renderCharters() {
         <div class="spinner"></div>Loading new charters…
       </div>
     </div>
+    ${renderContactSection()}
   </div>`;
 }
 
@@ -3565,6 +3568,7 @@ function renderIndustry() {
     <div style="text-align:center;padding:40px 0 16px;font-family:var(--mono);font-size:11px;color:var(--muted);">
       // NCUA credit union data · peer benchmarks · economic indicators — coming soon
     </div>
+    ${renderContactSection()}
   `;
 }
 
@@ -3837,6 +3841,50 @@ function drawIndustryCharts() {
 
 
 // ── About page ───────────────────────────────────────────────────────────────
+function renderContactSection() {
+  const submitted = sessionStorage.getItem('vaultbot_submitted');
+  return `
+    <div style="max-width:900px;margin:0 auto;padding:0 16px;">
+      <hr class="about-divider">
+      <div class="about-lead">
+        <h2>Stay in the loop — and tell us what to build.</h2>
+        <p>Got a feature idea or feedback? Drop it below. We read every submission. No spam — just occasional updates from the iDENTIFY team.</p>
+        ${submitted ? `
+          <div class="lead-success">
+            <span class="big">✓</span>
+            <h3>You're on the list.</h3>
+            <p>We'll reach out when there's something worth sharing.</p>
+          </div>
+        ` : `
+          <div class="lead-form" id="leadForm">
+            <div class="lead-row">
+              <input class="lead-input" id="lead_name" type="text" placeholder="Your name" />
+              <input class="lead-input" id="lead_email" type="email" placeholder="Work email" />
+            </div>
+            <div class="lead-row">
+              <input class="lead-input" id="lead_institution" type="text" placeholder="Institution / Company" />
+              <select class="lead-select" id="lead_role">
+                <option value="">Role / Title…</option>
+                <option>CEO / President</option>
+                <option>CFO / Finance</option>
+                <option>CTO / Technology</option>
+                <option>COO / Operations</option>
+                <option>Analyst / Data</option>
+                <option>Sales / BD</option>
+                <option>Consultant</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div class="lead-row">
+              <textarea class="lead-input lead-textarea" id="lead_feedback" placeholder="Feature request or feedback (optional)…" rows="3" style="resize:vertical;min-height:72px;font-family:inherit;font-size:14px;"></textarea>
+            </div>
+            <button class="lead-submit" id="leadSubmit" onclick="submitLead()">Send →</button>
+          </div>
+        `}
+      </div>
+    </div>`;
+}
+
 function renderAbout() {
   const leads = JSON.parse(localStorage.getItem('vaultbot_leads') || '[]');
   const submitted = sessionStorage.getItem('vaultbot_submitted');
@@ -4078,45 +4126,7 @@ function renderAbout() {
       </div>
     </div>
 
-    <hr class="about-divider">
-
-    <div class="about-lead">
-      <h2>Stay in the loop — and tell us what to build.</h2>
-      <p>Got a feature idea or feedback? Drop it below. We read every submission. No spam — just occasional updates from the iDENTIFY team.</p>
-
-      ${submitted ? `
-        <div class="lead-success">
-          <span class="big">✓</span>
-          <h3>You're on the list.</h3>
-          <p>We'll reach out when there's something worth sharing.</p>
-        </div>
-      ` : `
-        <div class="lead-form" id="leadForm">
-          <div class="lead-row">
-            <input class="lead-input" id="lead_name" type="text" placeholder="Your name" />
-            <input class="lead-input" id="lead_email" type="email" placeholder="Work email" />
-          </div>
-          <div class="lead-row">
-            <input class="lead-input" id="lead_institution" type="text" placeholder="Institution / Company" />
-            <select class="lead-select" id="lead_role">
-              <option value="">Role / Title…</option>
-              <option>CEO / President</option>
-              <option>CFO / Finance</option>
-              <option>CTO / Technology</option>
-              <option>COO / Operations</option>
-              <option>Analyst / Data</option>
-              <option>Sales / BD</option>
-              <option>Consultant</option>
-              <option>Other</option>
-            </select>
-          </div>
-          <div class="lead-row">
-            <textarea class="lead-input lead-textarea" id="lead_feedback" placeholder="Feature request or feedback (optional)…" rows="3" style="resize:vertical;min-height:72px;font-family:inherit;font-size:14px;"></textarea>
-          </div>
-          <button class="lead-submit" id="leadSubmit" onclick="submitLead()">Send →</button>
-        </div>
-      `}
-    </div>
+    ${renderContactSection()}
   `;
 }
 
