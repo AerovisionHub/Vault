@@ -24,6 +24,16 @@
   status = 200
 
 [[redirects]]
+  from = "/bank/*"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/cu/*"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
   from = "/search-test"
   to = "/search-test.html"
   status = 200

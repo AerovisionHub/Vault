@@ -1539,7 +1539,15 @@ function showAbout()    { navigate('/about', 'about'); }
 
 // Handle browser back/forward
 window.addEventListener('popstate', (e) => {
-  const view = e.state?.view || pathToView(location.pathname);
+  const path = location.pathname;
+  const view = e.state?.view || pathToView(path);
+  if (view === 'detail') {
+    // Re-load detail from URL on back/forward
+    const bankMatch = path.match(/^\/bank\/(\d+)$/);
+    const cuMatch   = path.match(/^\/cu\/(\d+)$/);
+    if (bankMatch) { loadDetail(bankMatch[1], 'bank'); return; }
+    if (cuMatch)   { loadDetail(cuMatch[1],   'cu');   return; }
+  }
   state.view = view;
   setPageMeta(view);
   render();
@@ -1551,6 +1559,8 @@ function pathToView(path) {
   if (path.startsWith('/charters')) return 'charters';
   if (path.startsWith('/ma'))       return 'ma';
   if (path.startsWith('/about'))    return 'about';
+  if (path.startsWith('/bank/'))    return 'detail';
+  if (path.startsWith('/cu/'))      return 'detail';
   return 'home';
 }
 
@@ -2218,6 +2228,11 @@ async function loadCUDetail(id, name, cached) {
 async function loadDetail(id, type) {
   state.view = 'detail';
   state.detail = null;
+  // Push deep link URL so the page is shareable
+  const deepPath = type === 'bank' ? `/bank/${id}` : `/cu/${id}`;
+  if (location.pathname !== deepPath) {
+    window.history.pushState({ view: 'detail', id, type }, '', deepPath);
+  }
   render();
   if (window.plausible) plausible('View Institution', { props: { id: String(id), type } });
   if (window.gtag) gtag('event', 'view_item', { item_id: String(id), item_category: type });
@@ -2239,6 +2254,20 @@ async function loadDetail(id, type) {
     state.detail = { type: 'error', msg: e.message };
   }
   render();
+  // Update page meta with institution name for shareable links
+  if (state.detail?.type === 'bank' && state.detail.inst?.NAME) {
+    const inst = state.detail.inst;
+    const title = `${inst.NAME} — Vault`;
+    const desc  = `${inst.NAME} in ${inst.CITY}, ${inst.STALP}. Assets: $${thousands(inst.ASSET)}. FDIC CERT ${inst.CERT}. Financial data, peer benchmarks, and more on Vault.`;
+    const url   = `https://vaultbot.ai/bank/${inst.CERT}`;
+    document.title = title;
+    document.querySelector('meta[property="og:title"]')?.setAttribute('content', title);
+    document.querySelector('meta[property="og:description"]')?.setAttribute('content', desc);
+    document.querySelector('meta[property="og:url"]')?.setAttribute('content', url);
+    document.querySelector('meta[name="twitter:title"]')?.setAttribute('content', title);
+    document.querySelector('meta[name="twitter:description"]')?.setAttribute('content', desc);
+    document.querySelector('link[rel="canonical"]')?.setAttribute('href', url);
+  }
 }
 
 async function fetchOfficers(cert) {
@@ -4214,10 +4243,19 @@ async function submitLead() {
 
 // ── Init (v2) ───────────────────────────────────────────────────────────────
 // Boot from URL path
-const _bootView = pathToView(location.pathname);
+const _bootPath = location.pathname;
+const _bootView = pathToView(_bootPath);
 state.view = _bootView;
 setPageMeta(_bootView);
-if (_bootView === 'industry') {
+
+// Handle direct deep links: /bank/23473 or /cu/66354
+const _bankMatch = _bootPath.match(/^\/bank\/(\d+)$/);
+const _cuMatch   = _bootPath.match(/^\/cu\/(\d+)$/);
+if (_bankMatch) {
+  loadDetail(_bankMatch[1], 'bank');
+} else if (_cuMatch) {
+  loadDetail(_cuMatch[1], 'cu');
+} else if (_bootView === 'industry') {
   render();
   setTimeout(drawIndustryCharts, 100);
 } else {
