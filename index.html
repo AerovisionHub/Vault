@@ -2538,6 +2538,9 @@ function renderLeadershipSection(inst, officers, stock) {
         <div style="font-family:var(--mono);font-size:11px;color:var(--accent);margin-bottom:${p.notes ? '6px' : '0'}">${p.title}</div>
         ${p.notes ? `<div style="font-size:12px;color:var(--muted);">${p.notes}</div>` : ''}
       </div>`).join('')}
+    </div>
+    <div style="margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--muted);line-height:1.6;">
+      ⚠ Leadership data sourced by Claude AI from public sources. May be incomplete or out of date — verify directly with the institution.
     </div>`;
   }, 0);
 
