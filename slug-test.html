@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Slug URL Test</title>
+<style>body{font-family:monospace;background:#0f1240;color:#fff;padding:24px;max-width:900px;margin:0 auto;}
+.pass{color:#4ade80;} .fail{color:#f87171;} .warn{color:#fbbf24;}
+.r{background:rgba(255,255,255,0.05);padding:8px 12px;border-radius:6px;margin:4px 0;font-size:12px;line-height:1.8;}
+h3{color:#4db8ff;margin:14px 0 6px;font-size:13px;}
+#summary{font-size:15px;padding:12px;border-radius:8px;margin:12px 0;font-weight:700;}</style>
+</head><body>
+<h2 style="color:#4db8ff">Slug URL + Deep Link Test</h2>
+<div id="summary"></div>
+<div id="out"></div>
+<script>
+const FDIC = 'https://banks.data.fdic.gov/api';
+const NCUA_PROXY = '/.netlify/functions/ncua';
+let pass = 0, fail = 0;
+
+function slugify(name, city, state) {
+  return (name+' '+city+' '+state).toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+function buildBankPath(inst) {
+  if (!inst?.NAME) return `/bank/${inst?.CERT}`;
+  return `/bank/${slugify(inst.NAME, inst.CITY||'', inst.STALP||'')}-${inst.CERT}`;
+}
+function buildCUPath(id, raw) {
+  if (!raw?.name) return `/cu/${id}`;
+  return `/cu/${slugify(raw.name, raw.city||'', raw.state||'')}-${id}`;
+}
+function extractCERT(path) {
+  const m = path.match(/.*?-?(\d+)$/);
+  return m ? m[1] : null;
+}
+
+async function testBank(cert, expectedName) {
+  const out = document.getElementById('out');
+  try {
+    const d = await fetch(`${FDIC}/institutions?filters=CERT%3A${cert}&fields=NAME,CERT,CITY,STALP,ASSET&limit=1`).then(r=>r.json());
+    const inst = d.data?.[0]?.data;
+    if (!inst) { fail++; out.innerHTML += `<div class="r fail">✗ CERT ${cert} — not found in FDIC</div>`; return; }
+    const path = buildBankPath(inst);
+    const extracted = extractCERT(path);
+    const certMatch = String(extracted) === String(cert);
+    const hasName = path.includes(inst.NAME.split(' ')[0].toLowerCase());
+    const ok = certMatch && hasName;
+    if (ok) pass++; else fail++;
+    out.innerHTML += `<div class="r ${ok?'pass':'fail'}">
+      ${ok?'✓':'✗'} ${inst.NAME} · ${inst.CITY}, ${inst.STALP}<br>
+      URL: <a href="${path}" target="_blank" style="color:#4db8ff">${path}</a><br>
+      CERT extracted: ${extracted} ${certMatch?'✓':'✗ MISMATCH'} · Name in URL: ${hasName?'✓':'✗'}
+    </div>`;
+  } catch(e) { fail++; out.innerHTML += `<div class="r fail">✗ CERT ${cert} error: ${e.message}</div>`; }
+}
+
+async function testCU(id, expectedName) {
+  const out = document.getElementById('out');
+  try {
+    const d = await fetch(`${NCUA_PROXY}?q=${encodeURIComponent(expectedName)}&limit=5`).then(r=>r.json());
+    const cu = d.results?.find(r => String(r.id) === String(id)) || d.results?.[0];
+    if (!cu) { fail++; out.innerHTML += `<div class="r warn">⚠ CU ${id} — not found via proxy (${expectedName})</div>`; return; }
+    const path = buildCUPath(cu.id, cu);
+    const extracted = extractCERT(path);
+    const idMatch = String(extracted) === String(cu.id);
+    const hasName = path.includes(cu.name?.split(' ')[0].toLowerCase());
+    const ok = idMatch && hasName;
+    if (ok) pass++; else fail++;
+    out.innerHTML += `<div class="r ${ok?'pass':'fail'}">
+      ${ok?'✓':'✗'} ${cu.name} · ${cu.city}, ${cu.state}<br>
+      URL: <a href="${path}" target="_blank" style="color:#b06ef3">${path}</a><br>
+      ID extracted: ${extracted} ${idMatch?'✓':'✗ MISMATCH'} · Name in URL: ${hasName?'✓':'✗'}
+    </div>`;
+  } catch(e) { fail++; out.innerHTML += `<div class="r fail">✗ CU ${id} error: ${e.message}</div>`; }
+}
+
+async function testDirectLoad(path, expectedCert) {
+  const out = document.getElementById('out');
+  const extracted = extractCERT(path);
+  const ok = String(extracted) === String(expectedCert);
+  if (ok) pass++; else fail++;
+  out.innerHTML += `<div class="r ${ok?'pass':'fail'}">
+    ${ok?'✓':'✗'} Direct load: ${path}<br>
+    Expected CERT: ${expectedCert} · Got: ${extracted} ${ok?'✓':'✗'}
+  </div>`;
+}
+
+async function run() {
+  const out = document.getElementById('out');
+
+  out.innerHTML += `<h3>🏦 Bank slug URLs</h3>`;
+  await testBank(23473,  'First Fidelity Bank');        // OK — name with spaces
+  await testBank(5962,   'Sutton Bank');                // OH — simple name
+  await testBank(4063,   'MidFirst Bank');              // OK — camelcase
+  await testBank(17211,  'The Citizens Bank');          // AR — "The" prefix
+  await testBank(18118,  'Bank of the Plains');         // KS — stop words
+  await testBank(628,    'JPMorgan Chase Bank');        // national — long name
+  await testBank(3511,   'Wells Fargo Bank');           // national
+  await testBank(24677,  'Triad Bank');                 // Tulsa
+
+  out.innerHTML += `<h3>🤝 Credit Union slug URLs</h3>`;
+  await testCU(5536,  'Navy Federal');
+  await testCU(24212, 'SchoolsFirst');
+  await testCU(24694, 'America First');
+
+  out.innerHTML += `<h3>🔗 Direct load — CERT extraction from slug</h3>`;
+  await testDirectLoad('/bank/first-fidelity-bank-oklahoma-city-ok-23473', '23473');
+  await testDirectLoad('/bank/midfirst-bank-oklahoma-city-ok-4063', '4063');
+  await testDirectLoad('/bank/the-citizens-bank-batesville-ar-17211', '17211');
+  await testDirectLoad('/bank/bank-of-the-plains-plains-ks-18118', '18118');
+  await testDirectLoad('/bank/jpmorgan-chase-bank-national-association-columbus-oh-628', '628');
+  await testDirectLoad('/cu/navy-federal-credit-union-vienna-va-5536', '5536');
+  await testDirectLoad('/bank/23473', '23473'); // legacy numeric URL still works
+
+  const total = pass + fail;
+  const pct = Math.round(pass/total*100);
+  const c = pct===100?'#4ade80':pct>=80?'#fbbf24':'#f87171';
+  const bg = pct===100?'rgba(74,222,128,0.1)':pct>=80?'rgba(251,191,36,0.1)':'rgba(248,113,113,0.1)';
+  document.getElementById('summary').style.cssText = `background:${bg};border:1px solid ${c};padding:14px;border-radius:8px;`;
+  document.getElementById('summary').innerHTML = `<span style="color:${c}">${pass}/${total} passed (${pct}%)</span>`;
+}
+run();
+</script></body></html>
