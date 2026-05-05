@@ -1542,9 +1542,9 @@ window.addEventListener('popstate', (e) => {
   const path = location.pathname;
   const view = e.state?.view || pathToView(path);
   if (view === 'detail') {
-    // Re-load detail from URL on back/forward
-    const bankMatch = path.match(/^\/bank\/(\d+)$/);
-    const cuMatch   = path.match(/^\/cu\/(\d+)$/);
+    // Extract CERT from end of slug: /bank/first-fidelity-bank-oklahoma-city-ok-23473
+    const bankMatch = path.match(/^\/bank\/.*?-?(\d+)$/);
+    const cuMatch   = path.match(/^\/cu\/.*?-?(\d+)$/);
     if (bankMatch) { loadDetail(bankMatch[1], 'bank'); return; }
     if (cuMatch)   { loadDetail(cuMatch[1],   'cu');   return; }
   }
@@ -2225,13 +2225,35 @@ async function loadCUDetail(id, name, cached) {
   } catch(e) { /* keep cached data */ }
 }
 
+function slugify(name, city, state) {
+  // Convert "First Fidelity Bank", "Oklahoma City", "OK" → "first-fidelity-bank-oklahoma-city-ok"
+  const str = `${name} ${city} ${state}`.toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')   // remove special chars
+    .replace(/\s+/g, '-')            // spaces to hyphens
+    .replace(/-+/g, '-')             // collapse multiple hyphens
+    .replace(/^-|-$/g, '');          // trim leading/trailing
+  return str;
+}
+
+function buildBankPath(inst) {
+  if (!inst?.NAME) return `/bank/${inst?.CERT}`;
+  const slug = slugify(inst.NAME, inst.CITY || '', inst.STALP || '');
+  return `/bank/${slug}-${inst.CERT}`;
+}
+
+function buildCUPath(id, raw) {
+  if (!raw?.name) return `/cu/${id}`;
+  const slug = slugify(raw.name, raw.city || '', raw.state || '');
+  return `/cu/${slug}-${id}`;
+}
+
 async function loadDetail(id, type) {
   state.view = 'detail';
   state.detail = null;
-  // Push deep link URL so the page is shareable
-  const deepPath = type === 'bank' ? `/bank/${id}` : `/cu/${id}`;
-  if (location.pathname !== deepPath) {
-    window.history.pushState({ view: 'detail', id, type }, '', deepPath);
+  // Push slug URL immediately (will refine with name after load)
+  const tempPath = type === 'bank' ? `/bank/${id}` : `/cu/${id}`;
+  if (!location.pathname.endsWith(`-${id}`) && location.pathname !== tempPath) {
+    window.history.pushState({ view: 'detail', id, type }, '', tempPath);
   }
   render();
   if (window.plausible) plausible('View Institution', { props: { id: String(id), type } });
@@ -2254,19 +2276,40 @@ async function loadDetail(id, type) {
     state.detail = { type: 'error', msg: e.message };
   }
   render();
-  // Update page meta with institution name for shareable links
+  // Update URL to full slug + set page meta once institution is loaded
   if (state.detail?.type === 'bank' && state.detail.inst?.NAME) {
     const inst = state.detail.inst;
-    const title = `${inst.NAME} — Vault`;
-    const desc  = `${inst.NAME} in ${inst.CITY}, ${inst.STALP}. Assets: $${thousands(inst.ASSET)}. FDIC CERT ${inst.CERT}. Financial data, peer benchmarks, and more on Vault.`;
-    const url   = `https://vaultbot.ai/bank/${inst.CERT}`;
+    const slugPath = buildBankPath(inst);
+    const fullUrl  = `https://vaultbot.ai${slugPath}`;
+    const title    = `${inst.NAME} — Vault`;
+    const desc     = `${inst.NAME} in ${inst.CITY}, ${inst.STALP}. Assets: $${thousands(inst.ASSET)}. FDIC CERT ${inst.CERT}. Financial data, peer benchmarks, and more on Vault.`;
+    // Replace URL with full slug (no new history entry — replaceState)
+    if (location.pathname !== slugPath) {
+      window.history.replaceState({ view: 'detail', id: inst.CERT, type: 'bank' }, '', slugPath);
+    }
     document.title = title;
     document.querySelector('meta[property="og:title"]')?.setAttribute('content', title);
     document.querySelector('meta[property="og:description"]')?.setAttribute('content', desc);
-    document.querySelector('meta[property="og:url"]')?.setAttribute('content', url);
+    document.querySelector('meta[property="og:url"]')?.setAttribute('content', fullUrl);
     document.querySelector('meta[name="twitter:title"]')?.setAttribute('content', title);
     document.querySelector('meta[name="twitter:description"]')?.setAttribute('content', desc);
-    document.querySelector('link[rel="canonical"]')?.setAttribute('href', url);
+    document.querySelector('link[rel="canonical"]')?.setAttribute('href', fullUrl);
+  } else if (state.detail?.type === 'cu' && state.detail.raw?.name) {
+    const raw      = state.detail.raw;
+    const slugPath = buildCUPath(state.detail.id, raw);
+    const fullUrl  = `https://vaultbot.ai${slugPath}`;
+    const title    = `${raw.name} — Vault`;
+    const desc     = `${raw.name} credit union in ${raw.city || ''}, ${raw.state || ''}. Assets: $${thousands(raw.assets)}. Member data and peer benchmarks on Vault.`;
+    if (location.pathname !== slugPath) {
+      window.history.replaceState({ view: 'detail', id: state.detail.id, type: 'cu' }, '', slugPath);
+    }
+    document.title = title;
+    document.querySelector('meta[property="og:title"]')?.setAttribute('content', title);
+    document.querySelector('meta[property="og:description"]')?.setAttribute('content', desc);
+    document.querySelector('meta[property="og:url"]')?.setAttribute('content', fullUrl);
+    document.querySelector('meta[name="twitter:title"]')?.setAttribute('content', title);
+    document.querySelector('meta[name="twitter:description"]')?.setAttribute('content', desc);
+    document.querySelector('link[rel="canonical"]')?.setAttribute('href', fullUrl);
   }
 }
 
@@ -4249,8 +4292,8 @@ state.view = _bootView;
 setPageMeta(_bootView);
 
 // Handle direct deep links: /bank/23473 or /cu/66354
-const _bankMatch = _bootPath.match(/^\/bank\/(\d+)$/);
-const _cuMatch   = _bootPath.match(/^\/cu\/(\d+)$/);
+const _bankMatch = _bootPath.match(/^\/bank\/.*?-?(\d+)$/);
+const _cuMatch   = _bootPath.match(/^\/cu\/.*?-?(\d+)$/);
 if (_bankMatch) {
   loadDetail(_bankMatch[1], 'bank');
 } else if (_cuMatch) {
