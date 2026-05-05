@@ -2326,25 +2326,23 @@ async function fetchOfficers(cert) {
   } catch(e) { return null; }
 }
 
-async function fetchLeadershipFromClaude(bankName, city, state) {
-  // Use Claude claude-sonnet-4-20250514 to look up leadership from public sources
+async function fetchLeadershipFromClaude(bankName, city, state, webAddr) {
   try {
-    const prompt = `You are a financial research assistant. Look up the current CEO and key executives for "${bankName}" in ${city}, ${state}. This is a US community bank.
+    const domainHint = webAddr
+      ? `Focus your search on the bank's own website: ${webAddr.replace(/^https?:\/\//i,'').split('/')[0]}. `
+      : '';
+    const prompt = `You are a financial research assistant. ${domainHint}Find the current executive leadership for "${bankName}" in ${city}, ${state} — a US bank.
 
-Return ONLY a JSON array (no markdown, no explanation) with this structure:
-[{"name":"Full Name","title":"Title","notes":"Brief note if relevant, else null"}]
+Return ONLY a JSON array (no markdown, no explanation):
+[{"name":"Full Name","title":"Title","source":"URL or public record"}]
 
-Include CEO, President, CFO if known. Limit to 4 people. If you cannot find reliable information, return [].`;
+Include CEO, President, CFO, COO if known. Max 5 people. Only include people you are highly confident about. If uncertain, return [].`;
 
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
+      headers: { 'Content-Type': 'application/json', 'anthropic-dangerous-direct-browser-access': 'true' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 500,
+        model: 'claude-sonnet-4-20250514', max_tokens: 600,
         tools: [{ type: 'web_search_20250305', name: 'web_search' }],
         messages: [{ role: 'user', content: prompt }]
       })
@@ -2521,27 +2519,44 @@ function renderLeadershipSection(inst, officers, stock) {
   const bankName = inst.NAME;
   const bankCity = inst.CITY;
   const bankState = inst.STALP;
+  const bankWeb   = inst.WEBADDR || null;
   setTimeout(async () => {
     const el = document.getElementById('leadershipContainer');
     if (!el) return;
     let people = [];
     try {
-      people = await fetchLeadershipFromClaude(bankName, bankCity, bankState);
+      people = await fetchLeadershipFromClaude(bankName, bankCity, bankState, bankWeb);
     } catch(e) {}
+
+    // Build website link — always shown
+    const webUrl = bankWeb ? (bankWeb.startsWith('http') ? bankWeb : 'https://'+bankWeb) : null;
+    const leadershipPageHints = ['leadership','about','team','management','executives','about-us','our-team'];
+    const webLinkHtml = webUrl ? `
+      <div style="margin-top:12px;padding:10px 14px;background:rgba(77,184,255,0.06);border:1px solid rgba(77,184,255,0.15);border-radius:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+        <span style="font-family:var(--mono);font-size:11px;color:var(--muted);">For accurate, up-to-date leadership information:</span>
+        <a href="${webUrl}" target="_blank" rel="noopener"
+          style="font-family:var(--mono);font-size:11px;color:var(--accent);text-decoration:none;white-space:nowrap;">
+          Visit ${bankWeb.replace(/^https?:\/\//i,'').replace(/\/$/,'')} ↗
+        </a>
+      </div>` : '';
+
     if (!people || !people.length) {
-      el.innerHTML = '<p style="color:var(--muted);font-size:13px;font-family:var(--mono);padding:8px 0;">No leadership data available for this institution.</p>';
+      el.innerHTML = `<p style="color:var(--muted);font-size:13px;font-family:var(--mono);padding:8px 0;">No leadership data found. Check the institution's website directly.</p>${webLinkHtml}`;
       return;
     }
-    el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">${people.map(p => `
-      <div style="padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
-        <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px;">${p.name}</div>
-        <div style="font-family:var(--mono);font-size:11px;color:var(--accent);margin-bottom:${p.notes ? '6px' : '0'}">${p.title}</div>
-        ${p.notes ? `<div style="font-size:12px;color:var(--muted);">${p.notes}</div>` : ''}
-      </div>`).join('')}
-    </div>
-    <div style="margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--muted);line-height:1.6;">
-      ⚠ Leadership data sourced by Claude AI from public sources. May be incomplete or out of date — verify directly with the institution.
-    </div>`;
+
+    el.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">${people.map(p => `
+        <div style="padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
+          <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px;">${p.name}</div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--accent);margin-bottom:4px;">${p.title}</div>
+          ${p.source && p.source !== 'public record' ? `<div style="font-family:var(--mono);font-size:9px;color:var(--muted);word-break:break-all;">source: ${p.source.replace(/^https?:\/\//,'').split('/')[0]}</div>` : ''}
+        </div>`).join('')}
+      </div>
+      <div style="margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--muted);line-height:1.6;">
+        ⚠ Sourced by Claude AI via web search${bankWeb ? ` (scoped to ${bankWeb.replace(/^https?:\/\//i,'').split('/')[0]})` : ''}. May be incomplete — verify below.
+      </div>
+      ${webLinkHtml}`;
   }, 0);
 
   return `<div class="section">
