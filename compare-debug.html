@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Compare Debug</title>
+<style>body{font-family:monospace;background:#0f1240;color:#fff;padding:24px;max-width:1000px;margin:0 auto;}
+.r{background:rgba(255,255,255,0.05);padding:8px 12px;border-radius:6px;margin:4px 0;font-size:11px;line-height:1.7;white-space:pre-wrap;}
+h3{color:#4db8ff;margin:14px 0 6px;}</style></head><body>
+<h2 style="color:#4db8ff">Compare Debug — Why are tests failing?</h2>
+<div id="out">Loading…</div>
+<script>
+const FDIC = 'https://banks.data.fdic.gov/api';
+const NCUA_PROXY = '/.netlify/functions/ncua';
+
+async function fetchBank(cert) {
+  const finFields = 'REPDTE,ASSET,DEP,EQ,NETINC,RBC1AAJ,ROA,ROE,NIMY,LNLSDEPR,NUMEMP';
+  const instFields = 'NAME,CERT,CITY,STALP,ASSET,DEP,WEBADDR,ESTYMD,INSTCAT';
+  const [iR, fR] = await Promise.all([
+    fetch(`${FDIC}/institutions?filters=CERT%3A${cert}&fields=${instFields}&limit=1`).then(r=>r.json()),
+    fetch(`${FDIC}/financials?filters=CERT%3A${cert}&fields=${finFields}&limit=1&sort_by=REPDTE&sort_order=DESC`).then(r=>r.json()),
+  ]);
+  return { inst: iR.data?.[0]?.data, latest: fR.data?.[0]?.data || {} };
+}
+
+async function fetchCU(id, name) {
+  const d = await fetch(`${NCUA_PROXY}?q=${encodeURIComponent(name)}&limit=5`).then(r=>r.json());
+  return d.results?.find(r => String(r.id) === String(id)) || d.results?.[0] || null;
+}
+
+async function run() {
+  const out = document.getElementById('out');
+  out.innerHTML = '';
+
+  // Test 2 reproduction — exact failure point
+  const [b2a, b2b, b2c] = await Promise.all([fetchBank(4063), fetchBank(5962), fetchBank(23473)]);
+  out.innerHTML += `<h3>3 Banks Result</h3>`;
+  out.innerHTML += `<div class="r">b2a (4063 MidFirst): inst=${!!b2a?.inst}, name=${b2a?.inst?.NAME||'MISSING'}</div>`;
+  out.innerHTML += `<div class="r">b2b (5962 Sutton):   inst=${!!b2b?.inst}, name=${b2b?.inst?.NAME||'MISSING'}</div>`;
+  out.innerHTML += `<div class="r">b2c (23473 FFB):     inst=${!!b2c?.inst}, name=${b2c?.inst?.NAME||'MISSING'}</div>`;
+  
+  // Show full latest object for each
+  out.innerHTML += `<h3>Latest financial data per bank</h3>`;
+  out.innerHTML += `<div class="r">b2a latest: ${JSON.stringify(b2a?.latest, null, 2)}</div>`;
+  out.innerHTML += `<div class="r">b2b latest: ${JSON.stringify(b2b?.latest, null, 2)}</div>`;
+  out.innerHTML += `<div class="r">b2c latest: ${JSON.stringify(b2c?.latest, null, 2)}</div>`;
+
+  // CU hybrid
+  out.innerHTML += `<h3>CU + Bank hybrid</h3>`;
+  const [b3, c3] = await Promise.all([fetchBank(4063), fetchCU(5536, 'Navy Federal')]);
+  out.innerHTML += `<div class="r">b3.inst exists: ${!!b3?.inst}</div>`;
+  out.innerHTML += `<div class="r">c3 raw: ${JSON.stringify(c3, null, 2).slice(0,500)}</div>`;
+  out.innerHTML += `<div class="r">c3.name: ${c3?.name}</div>`;
+  out.innerHTML += `<div class="r">!!b3?.inst && !!c3?.name = ${!!b3?.inst && !!c3?.name}</div>`;
+}
+run();
+</script></body></html>
