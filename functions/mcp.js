@@ -306,17 +306,24 @@ async function getLenderRankings(args) {
     all:       '0%20TO%2099999999999',
   };
   const range = sizeRanges[asset_size] || sizeRanges.community;
-  let filters = `ACTIVE%3A1%20AND%20ASSET%3A%5B${range}%5D`;
-  if (state) filters += `%20AND%20STALP%3A${state.toUpperCase()}`;
-  if (city)  filters += `%20AND%20CITY%3A${encodeURIComponent(city)}*`;
+  let instFilters = `ACTIVE%3A1%20AND%20ASSET%3A%5B${range}%5D`;
+  if (state) instFilters += `%20AND%20STALP%3A${state.toUpperCase()}`;
+  if (city)  instFilters += `%20AND%20CITY%3A${encodeURIComponent(city)}*`;
+
   const fields = 'NAME,CERT,CITY,STALP,ASSET,DEP,WEBADDR';
   const finFields = 'CERT,RBC1AAJ,ROA,LNLSDEPR,LNLSNET,ASSET';
-  const [instR, finR] = await Promise.all([
-    fetch(`${FDIC_BASE}/institutions?filters=${filters}&fields=${fields}&limit=200&sort_by=ASSET&sort_order=DESC`).then(r => r.json()),
-    fetch(`${FDIC_BASE}/financials?filters=${filters}&fields=${finFields}&limit=200&sort_by=ASSET&sort_order=DESC`).then(r => r.json()),
-  ]);
-  const insts = (instR.data || []).map(d => d.data);
-  const fins = new Map((finR.data || []).map(d => [d.data?.CERT, d.data]));
+
+  // Step 1: get filtered institutions
+  const instR = await fetch(`${FDIC_BASE}/institutions?filters=${instFilters}&fields=${fields}&limit=200&sort_by=ASSET&sort_order=DESC`).then(r => r.json()).catch(() => ({ data: [] }));
+  const insts = (instR.data || []).map(d => d.data).filter(Boolean);
+  if (!insts.length) return [];
+
+  // Step 2: get financials for those specific CERTs (financials endpoint doesn't support ASSET range filters)
+  const certList = insts.map(i => i.CERT).slice(0, 200).join('%20OR%20CERT%3A');
+  const finFilters = `CERT%3A${certList}`;
+  const finR = await fetch(`${FDIC_BASE}/financials?filters=${finFilters}&fields=${finFields}&limit=200&sort_by=ASSET&sort_order=DESC`).then(r => r.json()).catch(() => ({ data: [] }));
+  const fins = new Map((finR.data || []).map(d => [d.data?.CERT, d.data]).filter(([k]) => k));
+
   const scored = insts.map(inst => {
     const fin = fins.get(inst.CERT);
     if (!fin) return null;
