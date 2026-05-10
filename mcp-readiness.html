@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>MCP Readiness Check</title>
+<style>body{font-family:monospace;background:#0f1240;color:#fff;padding:24px;max-width:900px;margin:0 auto;}
+.r{background:rgba(255,255,255,0.05);padding:10px 14px;border-radius:6px;margin:6px 0;font-size:11px;line-height:1.7;white-space:pre-wrap;}
+.pass{color:#4ade80;} .fail{color:#f87171;} .warn{color:#fbbf24;}
+h3{color:#4db8ff;margin:14px 0 4px;}</style></head><body>
+<h2 style="color:#4db8ff">MCP Production Readiness Check</h2>
+<p style="color:#9ca3af;font-size:11px;">Verify the MCP works end-to-end before announcing.</p>
+<div id="out">Loading…</div>
+<script>
+const MCP = '/.netlify/functions/mcp';
+let pass = 0, fail = 0, warn = 0;
+function log(level, label, detail) {
+  const out = document.getElementById('out');
+  if (level === 'pass') pass++;
+  else if (level === 'warn') warn++;
+  else fail++;
+  const sym = level === 'pass' ? '✓' : level === 'warn' ? '⚠' : '✗';
+  out.innerHTML += `<div class="r ${level}">${sym} <strong>${label}</strong>${detail ? '<br>'+detail : ''}</div>`;
+}
+
+async function rpc(method, params) {
+  const r = await fetch(MCP, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ jsonrpc:'2.0', id:1, method, params })
+  });
+  return { status: r.status, data: await r.json() };
+}
+
+async function run() {
+  document.getElementById('out').innerHTML = '';
+
+  // 1. Server is alive
+  document.getElementById('out').innerHTML += '<h3>Production Health</h3>';
+  try {
+    const r = await fetch(MCP);
+    const data = await r.json();
+    log(r.ok && data.name === 'vault-mcp' ? 'pass' : 'fail',
+        'Endpoint reachable & returns server info',
+        `Server: ${data.name} v${data.version} · ${data.tools?.length} tools`);
+  } catch(e) { log('fail', 'Endpoint unreachable', e.message); }
+
+  // 2. CORS headers
+  try {
+    const r = await fetch(MCP, { method:'OPTIONS' });
+    const cors = r.headers.get('access-control-allow-origin');
+    log(cors === '*' ? 'pass' : 'fail',
+        'CORS configured for cross-origin agents',
+        `Allow-Origin: ${cors}`);
+  } catch(e) { log('fail', 'CORS check failed', e.message); }
+
+  // 3. Initialize handshake
+  document.getElementById('out').innerHTML += '<h3>MCP Protocol Compliance</h3>';
+  const init = await rpc('initialize');
+  log(init.data.result?.protocolVersion === '2024-11-05' ? 'pass' : 'fail',
+      'initialize returns protocol version',
+      `Got: ${init.data.result?.protocolVersion}`);
+
+  // 4. Capabilities declared
+  log(init.data.result?.capabilities?.tools !== undefined ? 'pass' : 'fail',
+      'Capabilities object includes tools',
+      `Capabilities: ${JSON.stringify(init.data.result?.capabilities)}`);
+
+  // 5. Tools list properly shaped for MCP clients
+  const list = await rpc('tools/list');
+  const tools = list.data.result?.tools || [];
+  const wellShaped = tools.every(t => t.name && t.description && t.inputSchema?.type === 'object');
+  log(wellShaped ? 'pass' : 'fail',
+      `All ${tools.length} tools have proper MCP shape`,
+      tools.map(t => t.name).join(', '));
+
+  // 6. Tool descriptions are agent-friendly (not too short, mention what they do)
+  const goodDescs = tools.filter(t => t.description.length > 50);
+  log(goodDescs.length === tools.length ? 'pass' : 'warn',
+      'Tool descriptions are detailed enough for agents',
+      `${goodDescs.length}/${tools.length} tools have descriptions >50 chars`);
+
+  // 7. Required params marked correctly
+  const requiredOk = tools.every(t => Array.isArray(t.inputSchema?.required) || t.inputSchema?.required === undefined);
+  log(requiredOk ? 'pass' : 'fail',
+      'Required params declared correctly',
+      'Each tool inputSchema has valid required array');
+
+  // 8. Real call returns content array (MCP spec)
+  const call = await rpc('tools/call', { name:'search_institutions', arguments:{query:'Wells Fargo', limit:1} });
+  const content = call.data.result?.content;
+  log(Array.isArray(content) && content[0]?.type === 'text' ? 'pass' : 'fail',
+      'tools/call returns content array per MCP spec',
+      `content[0].type: ${content?.[0]?.type}`);
+
+  // 9. Error handling per JSON-RPC spec
+  const errCall = await rpc('tools/call', { name:'fake_tool', arguments:{} });
+  log(errCall.data.error?.code === -32601 ? 'pass' : 'fail',
+      'Errors follow JSON-RPC error code spec',
+      `Got error code: ${errCall.data.error?.code} (-32601 = method not found)`);
+
+  // 10. Performance
+  document.getElementById('out').innerHTML += '<h3>Performance & Reliability</h3>';
+  const t0 = Date.now();
+  await rpc('tools/call', { name:'search_institutions', arguments:{query:'Bank'} });
+  const ms = Date.now() - t0;
+  log(ms < 3000 ? 'pass' : ms < 8000 ? 'warn' : 'fail',
+      'Search response time',
+      `${ms}ms (good: <3s, ok: <8s, slow: >8s)`);
+
+  // 11. SSE transport check
+  document.getElementById('out').innerHTML += '<h3>Claude Desktop Compatibility</h3>';
+  log('warn',
+      'Remote HTTP MCP requires bridge for Claude Desktop',
+      'Claude Desktop currently expects local stdio servers. We\'ll provide a one-line npx bridge command for users.');
+
+  // Summary
+  const total = pass + fail + warn;
+  const out = document.getElementById('out');
+  const c = fail===0 ? '#4ade80' : '#f87171';
+  out.innerHTML = `<div style="background:${fail===0?'rgba(74,222,128,0.1)':'rgba(248,113,113,0.1)'};border:1px solid ${c};padding:14px;border-radius:8px;margin-bottom:16px;font-weight:700;font-size:15px;color:${c}">${pass}/${total} passed${warn?` · ${warn} warnings`:''}${fail?` · ${fail} failed`:''}</div>` + out.innerHTML;
+}
+run();
+</script></body></html>
