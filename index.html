@@ -1612,7 +1612,7 @@ function render() {
   if (state.view === 'home' || state.view === 'search') app.innerHTML = renderSearch();
   else if (state.view === 'results') app.innerHTML = renderResults();
   else if (state.view === 'detail') app.innerHTML = renderDetail();
-  else if (state.view === 'about') app.innerHTML = renderAbout();
+  else if (state.view === 'about') { app.innerHTML = renderAbout(); setTimeout(initAboutMCPStats, 50); }
   else if (state.view === 'lenders') { app.innerHTML = renderLenders(); setTimeout(initLenders, 50); }
   else if (state.view === 'charters') { app.innerHTML = renderCharters(); setTimeout(initCharters, 50); }
   else if (state.view === 'ma') { app.innerHTML = renderMA(); setTimeout(initMA, 50); }
@@ -2743,6 +2743,41 @@ function renderNewsSection(name, city, state) {
     <h2>// Recent News</h2>
     <div id="newsContainer"><div style="display:flex;align-items:center;gap:10px;padding:12px 0;color:var(--muted);font-family:var(--mono);font-size:12px;"><div class="spinner" style="width:14px;height:14px;border-width:2px;"></div>Loading news…</div></div>
   </div>`;
+}
+
+// ── About page MCP stats ──────────────────────────────────────────────────────
+async function initAboutMCPStats() {
+  try {
+    const r = await fetch('/.netlify/functions/mcp-stats');
+    if (!r.ok) return;
+    const d = await r.json();
+    const all = d.all_time || {};
+
+    const callsEl = document.getElementById('mcp-stat-calls');
+    const usersEl = document.getElementById('mcp-stat-users');
+    const topToolEl = document.getElementById('mcp-stat-top-tool');
+    const topClientEl = document.getElementById('mcp-stat-top-client');
+
+    if (!callsEl) return; // not on about page
+
+    if (!all.total_calls) {
+      callsEl.textContent = '0';
+      usersEl.textContent = '0';
+      topToolEl.textContent = 'Be the first';
+      topClientEl.textContent = 'Be the first';
+      return;
+    }
+
+    callsEl.textContent = all.total_calls.toLocaleString();
+    usersEl.textContent = all.unique_users.toLocaleString();
+
+    const tools = Object.entries(all.tool_usage || {}).sort((a,b) => b[1]-a[1]);
+    const clients = Object.entries(all.client_usage || {}).sort((a,b) => b[1]-a[1]);
+    topToolEl.textContent = tools[0]?.[0] || '—';
+    topClientEl.textContent = clients[0]?.[0]?.split('/')[0] || '—';
+  } catch(e) {
+    // Silent fail — just leave dashes if stats unavailable
+  }
 }
 
 // ── Compare page ─────────────────────────────────────────────────────────────
@@ -4296,6 +4331,37 @@ function renderAbout() {
         </div>
       </div>
       <div class="ai-cost-note">Claude Pro subscription cost for this build: ~$20/mo across 10 sessions &nbsp;·&nbsp; Equivalent agency build cost: $30K–$60K &nbsp;·&nbsp; ROI: priceless</div>
+
+      <hr class="ai-inner-divider">
+
+      <!-- Live MCP Usage Stats -->
+      <div class="ai-feature-heading" style="margin-bottom:14px;">⚡ Vault MCP — Live Usage</div>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 16px;line-height:1.7;">
+        Vault MCP (<a href="/mcp" style="color:var(--accent);">vaultbot.ai/mcp</a>) is the first banking intelligence Model Context Protocol server.
+        Any AI agent — Claude Desktop, Cline, Continue — can call its 6 tools to query 4,500+ banks live.
+        These numbers update in real time as developers and bankers use it.
+      </p>
+      <div id="mcp-stats-widget" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:24px;">
+        <div class="mcp-stat" style="background:rgba(77,184,255,0.08);border:1px solid rgba(77,184,255,0.2);border-radius:10px;padding:14px 16px;">
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">Tool calls</div>
+          <div id="mcp-stat-calls" style="font-size:24px;font-weight:700;font-family:var(--serif);color:var(--accent);">—</div>
+        </div>
+        <div class="mcp-stat" style="background:rgba(74,222,128,0.08);border:1px solid rgba(74,222,128,0.2);border-radius:10px;padding:14px 16px;">
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">Unique users</div>
+          <div id="mcp-stat-users" style="font-size:24px;font-weight:700;font-family:var(--serif);color:#4ade80;">—</div>
+        </div>
+        <div class="mcp-stat" style="background:rgba(176,110,243,0.08);border:1px solid rgba(176,110,243,0.2);border-radius:10px;padding:14px 16px;">
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">Top tool</div>
+          <div id="mcp-stat-top-tool" style="font-size:14px;font-weight:600;font-family:var(--mono);color:#b06ef3;line-height:1.4;padding-top:4px;">—</div>
+        </div>
+        <div class="mcp-stat" style="background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);border-radius:10px;padding:14px 16px;">
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">Top client</div>
+          <div id="mcp-stat-top-client" style="font-size:14px;font-weight:600;font-family:var(--mono);color:#fbbf24;line-height:1.4;padding-top:4px;">—</div>
+        </div>
+      </div>
+      <div style="margin-bottom:32px;">
+        <a href="/mcp" style="display:inline-block;padding:10px 22px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:white;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;font-family:var(--mono);letter-spacing:0.04em;">Try Vault MCP →</a>
+      </div>
 
       <hr class="ai-inner-divider">
 
