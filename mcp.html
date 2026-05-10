@@ -77,15 +77,20 @@ pre code { background: transparent; padding: 0; color: inherit; }
   <h2>Quick Start</h2>
 
   <h3>Claude Desktop</h3>
-  <p>Add this to your Claude Desktop MCP config file:</p>
+  <p>Edit your Claude Desktop config at <code>~/Library/Application Support/Claude/claude_desktop_config.json</code> (Mac) or <code>%APPDATA%\Claude\claude_desktop_config.json</code> (Windows). Add this to <code>mcpServers</code>:</p>
   <pre><code>{
   "mcpServers": {
     "vault-banking": {
-      "url": "https://vaultbot.ai/.netlify/functions/mcp"
+      "command": "npx",
+      "args": ["mcp-remote", "https://vaultbot.ai/.netlify/functions/mcp"]
     }
   }
 }</code></pre>
-  <p>Then ask Claude things like:</p>
+  <p style="font-size:12px;color:rgba(255,255,255,0.5);">
+    The <code>mcp-remote</code> package bridges remote HTTP MCP servers to Claude Desktop's stdio transport.
+    Maintained by Anthropic — no custom installation required, runs via <code>npx</code>.
+  </p>
+  <p>Restart Claude Desktop, then ask Claude things like:</p>
   <ul style="color:var(--muted);font-size:14px;line-height:1.8;">
     <li>"What's the latest financial data for Sutton Bank?"</li>
     <li>"Find me top-performing community banks in Oklahoma"</li>
