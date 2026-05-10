@@ -398,12 +398,17 @@ exports.handler = async (event) => {
   const t0 = Date.now();
   let toolName = null, clientName = null, success = true, errorMsg = null;
 
+  // Fire-and-forget logging — never await, never let logging break the response
+  const safeLog = (data) => {
+    logCall(event, data).catch(e => console.error('Analytics log fail (non-blocking):', e.message));
+  };
+
   try {
     switch (method) {
       case 'initialize': {
         clientName = params?.clientInfo?.name || 'unknown';
         const clientVersion = params?.clientInfo?.version || 'unknown';
-        await logCall(event, { method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
+        safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
           serverInfo: { name: 'vault-mcp', version: '1.1.0' },
@@ -412,7 +417,7 @@ exports.handler = async (event) => {
       }
 
       case 'tools/list':
-        await logCall(event, { method, durationMs: Date.now()-t0, success: true });
+        safeLog({ method, durationMs: Date.now()-t0, success: true });
         return reply({ tools: TOOLS });
 
       case 'tools/call': {
@@ -420,11 +425,11 @@ exports.handler = async (event) => {
         toolName = name;
         const handler = TOOL_HANDLERS[name];
         if (!handler) {
-          await logCall(event, { method, toolName, durationMs: Date.now()-t0, success: false, errorMsg: 'Unknown tool' });
+          safeLog({ method, toolName, durationMs: Date.now()-t0, success: false, errorMsg: 'Unknown tool' });
           return err(-32601, `Unknown tool: ${name}`);
         }
         const data = await handler(args || {});
-        await logCall(event, { method, toolName, durationMs: Date.now()-t0, success: true });
+        safeLog({ method, toolName, durationMs: Date.now()-t0, success: true });
         return reply({
           content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
           isError: false,
@@ -435,12 +440,12 @@ exports.handler = async (event) => {
         return reply({});
 
       default:
-        await logCall(event, { method, durationMs: Date.now()-t0, success: false, errorMsg: 'Unknown method' });
+        safeLog({ method, durationMs: Date.now()-t0, success: false, errorMsg: 'Unknown method' });
         return err(-32601, `Method not found: ${method}`);
     }
   } catch (e) {
     errorMsg = e.message;
-    await logCall(event, { method, toolName, durationMs: Date.now()-t0, success: false, errorMsg });
+    safeLog({ method, toolName, durationMs: Date.now()-t0, success: false, errorMsg });
     return err(-32603, 'Internal error', e.message);
   }
 };
