@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>MCP Health Check</title>
+<style>body{font-family:monospace;background:#0f1240;color:#fff;padding:24px;max-width:1100px;margin:0 auto;}
+.r{background:rgba(255,255,255,0.05);padding:10px 14px;border-radius:6px;margin:6px 0;font-size:11px;line-height:1.7;white-space:pre-wrap;word-break:break-word;max-height:400px;overflow-y:auto;}
+.pass{color:#4ade80;} .fail{color:#f87171;}
+h3{color:#4db8ff;margin:14px 0 4px;}</style></head><body>
+<h2 style="color:#4db8ff">MCP Health Check — Live Test</h2>
+<p style="color:#9ca3af;font-size:11px;">Testing all 6 tools + protocol methods on the live endpoint</p>
+<div id="out">Loading…</div>
+<script>
+const MCP = '/.netlify/functions/mcp';
+let pass = 0, fail = 0;
+function log(ok, label, detail) {
+  const out = document.getElementById('out');
+  if (ok) pass++; else fail++;
+  out.innerHTML += `<div class="r ${ok?'pass':'fail'}">${ok?'✓':'✗'} <strong>${label}</strong>${detail?'<br><span style="color:#9ca3af">'+detail+'</span>':''}</div>`;
+}
+async function rpc(method, params) {
+  const r = await fetch(MCP, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ jsonrpc:'2.0', id:1, method, params })
+  });
+  const t = await r.text();
+  return { status: r.status, raw: t, data: (() => { try { return JSON.parse(t); } catch { return null; } })() };
+}
+async function run() {
+  document.getElementById('out').innerHTML = '';
+
+  // 1. GET health
+  document.getElementById('out').innerHTML += '<h3>Server health</h3>';
+  try {
+    const r = await fetch(MCP);
+    const d = await r.json();
+    log(r.ok && d.name === 'vault-mcp', 'GET / health check', `Status ${r.status} · ${d.name||'?'} v${d.version||'?'} · ${d.tools?.length||0} tools`);
+  } catch(e) { log(false, 'GET / failed', e.message); }
+
+  // 2. tools/list
+  const list = await rpc('tools/list');
+  log(list.data?.result?.tools?.length === 6, 'tools/list returns 6 tools', list.raw.slice(0,200));
+
+  // 3-8. Each tool
+  document.getElementById('out').innerHTML += '<h3>All 6 tools</h3>';
+  const tests = [
+    ['search_institutions', { query: 'Sutton Bank', limit: 1 }],
+    ['get_bank_profile', { cert: '5962' }],
+    ['get_industry_metrics', {}],
+    ['get_recent_charters', { year: 2025 }],
+    ['get_ma_activity', { year: 2025, limit: 3 }],
+    ['get_lender_rankings', { state: 'OK', limit: 3 }],
+  ];
+  for (const [name, args] of tests) {
+    try {
+      const r = await rpc('tools/call', { name, arguments: args });
+      const text = r.data?.result?.content?.[0]?.text;
+      const hasData = text && text.length > 10 && !r.data?.error;
+      log(hasData, name, hasData ? `Returned ${text.length} chars of JSON` : `ERROR: ${r.data?.error?.message || r.raw.slice(0,300)}`);
+    } catch(e) { log(false, name, e.message); }
+  }
+
+  const total = pass + fail;
+  const pct = Math.round(pass/total*100);
+  const c = fail===0 ? '#4ade80' : '#f87171';
+  document.getElementById('out').innerHTML = `<div style="background:${fail===0?'rgba(74,222,128,0.1)':'rgba(248,113,113,0.1)'};border:1px solid ${c};padding:14px;border-radius:8px;margin-bottom:16px;font-weight:700;font-size:15px;color:${c}">${pass}/${total} passed${fail?` · ${fail} FAILED`:''} (${pct}%)</div>` + document.getElementById('out').innerHTML;
+}
+run();
+</script></body></html>
