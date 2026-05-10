@@ -63,3 +63,8 @@
   from = "/mcp/setup"
   to = "/mcp-setup.html"
   status = 200
+
+[[redirects]]
+  from = "/mcp/stats"
+  to = "/mcp-stats.html"
+  status = 200

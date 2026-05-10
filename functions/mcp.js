@@ -1,6 +1,8 @@
-// Vault MCP Server — banking intelligence for AI agents
+// Vault MCP Server v1.1 — banking intelligence for AI agents with usage analytics
 // Implements MCP (Model Context Protocol) over HTTP using JSON-RPC 2.0
 // Spec: https://modelcontextprotocol.io/
+
+const { getStore } = require('@netlify/blobs');
 
 const FDIC_BASE = 'https://banks.data.fdic.gov/api';
 
@@ -69,21 +71,61 @@ const TOOLS = [
       properties: {
         state: { type: 'string', description: 'Optional 2-letter state code' },
         city: { type: 'string', description: 'Optional city name (partial match)' },
-        loan_type: {
-          type: 'string',
-          enum: ['residential', 'commercial', 'smallbiz', 'consumer'],
-          description: 'Loan focus (default: residential)',
-        },
-        asset_size: {
-          type: 'string',
-          enum: ['community', 'regional', 'large', 'all'],
-          description: 'Asset size tier (default: community = under $1B)',
-        },
+        loan_type: { type: 'string', enum: ['residential','commercial','smallbiz','consumer'], description: 'Loan focus (default: residential)' },
+        asset_size: { type: 'string', enum: ['community','regional','large','all'], description: 'Asset size tier (default: community = under $1B)' },
         limit: { type: 'number', description: 'Max results (default 25, max 100)' },
       },
     },
   },
 ];
+
+// ── Analytics Layer ──────────────────────────────────────────────────────────
+// Stores per-call telemetry in Netlify Blobs for the dashboard.
+// Privacy: we hash the IP, never store full IP; we capture client name from MCP handshake but no other PII.
+const crypto = require('crypto');
+
+function hashIP(ip) {
+  if (!ip) return 'unknown';
+  return crypto.createHash('sha256').update(ip + 'vault-salt').digest('hex').slice(0, 12);
+}
+
+async function logCall(event, { method, toolName, clientName, durationMs, success, errorMsg }) {
+  try {
+    const store = getStore('mcp-analytics');
+    const ip = event.headers?.['x-forwarded-for']?.split(',')[0]?.trim() ||
+               event.headers?.['client-ip'] || 'unknown';
+    const userAgent = event.headers?.['user-agent'] || 'unknown';
+    const now = new Date();
+    const dayKey = now.toISOString().slice(0, 10);  // YYYY-MM-DD
+    const callId = `${dayKey}/${now.toISOString()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    await store.setJSON(callId, {
+      timestamp: now.toISOString(),
+      method: method || null,
+      tool: toolName || null,
+      client: clientName || 'unknown',
+      ip_hash: hashIP(ip),
+      user_agent: userAgent.slice(0, 200),
+      duration_ms: durationMs || null,
+      success: success !== false,
+      error: errorMsg || null,
+    });
+
+    // Also bump aggregate counters per day for fast dashboard queries
+    const counterKey = `_counters/${dayKey}`;
+    const existing = await store.get(counterKey, { type: 'json' }).catch(() => null) || {
+      day: dayKey, total_calls: 0, unique_ips: [], by_tool: {}, by_client: {}, errors: 0
+    };
+    existing.total_calls += 1;
+    if (!existing.unique_ips.includes(hashIP(ip))) existing.unique_ips.push(hashIP(ip));
+    if (toolName) existing.by_tool[toolName] = (existing.by_tool[toolName] || 0) + 1;
+    if (clientName) existing.by_client[clientName] = (existing.by_client[clientName] || 0) + 1;
+    if (success === false) existing.errors += 1;
+    await store.setJSON(counterKey, existing);
+  } catch (e) {
+    console.error('Analytics log failed (non-fatal):', e.message);
+  }
+}
 
 // ── Tool Implementations ─────────────────────────────────────────────────────
 async function searchInstitutions(args) {
@@ -132,9 +174,7 @@ async function getBankProfile(args) {
   ]);
   const inst = iR.data?.[0]?.data;
   const history = (fR.data || []).map(d => d.data);
-  if (!inst && !history.length) {
-    throw new Error(`No institution found for CERT ${cert}`);
-  }
+  if (!inst && !history.length) throw new Error(`No institution found for CERT ${cert}`);
   const latest = history[0] || {};
   return {
     cert: cert,
@@ -174,19 +214,12 @@ async function getBankProfile(args) {
 
 async function getIndustryMetrics(args) {
   const { year } = args || {};
-
-  // FDIC's "summary" endpoint gives aggregate data we want — no need to fetch all 4500+ records
-  // But it requires REPDTE in YYYYMMDD format. If no year given, use latest available (Q3 2025).
   const period = year ? `${year}1231` : '20250930';
-
-  // Use /financials with proper date filter and paginate to get all records
   const fields = 'REPDTE,ASSET,DEP,NETINC,ROA,ROE,NIMY';
   const filter = `REPDTE%3A${period}`;
   const allRecs = [];
   let offset = 0;
   const pageSize = 10000;
-
-  // Fetch all pages until we get fewer than pageSize back
   while (offset < 50000) {
     const url = `${FDIC_BASE}/financials?filters=${filter}&fields=${fields}&limit=${pageSize}&offset=${offset}&sort_by=ASSET&sort_order=DESC`;
     const r = await fetch(url).then(r => r.json()).catch(() => ({ data: [] }));
@@ -195,24 +228,19 @@ async function getIndustryMetrics(args) {
     if (page.length < pageSize) break;
     offset += pageSize;
   }
-
-  // If specific year requested but no data, try Q3 of that year (FDIC publishes quarterly)
   if (allRecs.length === 0 && year) {
     const fallbackPeriod = `${year}0930`;
     const url = `${FDIC_BASE}/financials?filters=REPDTE%3A${fallbackPeriod}&fields=${fields}&limit=10000&sort_by=ASSET&sort_order=DESC`;
     const r = await fetch(url).then(r => r.json()).catch(() => ({ data: [] }));
     allRecs.push(...((r.data || []).map(d => d.data)));
   }
-
-  if (!allRecs.length) throw new Error(`No data found for ${year || 'latest period'}. FDIC data is published quarterly — try year 2024 or 2025.`);
-
+  if (!allRecs.length) throw new Error(`No data found for ${year || 'latest period'}.`);
   const totalAssets = allRecs.reduce((s, x) => s + (Number(x.ASSET) || 0), 0);
   const totalDeposits = allRecs.reduce((s, x) => s + (Number(x.DEP) || 0), 0);
   const totalNetInc = allRecs.reduce((s, x) => s + (Number(x.NETINC) || 0), 0);
   const avgROA = allRecs.reduce((s, x) => s + (Number(x.ROA) || 0), 0) / allRecs.length;
   const avgROE = allRecs.reduce((s, x) => s + (Number(x.ROE) || 0), 0) / allRecs.length;
   const avgNIM = allRecs.reduce((s, x) => s + (Number(x.NIMY) || 0), 0) / allRecs.length;
-
   return {
     period: allRecs[0]?.REPDTE,
     total_banks: allRecs.length,
@@ -271,7 +299,6 @@ async function getMAActivity(args) {
 async function getLenderRankings(args) {
   const { state, city, loan_type = 'residential', asset_size = 'community', limit = 25 } = args || {};
   const max = Math.min(Number(limit) || 25, 100);
-
   const sizeRanges = {
     community: '0%20TO%201000000',
     regional:  '1000000%20TO%2010000000',
@@ -282,18 +309,14 @@ async function getLenderRankings(args) {
   let filters = `ACTIVE%3A1%20AND%20ASSET%3A%5B${range}%5D`;
   if (state) filters += `%20AND%20STALP%3A${state.toUpperCase()}`;
   if (city)  filters += `%20AND%20CITY%3A${encodeURIComponent(city)}*`;
-
   const fields = 'NAME,CERT,CITY,STALP,ASSET,DEP,WEBADDR';
   const finFields = 'CERT,RBC1AAJ,ROA,LNLSDEPR,LNLSNET,ASSET';
-
   const [instR, finR] = await Promise.all([
     fetch(`${FDIC_BASE}/institutions?filters=${filters}&fields=${fields}&limit=200&sort_by=ASSET&sort_order=DESC`).then(r => r.json()),
     fetch(`${FDIC_BASE}/financials?filters=${filters}&fields=${finFields}&limit=200&sort_by=ASSET&sort_order=DESC`).then(r => r.json()),
   ]);
   const insts = (instR.data || []).map(d => d.data);
   const fins = new Map((finR.data || []).map(d => [d.data?.CERT, d.data]));
-
-  // Composite lending score
   const scored = insts.map(inst => {
     const fin = fins.get(inst.CERT);
     if (!fin) return null;
@@ -345,17 +368,13 @@ const CORS_HEADERS = {
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS_HEADERS };
 
-  // GET request — return server info / health check
   if (event.httpMethod === 'GET') {
     return {
-      statusCode: 200,
-      headers: CORS_HEADERS,
+      statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp',
-        version: '1.0.0',
+        name: 'vault-mcp', version: '1.1.0',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
-        protocol: 'mcp',
-        protocol_version: '2024-11-05',
+        protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
         tools: TOOLS.map(t => ({ name: t.name, description: t.description })),
         documentation: 'https://vaultbot.ai/mcp',
@@ -370,34 +389,42 @@ exports.handler = async (event) => {
 
   let req;
   try { req = JSON.parse(event.body || '{}'); }
-  catch (e) {
-    return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({
-      jsonrpc: '2.0', id: null,
-      error: { code: -32700, message: 'Parse error' }
-    })};
-  }
+  catch { return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ jsonrpc:'2.0', id:null, error:{code:-32700,message:'Parse error'}}) }; }
 
   const { jsonrpc = '2.0', id, method, params } = req;
   const reply = (result) => ({ statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ jsonrpc, id, result }) });
   const err = (code, message, data) => ({ statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ jsonrpc, id, error: { code, message, data } }) });
 
+  const t0 = Date.now();
+  let toolName = null, clientName = null, success = true, errorMsg = null;
+
   try {
     switch (method) {
-      case 'initialize':
+      case 'initialize': {
+        clientName = params?.clientInfo?.name || 'unknown';
+        const clientVersion = params?.clientInfo?.version || 'unknown';
+        await logCall(event, { method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.0.0' },
+          serverInfo: { name: 'vault-mcp', version: '1.1.0' },
           capabilities: { tools: {} },
         });
+      }
 
       case 'tools/list':
+        await logCall(event, { method, durationMs: Date.now()-t0, success: true });
         return reply({ tools: TOOLS });
 
       case 'tools/call': {
         const { name, arguments: args } = params || {};
+        toolName = name;
         const handler = TOOL_HANDLERS[name];
-        if (!handler) return err(-32601, `Unknown tool: ${name}`);
+        if (!handler) {
+          await logCall(event, { method, toolName, durationMs: Date.now()-t0, success: false, errorMsg: 'Unknown tool' });
+          return err(-32601, `Unknown tool: ${name}`);
+        }
         const data = await handler(args || {});
+        await logCall(event, { method, toolName, durationMs: Date.now()-t0, success: true });
         return reply({
           content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
           isError: false,
@@ -408,9 +435,12 @@ exports.handler = async (event) => {
         return reply({});
 
       default:
+        await logCall(event, { method, durationMs: Date.now()-t0, success: false, errorMsg: 'Unknown method' });
         return err(-32601, `Method not found: ${method}`);
     }
   } catch (e) {
+    errorMsg = e.message;
+    await logCall(event, { method, toolName, durationMs: Date.now()-t0, success: false, errorMsg });
     return err(-32603, 'Internal error', e.message);
   }
 };

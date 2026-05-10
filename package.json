@@ -1,0 +1,9 @@
+{
+  "name": "vault",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Vault — banking intelligence platform",
+  "dependencies": {
+    "@netlify/blobs": "^9.0.0"
+  }
+}

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vault MCP — Live Usage Stats</title>
+<meta name="robots" content="noindex">
+<style>
+:root { --bg:#0f1240; --surface:rgba(255,255,255,0.06); --border:rgba(255,255,255,0.12); --text:#fff; --muted:#8b95b3; --accent:#4db8ff; --accent2:#b06ef3; --green:#4ade80; --gold:#fbbf24; --red:#f87171; --serif:'Cormorant Garamond',Georgia,serif; --mono:'JetBrains Mono',ui-monospace,monospace; --sans:-apple-system,BlinkMacSystemFont,'Inter',system-ui,sans-serif; }
+* { box-sizing: border-box; }
+body { margin:0; padding:0; background:linear-gradient(180deg,#0f1240 0%,#1a1060 50%,#2d1080 100%); color:var(--text); font-family:var(--sans); min-height:100vh; }
+.container { max-width:1100px; margin:0 auto; padding:32px 20px 80px; }
+.eyebrow { font-family:var(--mono); font-size:11px; color:var(--accent); letter-spacing:0.12em; text-transform:uppercase; margin-bottom:8px; }
+h1 { font-family:var(--serif); font-size:36px; margin:0 0 24px; letter-spacing:-1px; }
+.kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:32px; }
+.kpi { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:18px 20px; }
+.kpi .label { font-family:var(--mono); font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:6px; }
+.kpi .value { font-size:28px; font-weight:700; font-family:var(--serif); }
+.kpi.accent .value { color:var(--accent); }
+.kpi.green .value { color:var(--green); }
+.kpi.gold .value { color:var(--gold); }
+.kpi.red .value { color:var(--red); }
+h2 { font-family:var(--serif); font-size:22px; margin:32px 0 14px; }
+table { width:100%; border-collapse:collapse; background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+th { font-family:var(--mono); font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; padding:12px 14px; text-align:left; border-bottom:1px solid var(--border); background:rgba(0,0,0,0.2); }
+td { padding:11px 14px; font-size:13px; border-bottom:1px solid rgba(255,255,255,0.05); }
+tr:last-child td { border-bottom:none; }
+.bar { display:inline-block; height:6px; background:linear-gradient(90deg,var(--accent),var(--accent2)); border-radius:3px; vertical-align:middle; margin-left:8px; }
+#loading { padding:60px 0; text-align:center; color:var(--muted); font-family:var(--mono); font-size:13px; }
+#empty { padding:48px 0; text-align:center; color:var(--muted); }
+#empty h3 { font-family:var(--serif); font-size:24px; color:var(--text); margin:0 0 10px; }
+.refresh { float:right; padding:7px 14px; background:rgba(77,184,255,0.1); border:1px solid rgba(77,184,255,0.3); border-radius:8px; color:var(--accent); font-family:var(--mono); font-size:11px; cursor:pointer; }
+</style></head><body>
+<div class="container">
+  <div class="eyebrow">// Vault MCP Analytics</div>
+  <h1>Live Usage Dashboard <button class="refresh" onclick="load()">Refresh</button></h1>
+  <div id="content"><div id="loading">Loading stats…</div></div>
+</div>
+<script>
+async function load() {
+  const c = document.getElementById('content');
+  c.innerHTML = '<div id="loading">Loading stats…</div>';
+  try {
+    const r = await fetch('/.netlify/functions/mcp-stats');
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    const all = d.all_time || {};
+    if (!all.total_calls) {
+      c.innerHTML = '<div id="empty"><h3>No usage yet.</h3><p>Once people start using Vault MCP, stats will appear here.</p><p style="font-family:var(--mono);font-size:11px;color:#666;margin-top:14px;">Endpoint: /.netlify/functions/mcp</p></div>';
+      return;
+    }
+    const tools = Object.entries(all.tool_usage || {}).sort((a,b) => b[1]-a[1]);
+    const clients = Object.entries(all.client_usage || {}).sort((a,b) => b[1]-a[1]);
+    const maxTool = tools[0]?.[1] || 1;
+    const maxClient = clients[0]?.[1] || 1;
+    const html = `
+      <div class="kpi-grid">
+        <div class="kpi accent"><div class="label">Total tool calls</div><div class="value">${all.total_calls.toLocaleString()}</div></div>
+        <div class="kpi green"><div class="label">Unique users</div><div class="value">${all.unique_users}</div></div>
+        <div class="kpi gold"><div class="label">Active tools</div><div class="value">${tools.length}</div></div>
+        <div class="kpi red"><div class="label">Error rate</div><div class="value">${all.error_rate}</div></div>
+      </div>
+      <h2>Tool usage</h2>
+      <table><thead><tr><th>Tool</th><th>Calls</th><th>Distribution</th></tr></thead>
+      <tbody>${tools.map(([t,n]) => `<tr><td style="font-family:var(--mono);color:var(--accent)">${t}</td><td>${n}</td><td><span class="bar" style="width:${(n/maxTool)*240}px"></span></td></tr>`).join('')}</tbody></table>
+      <h2>MCP clients</h2>
+      <table><thead><tr><th>Client</th><th>Sessions</th><th>Distribution</th></tr></thead>
+      <tbody>${clients.map(([c,n]) => `<tr><td style="font-family:var(--mono);color:var(--accent)">${c}</td><td>${n}</td><td><span class="bar" style="width:${(n/maxClient)*240}px"></span></td></tr>`).join('')}</tbody></table>
+      <h2>Daily breakdown (last 30 days)</h2>
+      <table><thead><tr><th>Day</th><th>Calls</th><th>Unique users</th><th>Top tool</th><th>Top client</th><th>Errors</th></tr></thead>
+      <tbody>${(d.daily||[]).map(day => `<tr><td style="font-family:var(--mono)">${day.day}</td><td>${day.calls}</td><td>${day.unique_users}</td><td style="font-family:var(--mono);color:var(--accent);font-size:11px">${day.top_tool||'—'}</td><td style="font-family:var(--mono);color:var(--accent2);font-size:11px">${day.top_client||'—'}</td><td style="color:${day.errors?'var(--red)':'var(--muted)'}">${day.errors}</td></tr>`).join('')}</tbody></table>
+      <p style="margin-top:24px;font-family:var(--mono);font-size:10px;color:var(--muted)">Last updated: ${d.last_updated}</p>`;
+    c.innerHTML = html;
+  } catch(e) {
+    c.innerHTML = `<div id="empty"><h3>Couldn't load stats</h3><p>${e.message}</p></div>`;
+  }
+}
+load();
+</script></body></html>
