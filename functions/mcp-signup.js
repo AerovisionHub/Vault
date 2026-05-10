@@ -86,68 +86,92 @@ function sendWelcomeEmail(user) {
 <body style="margin:0;padding:0;background:#0f1240;font-family:-apple-system,BlinkMacSystemFont,'Inter',Arial,sans-serif;color:#fff;">
 <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#0f1240;">
   <tr><td align="center" style="padding:40px 20px;">
-    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background:linear-gradient(180deg,#1a1060 0%,#2d1080 100%);border-radius:16px;overflow:hidden;">
-      <tr><td style="padding:36px 32px 24px;text-align:left;">
-        <div style="font-family:'Cormorant Garamond',Georgia,serif;font-size:36px;font-weight:600;letter-spacing:-1px;color:#fff;line-height:1;margin:0;">Vault<span style="color:#4db8ff">.</span></div>
-        <div style="font-family:ui-monospace,monospace;font-size:10px;color:#8b95b3;letter-spacing:0.15em;text-transform:uppercase;margin-top:6px;">⚡ Vault MCP — You're in</div>
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:580px;background:#0f1240;border:1px solid rgba(77,184,255,0.18);border-radius:16px;overflow:hidden;">
+      <!-- Top accent bar -->
+      <tr><td style="height:3px;background:linear-gradient(90deg,#4db8ff 0%,#b06ef3 100%);padding:0;line-height:0;font-size:0;">&nbsp;</td></tr>
+      <!-- Header -->
+      <tr><td style="padding:36px 36px 8px;text-align:left;">
+        <div style="font-family:Georgia,'Times New Roman',serif;font-size:38px;font-weight:600;letter-spacing:-1.5px;color:#fff;line-height:1;margin:0;">Vault<span style="color:#4db8ff">.</span></div>
+        <div style="font-family:ui-monospace,'SF Mono',Monaco,monospace;font-size:10px;color:#4db8ff;letter-spacing:0.18em;text-transform:uppercase;margin-top:8px;font-weight:600;">⚡ MCP Install Guide</div>
       </td></tr>
-      <tr><td style="padding:0 32px 28px;">
-        <h1 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:28px;color:#fff;margin:0 0 12px;line-height:1.2;letter-spacing:-0.5px;">Hi ${user.name?.split(' ')[0] || 'there'} 👋</h1>
-        <p style="font-size:15px;color:#c8cfe6;line-height:1.6;margin:0 0 16px;">
-          Thanks for signing up to use Vault MCP — the first banking intelligence Model Context Protocol server.
-          Here's everything you need to get started.
+      <!-- Greeting -->
+      <tr><td style="padding:20px 36px 8px;">
+        <h1 style="font-family:Georgia,'Times New Roman',serif;font-size:30px;color:#fff;margin:0 0 14px;line-height:1.15;letter-spacing:-0.8px;font-weight:600;">Welcome, ${user.name?.split(' ')[0] || 'there'}.</h1>
+        <p style="font-size:15px;color:#c8cfe6;line-height:1.65;margin:0 0 8px;">
+          You're all set. Vault MCP is the first banking intelligence Model Context Protocol server — it gives any AI agent live access to FDIC data on 4,500+ banks.
+        </p>
+        <p style="font-size:15px;color:#c8cfe6;line-height:1.65;margin:0 0 8px;">
+          Setup takes about 2 minutes. Here's what you need.
         </p>
       </td></tr>
-      <tr><td style="padding:0 32px;">
-        <div style="background:rgba(0,0,0,0.35);border:1px solid rgba(255,255,255,0.12);border-radius:12px;padding:20px;font-family:ui-monospace,'JetBrains Mono',Monaco,monospace;font-size:12px;color:#d6deeb;line-height:1.7;overflow-x:auto;">
-{<br>
-&nbsp;&nbsp;"mcpServers": {<br>
-&nbsp;&nbsp;&nbsp;&nbsp;"vault-banking": {<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"command": "npx",<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"args": [<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"-y",<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"mcp-remote",<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"https://vaultbot.ai/.netlify/functions/mcp"<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;]<br>
-&nbsp;&nbsp;&nbsp;&nbsp;}<br>
-&nbsp;&nbsp;}<br>
-}
+      <!-- Config block -->
+      <tr><td style="padding:24px 36px 0;">
+        <div style="font-family:ui-monospace,'SF Mono',Monaco,monospace;font-size:10px;color:#4db8ff;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:10px;font-weight:600;">→ Your config</div>
+        <div style="background:#070926;border:1px solid rgba(77,184,255,0.2);border-radius:10px;padding:18px 20px;font-family:ui-monospace,'SF Mono','JetBrains Mono',Monaco,monospace;font-size:12px;color:#a8c4e8;line-height:1.7;">
+<span style="color:#7e8bb0;">{</span><br>
+&nbsp;&nbsp;<span style="color:#b06ef3;">"mcpServers"</span>: <span style="color:#7e8bb0;">{</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#b06ef3;">"vault-banking"</span>: <span style="color:#7e8bb0;">{</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#4db8ff;">"command"</span>: <span style="color:#a8c4e8;">"npx"</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#4db8ff;">"args"</span>: <span style="color:#7e8bb0;">[</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#a8c4e8;">"-y"</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#a8c4e8;">"mcp-remote"</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#a8c4e8;">"https://vaultbot.ai/.netlify/functions/mcp"</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#7e8bb0;">]</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#7e8bb0;">}</span><br>
+&nbsp;&nbsp;<span style="color:#7e8bb0;">}</span><br>
+<span style="color:#7e8bb0;">}</span>
         </div>
       </td></tr>
-      <tr><td style="padding:24px 32px 8px;">
-        <div style="font-family:ui-monospace,monospace;font-size:11px;color:#4db8ff;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px;">Quick install — Claude Desktop</div>
-        <ol style="margin:0;padding-left:22px;color:#c8cfe6;font-size:14px;line-height:1.8;">
-          <li>Open <strong style="color:#fff;">Claude Desktop → Settings → Developer → Edit Config</strong></li>
-          <li>Add the snippet above to your <code style="background:rgba(255,255,255,0.08);padding:2px 6px;border-radius:4px;font-size:12px;">mcpServers</code></li>
-          <li>Quit Claude Desktop completely (⌘Q on Mac), then reopen</li>
-          <li>Click the tools icon — you'll see <code style="background:rgba(255,255,255,0.08);padding:2px 6px;border-radius:4px;font-size:12px;">vault-banking</code> with 6 tools</li>
-        </ol>
+      <!-- Steps -->
+      <tr><td style="padding:30px 36px 0;">
+        <div style="font-family:ui-monospace,'SF Mono',Monaco,monospace;font-size:10px;color:#4db8ff;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:14px;font-weight:600;">→ Quick install</div>
+        <table cellpadding="0" cellspacing="0" border="0" width="100%">
+          <tr><td style="padding:8px 0;color:#c8cfe6;font-size:14px;line-height:1.6;">
+            <span style="color:#4db8ff;font-family:ui-monospace,monospace;font-weight:700;">01</span> &nbsp;&nbsp;Open <strong style="color:#fff;">Claude Desktop → Settings → Developer → Edit Config</strong>
+          </td></tr>
+          <tr><td style="padding:8px 0;color:#c8cfe6;font-size:14px;line-height:1.6;">
+            <span style="color:#4db8ff;font-family:ui-monospace,monospace;font-weight:700;">02</span> &nbsp;&nbsp;Add the config above to your <code style="background:rgba(77,184,255,0.1);padding:2px 6px;border-radius:4px;font-size:12px;color:#4db8ff;">mcpServers</code>
+          </td></tr>
+          <tr><td style="padding:8px 0;color:#c8cfe6;font-size:14px;line-height:1.6;">
+            <span style="color:#4db8ff;font-family:ui-monospace,monospace;font-weight:700;">03</span> &nbsp;&nbsp;Quit Claude Desktop completely <span style="color:#7e8bb0;">(⌘Q)</span>, reopen
+          </td></tr>
+          <tr><td style="padding:8px 0;color:#c8cfe6;font-size:14px;line-height:1.6;">
+            <span style="color:#4db8ff;font-family:ui-monospace,monospace;font-weight:700;">04</span> &nbsp;&nbsp;Click the tools icon — <code style="background:rgba(77,184,255,0.1);padding:2px 6px;border-radius:4px;font-size:12px;color:#4db8ff;">vault-banking</code> appears with 6 tools
+          </td></tr>
+        </table>
       </td></tr>
-      <tr><td style="padding:24px 32px 8px;">
-        <div style="font-family:ui-monospace,monospace;font-size:11px;color:#4db8ff;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px;">Try these prompts</div>
-        <ul style="margin:0;padding-left:0;list-style:none;color:#c8cfe6;font-size:14px;line-height:1.9;">
-          <li>→ "What's the latest financial data for Sutton Bank?"</li>
-          <li>→ "Show me bank mergers from 2025"</li>
-          <li>→ "Compare U.S. banking industry 2024 vs 2025"</li>
-          <li>→ "Find top community lenders in Oklahoma"</li>
-        </ul>
+      <!-- Try prompts -->
+      <tr><td style="padding:30px 36px 0;">
+        <div style="font-family:ui-monospace,'SF Mono',Monaco,monospace;font-size:10px;color:#4db8ff;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:14px;font-weight:600;">→ Try these</div>
+        <div style="color:#c8cfe6;font-size:14px;line-height:2;">
+          <span style="color:#7e8bb0;">"</span>What's the latest financial data for Sutton Bank?<span style="color:#7e8bb0;">"</span><br>
+          <span style="color:#7e8bb0;">"</span>Show me bank mergers from 2025<span style="color:#7e8bb0;">"</span><br>
+          <span style="color:#7e8bb0;">"</span>Compare U.S. banking industry 2024 vs 2025<span style="color:#7e8bb0;">"</span><br>
+          <span style="color:#7e8bb0;">"</span>Find top community lenders in Oklahoma<span style="color:#7e8bb0;">"</span>
+        </div>
       </td></tr>
-      <tr><td style="padding:32px;text-align:center;">
-        <a href="https://vaultbot.ai/mcp" style="display:inline-block;padding:14px 28px;background:linear-gradient(135deg,#4db8ff,#b06ef3);color:#fff;text-decoration:none;border-radius:10px;font-size:14px;font-weight:600;margin:0 4px 8px;">View documentation</a>
-        <a href="https://vaultbot.ai" style="display:inline-block;padding:14px 28px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#fff;text-decoration:none;border-radius:10px;font-size:14px;font-weight:600;margin:0 4px 8px;">Explore Vault</a>
+      <!-- CTAs -->
+      <tr><td style="padding:36px 36px 28px;text-align:center;">
+        <a href="https://vaultbot.ai/mcp" style="display:inline-block;padding:13px 26px;background:#4db8ff;color:#0f1240;text-decoration:none;border-radius:8px;font-size:13px;font-weight:700;letter-spacing:0.04em;margin:0 4px 10px;font-family:-apple-system,sans-serif;">View documentation →</a>
+        <a href="https://vaultbot.ai" style="display:inline-block;padding:13px 26px;background:transparent;border:1px solid rgba(77,184,255,0.4);color:#4db8ff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.04em;margin:0 4px 10px;font-family:-apple-system,sans-serif;">Explore Vault</a>
       </td></tr>
-      <tr><td style="padding:24px 32px;background:rgba(0,0,0,0.25);border-top:1px solid rgba(255,255,255,0.08);">
-        <div style="font-size:13px;color:#c8cfe6;line-height:1.7;">
-          <strong style="color:#fff;">Want to do more with banking + AI?</strong><br>
-          Vault MCP exposes <em>public</em> FDIC data. The same architecture pointed at YOUR core banking data is what we build at
+      <!-- iDENTIFY tie-in -->
+      <tr><td style="padding:24px 36px;background:rgba(176,110,243,0.06);border-top:1px solid rgba(255,255,255,0.06);">
+        <div style="font-family:ui-monospace,'SF Mono',Monaco,monospace;font-size:10px;color:#b06ef3;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:10px;font-weight:600;">// Want more?</div>
+        <div style="font-size:14px;color:#c8cfe6;line-height:1.65;">
+          Vault MCP exposes <em style="color:#fff;">public</em> FDIC data. The same architecture pointed at <strong style="color:#fff;">your</strong> core banking data is what we build at
           <a href="https://goidentify.com" style="color:#4db8ff;text-decoration:none;font-weight:600;">iDENTIFY</a> — banking data infrastructure for community banks, sponsor banks, credit unions, and fintechs.
-          <br><br>
-          Reply to this email or ping <a href="mailto:lee@goidentify.com" style="color:#4db8ff;">lee@goidentify.com</a> to chat.
+        </div>
+        <div style="font-size:13px;color:#8b95b3;line-height:1.6;margin-top:12px;">
+          Reply to this email or write me at <a href="mailto:lee@goidentify.com" style="color:#4db8ff;text-decoration:none;">lee@goidentify.com</a>.
         </div>
       </td></tr>
-      <tr><td style="padding:18px 32px;text-align:center;font-family:ui-monospace,monospace;font-size:10px;color:#8b95b3;">
-        Built by iDENTIFY · Free banking intelligence · vaultbot.ai
+      <!-- Footer -->
+      <tr><td style="padding:18px 36px;text-align:center;font-family:ui-monospace,'SF Mono',Monaco,monospace;font-size:10px;color:#5e6788;letter-spacing:0.06em;border-top:1px solid rgba(255,255,255,0.04);">
+        Built by iDENTIFY &nbsp;·&nbsp; Free banking intelligence &nbsp;·&nbsp; <a href="https://vaultbot.ai" style="color:#5e6788;text-decoration:none;">vaultbot.ai</a>
       </td></tr>
+      <!-- Bottom accent bar -->
+      <tr><td style="height:3px;background:linear-gradient(90deg,#b06ef3 0%,#4db8ff 100%);padding:0;line-height:0;font-size:0;">&nbsp;</td></tr>
     </table>
   </td></tr>
 </table>
