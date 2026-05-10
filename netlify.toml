@@ -24,6 +24,11 @@
   status = 200
 
 [[redirects]]
+  from = "/compare"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
   from = "/bank/*"
   to = "/index.html"
   status = 200
