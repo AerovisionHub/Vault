@@ -154,7 +154,7 @@ function sendWelcomeEmail(user) {
 </body></html>`;
 
     const body = JSON.stringify({
-      from: 'Vault MCP <mcp@vaultbot.ai>',
+      from: 'Vault MCP <onboarding@resend.dev>',
       to: [user.email],
       bcc: ['lee@goidentify.com'],
       subject: '⚡ Your Vault MCP install guide — ready to use',
@@ -226,29 +226,46 @@ exports.handler = async (event) => {
     return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ error: `The domain "${domain}" does not appear to accept email. Please check the address.` }) };
   }
 
-  // Submit to Netlify Forms
-  await postFormSubmission({
-    name: name.slice(0, 200),
-    email: email.slice(0, 200),
-    company: (company || '').slice(0, 200),
-    role: (role || '').slice(0, 100),
-    use_case: (use_case || '').slice(0, 1000),
-    source: (source || '').slice(0, 100),
-  });
+  // Submit to Netlify Forms (best effort — signup succeeds even if this fails)
+  let formSubmitOk = false;
+  try {
+    const formResult = await postFormSubmission({
+      name: name.slice(0, 200),
+      email: email.slice(0, 200),
+      company: (company || '').slice(0, 200),
+      role: (role || '').slice(0, 100),
+      use_case: (use_case || '').slice(0, 1000),
+      source: (source || '').slice(0, 100),
+    });
+    formSubmitOk = true;
+    console.log('Netlify Form submission:', JSON.stringify(formResult));
+  } catch (e) {
+    console.error('Form submit error:', e.message);
+  }
 
-  // Send branded welcome email with install guide
-  const emailResult = await sendWelcomeEmail({ name, email, company, role });
-  console.log('MCP signup:', JSON.stringify({ email, company, emailSent: !emailResult.skipped }));
+  // Send welcome email — best effort, don't fail the whole signup if email fails
+  let emailResult = { skipped: true };
+  try {
+    emailResult = await sendWelcomeEmail({ name, email, company, role });
+    console.log('Email result:', JSON.stringify(emailResult));
+  } catch (e) {
+    console.error('Email send error:', e.message);
+    emailResult = { error: e.message };
+  }
+
+  console.log('MCP signup completed:', JSON.stringify({
+    email, company,
+    formSubmitOk,
+    emailStatus: emailResult.status || (emailResult.skipped ? 'skipped' : emailResult.error || 'unknown'),
+  }));
 
   return {
     statusCode: 200,
     headers: CORS_HEADERS,
     body: JSON.stringify({
       ok: true,
-      emailSent: !emailResult.skipped,
-      message: emailResult.skipped
-        ? 'Signup recorded. Email autoresponder not configured.'
-        : 'Signup recorded — install guide sent to your email.',
+      emailSent: emailResult.status === 200,
+      message: 'Signup recorded.',
     }),
   };
 };
