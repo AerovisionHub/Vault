@@ -1,0 +1,386 @@
+// Vault MCP Server — banking intelligence for AI agents
+// Implements MCP (Model Context Protocol) over HTTP using JSON-RPC 2.0
+// Spec: https://modelcontextprotocol.io/
+
+const FDIC_BASE = 'https://banks.data.fdic.gov/api';
+
+// ── Tool Definitions ─────────────────────────────────────────────────────────
+const TOOLS = [
+  {
+    name: 'search_institutions',
+    description: 'Search FDIC-insured banks and savings institutions by name, city, or fuzzy match. Returns up to 20 institutions ranked by relevance and asset size. Use this when a user asks about a specific bank or wants to find banks matching certain criteria.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Bank name, city, or partial name (e.g. "First Fidelity Bank", "Sutton Bank", "Tulsa")' },
+        state: { type: 'string', description: 'Optional 2-letter state code to filter (e.g. "OK", "TX")' },
+        limit: { type: 'number', description: 'Max results (default 20, max 50)' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'get_bank_profile',
+    description: 'Get detailed profile for a single FDIC-insured bank by certificate number (CERT). Returns institution details, latest financials (assets, deposits, ROA, ROE, NIM, capital ratio), and 8 quarters of historical data.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        cert: { type: 'string', description: 'FDIC certificate number (e.g. "23473" for First Fidelity Bank)' },
+      },
+      required: ['cert'],
+    },
+  },
+  {
+    name: 'get_industry_metrics',
+    description: 'Get aggregate banking industry metrics — total banks, total assets, average ROA/ROE/NIM, problem banks count, and historical trends. Use for industry-level analysis questions.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        year: { type: 'number', description: 'Year to fetch (default: most recent available)' },
+      },
+    },
+  },
+  {
+    name: 'get_recent_charters',
+    description: 'List newly chartered FDIC-insured banks (de novo banks). Returns bank name, location, charter date, charter agent, asset size, and holding company.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        year: { type: 'number', description: 'Year to filter by (e.g. 2025, 2024, 2023). Omit for all years 2023+.' },
+      },
+    },
+  },
+  {
+    name: 'get_ma_activity',
+    description: 'List recent bank mergers, acquisitions, and failures from FDIC regulatory filings. Returns acquirer, acquired institution, effective date, and transaction type (merger vs assisted/failure).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        year: { type: 'number', description: 'Year to filter by. Omit for all years 2023+.' },
+        limit: { type: 'number', description: 'Max results (default 50, max 200)' },
+      },
+    },
+  },
+  {
+    name: 'get_lender_rankings',
+    description: 'Get banks ranked by composite Lending Score (loan concentration + capital strength + asset quality + ROA). Filter by state, city, or asset size tier. Use for "find a lender" or "best banks for X loans" questions.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        state: { type: 'string', description: 'Optional 2-letter state code' },
+        city: { type: 'string', description: 'Optional city name (partial match)' },
+        loan_type: {
+          type: 'string',
+          enum: ['residential', 'commercial', 'smallbiz', 'consumer'],
+          description: 'Loan focus (default: residential)',
+        },
+        asset_size: {
+          type: 'string',
+          enum: ['community', 'regional', 'large', 'all'],
+          description: 'Asset size tier (default: community = under $1B)',
+        },
+        limit: { type: 'number', description: 'Max results (default 25, max 100)' },
+      },
+    },
+  },
+];
+
+// ── Tool Implementations ─────────────────────────────────────────────────────
+async function searchInstitutions(args) {
+  const { query, state, limit = 20 } = args;
+  const max = Math.min(Number(limit) || 20, 50);
+  const fields = 'NAME,CERT,CITY,STALP,ASSET,REPDTE,WEBADDR,INSTCAT';
+  const stopWords = new Set(['of','the','and','a','an','at','in','for','by','to','&']);
+  const words = query.replace(/^the\s+/i,'').split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w.toLowerCase()));
+
+  const stateFilter = state ? `%20AND%20STALP%3A${state.toUpperCase()}` : '';
+  const urls = [
+    `${FDIC_BASE}/institutions?search=${encodeURIComponent(query)}&fields=${fields}&limit=${max}&sort_by=ASSET&sort_order=DESC&filters=ACTIVE%3A1${stateFilter}`,
+  ];
+  if (words.length > 0) {
+    urls.push(`${FDIC_BASE}/institutions?filters=NAME%3A${encodeURIComponent(words[0])}*%20AND%20ACTIVE%3A1${stateFilter}&fields=${fields}&limit=50&sort_by=ASSET&sort_order=DESC`);
+  }
+  if (words.length > 1) {
+    urls.push(`${FDIC_BASE}/institutions?filters=NAME%3A*${words.map(encodeURIComponent).join('*')}*%20AND%20ACTIVE%3A1${stateFilter}&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC`);
+  }
+
+  const results = await Promise.all(urls.map(u => fetch(u).then(r => r.json()).catch(() => ({ data: [] }))));
+  const seen = new Map();
+  results.forEach(r => (r.data || []).forEach(d => {
+    const cert = d.data?.CERT;
+    if (cert && !seen.has(cert)) seen.set(cert, d.data);
+  }));
+
+  return [...seen.values()].slice(0, max).map(d => ({
+    cert: d.CERT,
+    name: d.NAME,
+    city: d.CITY,
+    state: d.STALP,
+    assets_thousands: d.ASSET,
+    website: d.WEBADDR || null,
+    profile_url: `https://vaultbot.ai/bank/${d.CERT}`,
+  }));
+}
+
+async function getBankProfile(args) {
+  const { cert } = args;
+  const instFields = 'NAME,CERT,CITY,STALP,ADDRESS,ZIP,WEBADDR,ESTYMD,ACTIVE,INSTCAT,CHRTAGNT,REPDTE,ASSET,DEP,EQ,NETINC,STNAME,NAMEHCR';
+  const finFields = 'REPDTE,ASSET,DEP,EQ,NETINC,RBC1AAJ,ROA,ROE,NIMY,LNLSDEPR,NUMEMP';
+  const [iR, fR] = await Promise.all([
+    fetch(`${FDIC_BASE}/institutions?filters=CERT%3A${cert}&fields=${instFields}&limit=1`).then(r => r.json()),
+    fetch(`${FDIC_BASE}/financials?filters=CERT%3A${cert}&fields=${finFields}&limit=8&sort_by=REPDTE&sort_order=DESC`).then(r => r.json()),
+  ]);
+  const inst = iR.data?.[0]?.data;
+  const history = (fR.data || []).map(d => d.data);
+  if (!inst && !history.length) {
+    throw new Error(`No institution found for CERT ${cert}`);
+  }
+  const latest = history[0] || {};
+  return {
+    cert: cert,
+    name: inst?.NAME || `CERT ${cert}`,
+    city: inst?.CITY,
+    state: inst?.STALP,
+    address: inst?.ADDRESS,
+    zip: inst?.ZIP,
+    website: inst?.WEBADDR || null,
+    established: inst?.ESTYMD,
+    holding_company: inst?.NAMEHCR || null,
+    charter_agent: inst?.CHRTAGNT,
+    latest_financials: {
+      report_date: latest.REPDTE,
+      assets_thousands: latest.ASSET,
+      deposits_thousands: latest.DEP,
+      equity_thousands: latest.EQ,
+      net_income_thousands: latest.NETINC,
+      roa_percent: latest.ROA,
+      roe_percent: latest.ROE,
+      nim_percent: latest.NIMY,
+      capital_ratio_percent: latest.RBC1AAJ,
+      delinquency_rate_percent: latest.LNLSDEPR,
+      employees: latest.NUMEMP,
+    },
+    quarterly_history: history.map(h => ({
+      report_date: h.REPDTE,
+      assets_thousands: h.ASSET,
+      deposits_thousands: h.DEP,
+      net_income_thousands: h.NETINC,
+      roa_percent: h.ROA,
+      roe_percent: h.ROE,
+    })),
+    profile_url: `https://vaultbot.ai/bank/${cert}`,
+  };
+}
+
+async function getIndustryMetrics(args) {
+  const { year } = args || {};
+  const yearFilter = year ? `&filters=REPDTE%3A%5B${year}1231%20TO%20${year}1231%5D` : '';
+  const url = `${FDIC_BASE}/financials?fields=REPDTE,ASSET,DEP,NETINC,ROA,ROE,NIMY&limit=10000&sort_by=ASSET&sort_order=DESC${yearFilter}`;
+  const r = await fetch(url).then(r => r.json()).catch(() => ({ data: [] }));
+  const recs = (r.data || []).map(d => d.data);
+  if (!recs.length) throw new Error('No data found for that period');
+  const totalAssets = recs.reduce((s, x) => s + (Number(x.ASSET) || 0), 0);
+  const totalDeposits = recs.reduce((s, x) => s + (Number(x.DEP) || 0), 0);
+  const totalNetInc = recs.reduce((s, x) => s + (Number(x.NETINC) || 0), 0);
+  const avgROA = recs.reduce((s, x) => s + (Number(x.ROA) || 0), 0) / recs.length;
+  const avgROE = recs.reduce((s, x) => s + (Number(x.ROE) || 0), 0) / recs.length;
+  return {
+    period: recs[0]?.REPDTE,
+    total_banks: recs.length,
+    total_assets_thousands: totalAssets,
+    total_deposits_thousands: totalDeposits,
+    total_net_income_thousands: totalNetInc,
+    avg_roa_percent: Number(avgROA.toFixed(3)),
+    avg_roe_percent: Number(avgROE.toFixed(2)),
+    industry_url: 'https://vaultbot.ai/industry',
+  };
+}
+
+async function getRecentCharters(args) {
+  const { year } = args || {};
+  const fields = 'NAME,CERT,CITY,STALP,ASSET,ESTYMD,CHRTAGNT,WEBADDR,NAMEHCR';
+  const filters = year
+    ? `ESTYMD%3A%5B${year}0101%20TO%20${year}1231%5D%20AND%20ACTIVE%3A1`
+    : `ESTYMD%3A%5B20230101%20TO%2099999999%5D%20AND%20ACTIVE%3A1`;
+  const r = await fetch(`${FDIC_BASE}/institutions?filters=${filters}&fields=${fields}&limit=100&sort_by=ESTYMD&sort_order=DESC`).then(r => r.json()).catch(() => ({ data: [] }));
+  return (r.data || []).map(d => ({
+    cert: d.data.CERT,
+    name: d.data.NAME,
+    city: d.data.CITY,
+    state: d.data.STALP,
+    assets_thousands: d.data.ASSET,
+    chartered_date: d.data.ESTYMD,
+    charter_agent: d.data.CHRTAGNT,
+    website: d.data.WEBADDR || null,
+    holding_company: d.data.NAMEHCR || null,
+    profile_url: `https://vaultbot.ai/bank/${d.data.CERT}`,
+  }));
+}
+
+async function getMAActivity(args) {
+  const { year, limit = 50 } = args || {};
+  const max = Math.min(Number(limit) || 50, 200);
+  const fields = 'TRANSNUM,EFFDATE,CHANGECODE_DESC,ACQ_INSTNAME,ACQ_CERT,ACQ_PCITY,ACQ_PSTALP,OUT_INSTNAME,OUT_CERT,OUT_PCITY,OUT_PSTALP,ASSISTED_PAYOUT_FLAG';
+  let filters = 'REPORT_TYPE%3A223';
+  if (year) filters += `%20AND%20EFFDATE%3A%5B${year}0101%20TO%20${year}1231%5D`;
+  else filters += `%20AND%20EFFDATE%3A%5B20230101%20TO%2099999999%5D`;
+  const r = await fetch(`${FDIC_BASE}/history?filters=${filters}&fields=${fields}&limit=${max}&sort_by=EFFDATE&sort_order=DESC`).then(r => r.json()).catch(() => ({ data: [] }));
+  const seen = new Map();
+  (r.data || []).forEach(d => {
+    if (!seen.has(d.data.TRANSNUM)) seen.set(d.data.TRANSNUM, d.data);
+  });
+  return [...seen.values()].map(d => ({
+    transaction_number: d.TRANSNUM,
+    effective_date: d.EFFDATE,
+    transaction_type: d.ASSISTED_PAYOUT_FLAG ? 'failure' : 'merger',
+    acquirer: { name: d.ACQ_INSTNAME, cert: d.ACQ_CERT, city: d.ACQ_PCITY, state: d.ACQ_PSTALP },
+    acquired: { name: d.OUT_INSTNAME, cert: d.OUT_CERT, city: d.OUT_PCITY, state: d.OUT_PSTALP },
+  }));
+}
+
+async function getLenderRankings(args) {
+  const { state, city, loan_type = 'residential', asset_size = 'community', limit = 25 } = args || {};
+  const max = Math.min(Number(limit) || 25, 100);
+
+  const sizeRanges = {
+    community: '0%20TO%201000000',
+    regional:  '1000000%20TO%2010000000',
+    large:     '10000000%20TO%2099999999999',
+    all:       '0%20TO%2099999999999',
+  };
+  const range = sizeRanges[asset_size] || sizeRanges.community;
+  let filters = `ACTIVE%3A1%20AND%20ASSET%3A%5B${range}%5D`;
+  if (state) filters += `%20AND%20STALP%3A${state.toUpperCase()}`;
+  if (city)  filters += `%20AND%20CITY%3A${encodeURIComponent(city)}*`;
+
+  const fields = 'NAME,CERT,CITY,STALP,ASSET,DEP,WEBADDR';
+  const finFields = 'CERT,RBC1AAJ,ROA,LNLSDEPR,LNLSNET,ASSET';
+
+  const [instR, finR] = await Promise.all([
+    fetch(`${FDIC_BASE}/institutions?filters=${filters}&fields=${fields}&limit=200&sort_by=ASSET&sort_order=DESC`).then(r => r.json()),
+    fetch(`${FDIC_BASE}/financials?filters=${filters}&fields=${finFields}&limit=200&sort_by=ASSET&sort_order=DESC`).then(r => r.json()),
+  ]);
+  const insts = (instR.data || []).map(d => d.data);
+  const fins = new Map((finR.data || []).map(d => [d.data?.CERT, d.data]));
+
+  // Composite lending score
+  const scored = insts.map(inst => {
+    const fin = fins.get(inst.CERT);
+    if (!fin) return null;
+    const loanRatio = (Number(fin.LNLSNET) || 0) / (Number(fin.ASSET) || 1) * 100;
+    const cap = Number(fin.RBC1AAJ) || 0;
+    const delinq = Number(fin.LNLSDEPR) || 0;
+    const roa = Number(fin.ROA) || 0;
+    const score = (
+      Math.min(loanRatio, 100) * 0.35 +
+      Math.min(cap, 25) * 4 * 0.20 +
+      (100 - Math.min(delinq * 10, 100)) * 0.25 +
+      Math.min(Math.max(roa * 50, 0), 100) * 0.20
+    );
+    return {
+      cert: inst.CERT,
+      name: inst.NAME,
+      city: inst.CITY,
+      state: inst.STALP,
+      assets_thousands: inst.ASSET,
+      lending_score: Number(score.toFixed(1)),
+      loan_to_asset_ratio: Number(loanRatio.toFixed(1)),
+      capital_ratio_percent: cap,
+      delinquency_percent: delinq,
+      roa_percent: roa,
+      website: inst.WEBADDR || null,
+      profile_url: `https://vaultbot.ai/bank/${inst.CERT}`,
+    };
+  }).filter(Boolean).sort((a, b) => b.lending_score - a.lending_score);
+  return scored.slice(0, max);
+}
+
+// ── MCP JSON-RPC Handler ─────────────────────────────────────────────────────
+const TOOL_HANDLERS = {
+  search_institutions: searchInstitutions,
+  get_bank_profile: getBankProfile,
+  get_industry_metrics: getIndustryMetrics,
+  get_recent_charters: getRecentCharters,
+  get_ma_activity: getMAActivity,
+  get_lender_rankings: getLenderRankings,
+};
+
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+  'Content-Type': 'application/json',
+};
+
+exports.handler = async (event) => {
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS_HEADERS };
+
+  // GET request — return server info / health check
+  if (event.httpMethod === 'GET') {
+    return {
+      statusCode: 200,
+      headers: CORS_HEADERS,
+      body: JSON.stringify({
+        name: 'vault-mcp',
+        version: '1.0.0',
+        description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
+        protocol: 'mcp',
+        protocol_version: '2024-11-05',
+        endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
+        tools: TOOLS.map(t => ({ name: t.name, description: t.description })),
+        documentation: 'https://vaultbot.ai/mcp',
+        powered_by: 'iDENTIFY (goidentify.com)',
+      }),
+    };
+  }
+
+  if (event.httpMethod !== 'POST') {
+    return { statusCode: 405, headers: CORS_HEADERS, body: JSON.stringify({ error: 'Method not allowed' }) };
+  }
+
+  let req;
+  try { req = JSON.parse(event.body || '{}'); }
+  catch (e) {
+    return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({
+      jsonrpc: '2.0', id: null,
+      error: { code: -32700, message: 'Parse error' }
+    })};
+  }
+
+  const { jsonrpc = '2.0', id, method, params } = req;
+  const reply = (result) => ({ statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ jsonrpc, id, result }) });
+  const err = (code, message, data) => ({ statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ jsonrpc, id, error: { code, message, data } }) });
+
+  try {
+    switch (method) {
+      case 'initialize':
+        return reply({
+          protocolVersion: '2024-11-05',
+          serverInfo: { name: 'vault-mcp', version: '1.0.0' },
+          capabilities: { tools: {} },
+        });
+
+      case 'tools/list':
+        return reply({ tools: TOOLS });
+
+      case 'tools/call': {
+        const { name, arguments: args } = params || {};
+        const handler = TOOL_HANDLERS[name];
+        if (!handler) return err(-32601, `Unknown tool: ${name}`);
+        const data = await handler(args || {});
+        return reply({
+          content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+          isError: false,
+        });
+      }
+
+      case 'ping':
+        return reply({});
+
+      default:
+        return err(-32601, `Method not found: ${method}`);
+    }
+  } catch (e) {
+    return err(-32603, 'Internal error', e.message);
+  }
+};

@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vault MCP — Banking Intelligence for AI Agents</title>
+<meta name="description" content="The first banking intelligence MCP server. Connect any AI agent to live FDIC, SEC, and banking data via Model Context Protocol. Free and open.">
+<meta property="og:title" content="Vault MCP — Banking Intelligence for AI Agents">
+<meta property="og:description" content="The first banking intelligence MCP server. Connect Claude, Cline, or any AI agent to live FDIC banking data.">
+<meta property="og:url" content="https://vaultbot.ai/mcp">
+<meta property="og:image" content="https://vaultbot.ai/og-image.png?v=4">
+<link rel="canonical" href="https://vaultbot.ai/mcp">
+<style>
+:root {
+  --bg: #0f1240;
+  --surface: rgba(255,255,255,0.06);
+  --surface2: rgba(255,255,255,0.10);
+  --border: rgba(255,255,255,0.12);
+  --text: #ffffff;
+  --muted: #8b95b3;
+  --accent: #4db8ff;
+  --accent2: #b06ef3;
+  --gold: #fbbf24;
+  --green: #4ade80;
+  --serif: 'Cormorant Garamond', Georgia, serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 0; background: linear-gradient(180deg, #0f1240 0%, #1a1060 50%, #2d1080 100%); color: var(--text); font-family: var(--sans); line-height: 1.6; min-height: 100vh; }
+.container { max-width: 880px; margin: 0 auto; padding: 40px 20px 80px; }
+.back { display: inline-block; margin-bottom: 24px; color: var(--muted); font-family: var(--mono); font-size: 12px; text-decoration: none; }
+.back:hover { color: var(--accent); }
+.eyebrow { font-family: var(--mono); font-size: 11px; color: var(--accent); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 12px; }
+h1 { font-family: var(--serif); font-size: clamp(36px, 6vw, 56px); margin: 0 0 12px; line-height: 1.1; letter-spacing: -1px; }
+.lede { font-size: 18px; color: var(--muted); max-width: 640px; margin-bottom: 32px; }
+.endpoint-box { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin-bottom: 40px; }
+.endpoint-box .label { font-family: var(--mono); font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
+.endpoint-box .url { font-family: var(--mono); font-size: 14px; color: var(--green); word-break: break-all; padding: 10px 14px; background: rgba(74,222,128,0.08); border: 1px solid rgba(74,222,128,0.2); border-radius: 8px; }
+h2 { font-family: var(--serif); font-size: 28px; margin: 48px 0 14px; letter-spacing: -0.5px; }
+h3 { font-family: var(--mono); font-size: 12px; color: var(--accent); margin: 24px 0 6px; text-transform: uppercase; letter-spacing: 0.08em; }
+p { color: var(--muted); margin: 0 0 14px; }
+pre { background: rgba(0,0,0,0.4); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; overflow-x: auto; font-family: var(--mono); font-size: 12px; color: #d6deeb; line-height: 1.7; }
+code { font-family: var(--mono); font-size: 12px; background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; color: var(--accent); }
+pre code { background: transparent; padding: 0; color: inherit; }
+.tool-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px 22px; margin-bottom: 12px; }
+.tool-card .name { font-family: var(--mono); font-size: 14px; color: var(--accent); font-weight: 600; margin-bottom: 4px; }
+.tool-card .desc { font-size: 13px; color: var(--muted); margin-bottom: 10px; line-height: 1.6; }
+.tool-card .params { font-family: var(--mono); font-size: 11px; color: rgba(255,255,255,0.5); }
+.tool-card .params strong { color: var(--text); }
+.cta { display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, var(--accent), var(--accent2)); color: white; text-decoration: none; border-radius: 10px; font-weight: 600; margin: 8px 8px 0 0; transition: transform 0.15s; }
+.cta:hover { transform: translateY(-2px); }
+.cta-secondary { background: var(--surface); border: 1px solid var(--border); }
+.footer { margin-top: 60px; padding-top: 24px; border-top: 1px solid var(--border); color: var(--muted); font-family: var(--mono); font-size: 11px; }
+.footer a { color: var(--accent); text-decoration: none; }
+.section-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+@media (max-width: 600px) { .section-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="container">
+  <a href="/" class="back">← Vault home</a>
+
+  <div class="eyebrow">// Vault MCP Server</div>
+  <h1>Banking intelligence,<br>any AI agent.</h1>
+  <p class="lede">
+    The first banking intelligence MCP server. Connect Claude Desktop, Cline, Continue, or any
+    Model Context Protocol-compatible agent to live FDIC banking data — search 4,317 banks,
+    pull financials, track M&amp;A, find new charters, all via tool calls.
+  </p>
+
+  <div class="endpoint-box">
+    <div class="label">MCP Endpoint URL</div>
+    <div class="url">https://vaultbot.ai/.netlify/functions/mcp</div>
+  </div>
+
+  <h2>Quick Start</h2>
+
+  <h3>Claude Desktop</h3>
+  <p>Add this to your Claude Desktop MCP config file:</p>
+  <pre><code>{
+  "mcpServers": {
+    "vault-banking": {
+      "url": "https://vaultbot.ai/.netlify/functions/mcp"
+    }
+  }
+}</code></pre>
+  <p>Then ask Claude things like:</p>
+  <ul style="color:var(--muted);font-size:14px;line-height:1.8;">
+    <li>"What's the latest financial data for Sutton Bank?"</li>
+    <li>"Find me top-performing community banks in Oklahoma"</li>
+    <li>"Show me bank mergers from 2025"</li>
+    <li>"How many new bank charters were issued this year?"</li>
+  </ul>
+
+  <h3>MCP Inspector</h3>
+  <p>Test tools directly using the official MCP Inspector:</p>
+  <pre><code>npx @modelcontextprotocol/inspector https://vaultbot.ai/.netlify/functions/mcp</code></pre>
+
+  <h3>cURL (raw JSON-RPC)</h3>
+  <pre><code>curl -X POST https://vaultbot.ai/.netlify/functions/mcp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+      "name": "search_institutions",
+      "arguments": { "query": "Sutton Bank" }
+    }
+  }'</code></pre>
+
+  <h2>Available Tools</h2>
+
+  <div class="tool-card">
+    <div class="name">search_institutions</div>
+    <div class="desc">Search FDIC-insured banks by name, city, or fuzzy match. Returns up to 50 institutions ranked by relevance and asset size.</div>
+    <div class="params"><strong>query</strong> (required) · <strong>state</strong> (optional 2-letter code) · <strong>limit</strong> (default 20)</div>
+  </div>
+
+  <div class="tool-card">
+    <div class="name">get_bank_profile</div>
+    <div class="desc">Detailed profile for a single bank by FDIC certificate number. Returns institution details + 8 quarters of financial history.</div>
+    <div class="params"><strong>cert</strong> (required) — e.g. "23473"</div>
+  </div>
+
+  <div class="tool-card">
+    <div class="name">get_industry_metrics</div>
+    <div class="desc">Aggregate banking industry metrics — total banks, total assets, average ROA/ROE/NIM for any year.</div>
+    <div class="params"><strong>year</strong> (optional)</div>
+  </div>
+
+  <div class="tool-card">
+    <div class="name">get_recent_charters</div>
+    <div class="desc">List newly chartered FDIC-insured banks (de novo banks) since 2023.</div>
+    <div class="params"><strong>year</strong> (optional)</div>
+  </div>
+
+  <div class="tool-card">
+    <div class="name">get_ma_activity</div>
+    <div class="desc">List recent bank mergers, acquisitions, and failures. Returns acquirer, acquired, effective date, transaction type.</div>
+    <div class="params"><strong>year</strong> (optional) · <strong>limit</strong> (default 50, max 200)</div>
+  </div>
+
+  <div class="tool-card">
+    <div class="name">get_lender_rankings</div>
+    <div class="desc">Banks ranked by composite Lending Score (loan concentration + capital + asset quality + ROA). Filter by state, city, or asset tier.</div>
+    <div class="params"><strong>state</strong>, <strong>city</strong>, <strong>loan_type</strong> (residential/commercial/smallbiz/consumer), <strong>asset_size</strong> (community/regional/large)</div>
+  </div>
+
+  <h2>Why this exists</h2>
+  <p>
+    Banking data is buried in regulatory filings, paywalled aggregators, and 90s-era websites.
+    Vault MCP exposes the same FDIC public data that powers <a href="https://vaultbot.ai" style="color:var(--accent);">vaultbot.ai</a>
+    to any AI agent — for free, with no API key, and no rate limits beyond what the FDIC enforces upstream.
+  </p>
+  <p>
+    Built by <a href="https://goidentify.com" style="color:var(--accent);">iDENTIFY</a>, a Tulsa-based fintech data infrastructure
+    company. We help community banks, sponsor banks, credit unions, and fintechs turn their data into a competitive advantage.
+  </p>
+
+  <div style="margin-top:32px;">
+    <a href="https://vaultbot.ai" class="cta">Try Vault →</a>
+    <a href="https://goidentify.com" class="cta cta-secondary">Learn about iDENTIFY</a>
+  </div>
+
+  <div class="footer">
+    Vault MCP v1.0 · Powered by FDIC public data · Built by <a href="https://goidentify.com">iDENTIFY</a> · Open and free forever.
+  </div>
+</div>
+</body>
+</html>
