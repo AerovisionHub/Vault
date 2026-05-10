@@ -74,46 +74,26 @@ pre code { background: transparent; padding: 0; color: inherit; }
     <div class="url">https://vaultbot.ai/.netlify/functions/mcp</div>
   </div>
 
-  <h2>Quick Start</h2>
-
-  <h3>Claude Desktop</h3>
-  <p>Edit your Claude Desktop config at <code>~/Library/Application Support/Claude/claude_desktop_config.json</code> (Mac) or <code>%APPDATA%\Claude\claude_desktop_config.json</code> (Windows). Add this to <code>mcpServers</code>:</p>
-  <pre><code>{
-  "mcpServers": {
-    "vault-banking": {
-      "command": "npx",
-      "args": ["mcp-remote", "https://vaultbot.ai/.netlify/functions/mcp"]
-    }
-  }
-}</code></pre>
-  <p style="font-size:12px;color:rgba(255,255,255,0.5);">
-    The <code>mcp-remote</code> package bridges remote HTTP MCP servers to Claude Desktop's stdio transport.
-    Maintained by Anthropic — no custom installation required, runs via <code>npx</code>.
+  <h2>Get started in 2 minutes</h2>
+  <p>
+    Vault MCP works with Claude Desktop, Cline, Continue, and any Model Context Protocol client.
+    Setup is 3 lines of config — we'll show you exactly how.
   </p>
-  <p>Restart Claude Desktop, then ask Claude things like:</p>
+
+  <div style="margin: 24px 0 32px;">
+    <a href="/mcp/setup" class="cta">Get install instructions →</a>
+    <p style="font-size:12px;color:rgba(255,255,255,0.45);margin-top:10px;font-family:var(--mono);">
+      Quick form so we know who's using Vault and how to make it better. Free forever.
+    </p>
+  </div>
+
+  <h3>What you can ask Claude after setup</h3>
   <ul style="color:var(--muted);font-size:14px;line-height:1.8;">
     <li>"What's the latest financial data for Sutton Bank?"</li>
     <li>"Find me top-performing community banks in Oklahoma"</li>
     <li>"Show me bank mergers from 2025"</li>
-    <li>"How many new bank charters were issued this year?"</li>
+    <li>"How is the U.S. banking industry performing in 2024 vs 2025?"</li>
   </ul>
-
-  <h3>MCP Inspector</h3>
-  <p>Test tools directly using the official MCP Inspector:</p>
-  <pre><code>npx @modelcontextprotocol/inspector https://vaultbot.ai/.netlify/functions/mcp</code></pre>
-
-  <h3>cURL (raw JSON-RPC)</h3>
-  <pre><code>curl -X POST https://vaultbot.ai/.netlify/functions/mcp \
-  -H "Content-Type: application/json" \
-  -d '{
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "tools/call",
-    "params": {
-      "name": "search_institutions",
-      "arguments": { "query": "Sutton Bank" }
-    }
-  }'</code></pre>
 
   <h2>Available Tools</h2>
 

@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Set Up Vault MCP — Free Banking Intelligence for AI Agents</title>
+<meta name="description" content="Get Vault MCP installed in 2 minutes. Free banking intelligence for Claude Desktop, Cline, and any MCP-compatible AI agent.">
+<meta property="og:title" content="Set Up Vault MCP">
+<meta property="og:description" content="Free banking intelligence MCP server. Connect Claude to live FDIC data in 2 minutes.">
+<meta property="og:url" content="https://vaultbot.ai/mcp/setup">
+<meta property="og:image" content="https://vaultbot.ai/og-image.png?v=4">
+<link rel="canonical" href="https://vaultbot.ai/mcp/setup">
+<style>
+:root {
+  --bg: #0f1240;
+  --surface: rgba(255,255,255,0.06);
+  --surface2: rgba(255,255,255,0.10);
+  --border: rgba(255,255,255,0.12);
+  --text: #ffffff;
+  --muted: #8b95b3;
+  --accent: #4db8ff;
+  --accent2: #b06ef3;
+  --green: #4ade80;
+  --serif: 'Cormorant Garamond', Georgia, serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 0; background: linear-gradient(180deg, #0f1240 0%, #1a1060 50%, #2d1080 100%); color: var(--text); font-family: var(--sans); line-height: 1.6; min-height: 100vh; }
+.container { max-width: 720px; margin: 0 auto; padding: 40px 20px 80px; }
+.back { display: inline-block; margin-bottom: 24px; color: var(--muted); font-family: var(--mono); font-size: 12px; text-decoration: none; }
+.back:hover { color: var(--accent); }
+.eyebrow { font-family: var(--mono); font-size: 11px; color: var(--accent); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 12px; }
+h1 { font-family: var(--serif); font-size: clamp(32px, 5vw, 48px); margin: 0 0 14px; line-height: 1.1; letter-spacing: -1px; }
+.lede { font-size: 17px; color: var(--muted); margin-bottom: 32px; }
+.form-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 28px; margin-bottom: 24px; }
+.field { margin-bottom: 16px; }
+.field label { display: block; font-family: var(--mono); font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+.field label .req { color: #f87171; }
+.field input, .field select, .field textarea {
+  width: 100%; padding: 11px 14px; background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text); font-family: var(--sans); font-size: 14px;
+}
+.field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--accent); }
+.field textarea { resize: vertical; min-height: 80px; font-family: var(--sans); }
+.honeypot { position: absolute; left: -9999px; visibility: hidden; }
+.btn-submit {
+  width: 100%; padding: 14px 24px; background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: white; border: none; border-radius: 10px; font-size: 15px; font-weight: 600;
+  cursor: pointer; transition: transform 0.15s; font-family: var(--sans);
+}
+.btn-submit:hover { transform: translateY(-1px); }
+.btn-submit:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+.error { color: #f87171; font-family: var(--mono); font-size: 12px; margin-top: 12px; }
+.privacy { font-family: var(--mono); font-size: 10px; color: rgba(255,255,255,0.4); margin-top: 14px; line-height: 1.7; }
+.privacy a { color: var(--muted); }
+
+/* Setup steps shown after submission */
+#setup { display: none; }
+#setup.show { display: block; }
+.success-banner { background: rgba(74,222,128,0.1); border: 1px solid rgba(74,222,128,0.3); padding: 16px 20px; border-radius: 10px; margin-bottom: 28px; }
+.success-banner .check { color: var(--green); font-size: 18px; }
+h2 { font-family: var(--serif); font-size: 26px; margin: 32px 0 12px; letter-spacing: -0.5px; }
+h3 { font-family: var(--mono); font-size: 12px; color: var(--accent); margin: 24px 0 8px; text-transform: uppercase; letter-spacing: 0.08em; }
+p { color: var(--muted); margin: 0 0 12px; font-size: 14px; }
+pre { background: rgba(0,0,0,0.4); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; overflow-x: auto; font-family: var(--mono); font-size: 12px; color: #d6deeb; line-height: 1.7; position: relative; }
+pre code { background: transparent; padding: 0; color: inherit; }
+code { font-family: var(--mono); font-size: 12px; background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; color: var(--accent); }
+.copy-btn { position: absolute; top: 8px; right: 8px; padding: 4px 10px; background: rgba(255,255,255,0.08); border: 1px solid var(--border); border-radius: 6px; color: var(--muted); font-family: var(--mono); font-size: 10px; cursor: pointer; }
+.copy-btn:hover { color: var(--accent); }
+ul.steps { list-style: none; padding: 0; counter-reset: step; }
+ul.steps li { counter-increment: step; position: relative; padding-left: 36px; margin-bottom: 18px; color: var(--text); font-size: 14px; line-height: 1.7; }
+ul.steps li::before { content: counter(step); position: absolute; left: 0; top: 0; width: 24px; height: 24px; background: linear-gradient(135deg, var(--accent), var(--accent2)); border-radius: 50%; color: white; font-family: var(--mono); font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+ul.examples { color: var(--muted); font-size: 14px; line-height: 1.9; }
+</style>
+</head>
+<body>
+<div class="container">
+  <a href="/mcp" class="back">← MCP overview</a>
+
+  <div id="form-section">
+    <div class="eyebrow">// Vault MCP setup</div>
+    <h1>Get Vault MCP installed.</h1>
+    <p class="lede">
+      Free banking intelligence for any Claude agent. Tell us a bit about yourself
+      and we'll show you exactly how to set it up.
+    </p>
+
+    <div class="form-card">
+      <form id="signup-form" name="mcp-signup" method="POST" data-netlify="true" netlify-honeypot="bot-field">
+        <input type="hidden" name="form-name" value="mcp-signup">
+        <div class="honeypot"><label>Don't fill this out: <input name="bot-field"></label></div>
+
+        <div class="field">
+          <label>Your name <span class="req">*</span></label>
+          <input type="text" name="name" required placeholder="Lee Easton">
+        </div>
+
+        <div class="field">
+          <label>Work email <span class="req">*</span></label>
+          <input type="email" name="email" required placeholder="lee@goidentify.com">
+        </div>
+
+        <div class="field">
+          <label>Company / Institution</label>
+          <input type="text" name="company" placeholder="iDENTIFY, First Fidelity Bank, etc.">
+        </div>
+
+        <div class="field">
+          <label>Your role</label>
+          <select name="role">
+            <option value="">Select one...</option>
+            <option>Developer / Engineer</option>
+            <option>Product Manager</option>
+            <option>Banker / Banking Operations</option>
+            <option>Founder / Executive</option>
+            <option>Investor / VC</option>
+            <option>Researcher / Analyst</option>
+            <option>Consultant</option>
+            <option>Other</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>What will you use Vault MCP for?</label>
+          <textarea name="use_case" placeholder="e.g. Building a banking research agent, comparing community banks for our pitch deck, exploring Claude Desktop integrations..."></textarea>
+        </div>
+
+        <div class="field">
+          <label>How did you find us?</label>
+          <select name="source">
+            <option value="">Select one...</option>
+            <option>LinkedIn</option>
+            <option>Twitter / X</option>
+            <option>Direct link / referral</option>
+            <option>Search engine</option>
+            <option>MCP directory (mcp.so, smithery, etc.)</option>
+            <option>Word of mouth</option>
+            <option>Other</option>
+          </select>
+        </div>
+
+        <button type="submit" class="btn-submit" id="submit-btn">Get install instructions →</button>
+        <div class="error" id="error-msg"></div>
+
+        <div class="privacy">
+          We use this info to understand who's using Vault and how to make it better. We don't spam.
+          <br>Your data is stored privately and never sold. Questions? <a href="mailto:lee@goidentify.com">lee@goidentify.com</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="setup">
+    <div class="success-banner">
+      <div style="display:flex;align-items:center;gap:10px;font-weight:600;font-size:15px;">
+        <span class="check">✓</span> You're in. Here's how to install.
+      </div>
+      <p style="margin:8px 0 0;font-size:13px;">A copy is also being sent to your email for reference.</p>
+    </div>
+
+    <h2>Setup — 2 minutes</h2>
+    <ul class="steps">
+      <li>
+        <strong>Install Claude Desktop</strong> if you haven't already — <a href="https://claude.ai/download" target="_blank" style="color:var(--accent)">claude.ai/download</a>
+      </li>
+      <li>
+        <strong>Open your Claude Desktop config file:</strong>
+        <br><br>
+        <strong style="color:var(--accent);font-family:var(--mono);font-size:11px;">Mac:</strong>
+        <code>~/Library/Application Support/Claude/claude_desktop_config.json</code>
+        <br><br>
+        <strong style="color:var(--accent);font-family:var(--mono);font-size:11px;">Windows:</strong>
+        <code>%APPDATA%\Claude\claude_desktop_config.json</code>
+        <br><br>
+        Or in Claude Desktop → <strong>Settings</strong> → <strong>Developer</strong> → <strong>Edit Config</strong>.
+      </li>
+      <li>
+        <strong>Add Vault to your <code>mcpServers</code>:</strong>
+        <pre><button class="copy-btn" onclick="copyConfig(this)">Copy</button><code id="config-snippet">{
+  "mcpServers": {
+    "vault-banking": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://vaultbot.ai/.netlify/functions/mcp"
+      ]
+    }
+  }
+}</code></pre>
+        <p style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:6px;">
+          If you already have other servers, just add the <code>vault-banking</code> entry inside <code>mcpServers</code>.
+        </p>
+      </li>
+      <li>
+        <strong>Quit and reopen Claude Desktop</strong> (⌘Q on Mac). The first run will install <code>mcp-remote</code> automatically (5-10 sec).
+      </li>
+      <li>
+        <strong>Test it.</strong> Click the tools icon below the chat input — you should see <code>vault-banking</code> with 6 tools.
+      </li>
+    </ul>
+
+    <h2>Try these prompts</h2>
+    <ul class="examples">
+      <li>→ "What's the latest financial data for Sutton Bank?"</li>
+      <li>→ "Show me all bank mergers from 2025"</li>
+      <li>→ "Compare U.S. banking industry 2024 vs 2025"</li>
+      <li>→ "Find the top community lenders in Oklahoma"</li>
+      <li>→ "Which banks were chartered in 2025? Tell me about them."</li>
+    </ul>
+
+    <h2>Available tools</h2>
+    <p>
+      Vault MCP exposes 6 tools to your Claude agent:
+      <code>search_institutions</code>, <code>get_bank_profile</code>, <code>get_industry_metrics</code>,
+      <code>get_recent_charters</code>, <code>get_ma_activity</code>, <code>get_lender_rankings</code>.
+    </p>
+    <p>Full tool documentation at <a href="/mcp" style="color:var(--accent)">vaultbot.ai/mcp</a>.</p>
+
+    <h2>Stuck? Or have ideas?</h2>
+    <p>
+      Email <a href="mailto:lee@goidentify.com" style="color:var(--accent)">lee@goidentify.com</a> directly.
+      I read every message. We're shipping new features weekly based on user feedback.
+    </p>
+
+    <div style="margin-top:32px;padding-top:24px;border-top:1px solid var(--border);font-family:var(--mono);font-size:11px;color:var(--muted);">
+      Built by <a href="https://goidentify.com" style="color:var(--accent)">iDENTIFY</a> — banking data infrastructure for community banks, sponsor banks, credit unions, and fintechs.
+    </div>
+  </div>
+</div>
+
+<script>
+const form = document.getElementById('signup-form');
+const formSection = document.getElementById('form-section');
+const setupSection = document.getElementById('setup');
+const errorMsg = document.getElementById('error-msg');
+const submitBtn = document.getElementById('submit-btn');
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  errorMsg.textContent = '';
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Submitting...';
+
+  const formData = new FormData(form);
+
+  // Submit to Netlify Forms via standard form encoding
+  try {
+    const r = await fetch('/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(formData).toString(),
+    });
+
+    if (!r.ok) throw new Error(`Submit failed: ${r.status}`);
+
+    // Track conversion
+    if (window.gtag) gtag('event', 'mcp_signup', { source: formData.get('source') || 'unknown' });
+    if (window.plausible) plausible('MCP Signup', { props: { source: formData.get('source') || 'unknown' } });
+
+    // Reveal setup instructions
+    formSection.style.display = 'none';
+    setupSection.classList.add('show');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  } catch (err) {
+    errorMsg.textContent = 'Something went wrong. Please try again or email lee@goidentify.com';
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Get install instructions →';
+  }
+});
+
+function copyConfig(btn) {
+  const code = document.getElementById('config-snippet').textContent;
+  navigator.clipboard.writeText(code).then(() => {
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = 'Copy', 2000);
+  });
+}
+</script>
+</body>
+</html>
