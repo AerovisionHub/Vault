@@ -178,7 +178,7 @@ function sendWelcomeEmail(user) {
 </body></html>`;
 
     const body = JSON.stringify({
-      from: 'Vault MCP <onboarding@resend.dev>',
+      from: 'Vault MCP <mcp@vaultbot.ai>',
       to: [user.email],
       bcc: ['lee@goidentify.com'],
       subject: '⚡ Your Vault MCP install guide — ready to use',
