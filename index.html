@@ -2751,8 +2751,10 @@ function renderCompare() {
         <div style="font-size:13px;">Search for a bank or credit union, open its profile, and click <strong style="color:#b06ef3;">+ Compare</strong>.</div>
       </div>` : `
       <div id="compareGrid">
-        <div style="display:flex;align-items:center;gap:10px;padding:40px 0;justify-content:center;color:var(--muted);font-family:var(--mono);font-size:13px;">
-          <div class="spinner"></div>Loading comparison data…
+        <div style="text-align:center;padding:40px 20px;color:var(--muted);font-family:var(--mono);font-size:13px;">
+          <div class="spinner" style="display:inline-block;margin-bottom:12px;"></div>
+          <div>Loading comparison data…</div>
+          ${list.some(i => i.type === 'cu') ? `<div style="font-size:11px;margin-top:8px;color:rgba(255,255,255,0.4);">Credit union data may take a few seconds on first load</div>` : ''}
         </div>
       </div>`}
     ${renderContactSection()}
@@ -2765,18 +2767,35 @@ async function initCompare() {
   const el = document.getElementById('compareGrid');
   if (!el) return;
 
+  // Timeout wrapper — 15s max per institution to prevent indefinite spinners
+  const withTimeout = (promise, ms = 15000) => Promise.race([
+    promise,
+    new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))
+  ]);
+
   const data = await Promise.all(list.map(async item => {
     try {
       if (item.type === 'bank') {
-        const { inst, history } = await getFDICDetail(item.cert);
+        const { inst, history } = await withTimeout(getFDICDetail(item.cert));
         const latest = history?.[0] || {};
         return { type: 'bank', inst, latest, cert: item.cert };
       } else {
-        const raw = await getNCUADetail(item.cert);
+        const raw = await withTimeout(getNCUADetail(item.cert));
         return { type: 'cu', raw, cert: item.cert };
       }
-    } catch(e) { return { type: 'error', cert: item.cert }; }
+    } catch(e) {
+      return { type: 'error', cert: item.cert, error: e.message };
+    }
   }));
+
+  // If any failed, show inline error rows but still render others
+  const errors = data.filter(d => d.type === 'error');
+  if (errors.length === data.length) {
+    el.innerHTML = `<div style="text-align:center;padding:40px;color:#f87171;font-family:var(--mono);font-size:13px;">
+      Could not load comparison data. ${errors.some(e => e.error === 'timeout') ? 'Request timed out — please try again.' : 'Please check your connection.'}
+    </div>`;
+    return;
+  }
 
   const cols = data.length;
   const colW = Math.floor(100/cols) + '%';

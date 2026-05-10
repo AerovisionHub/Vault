@@ -54,40 +54,42 @@ async function run() {
   const t0 = Date.now();
   const [b2a, b2b, b2c] = await Promise.all([fetchBank(4063), fetchBank(5962), fetchBank(23473)]);
   const ms = Date.now()-t0;
-  record(b2a?.inst && b2b?.inst && b2c?.inst, '3 banks fetched in parallel', `${ms}ms — MidFirst, Sutton, First Fidelity`);
+  record(!!(b2a?.inst && b2b?.inst && b2c?.inst), '3 banks fetched in parallel', `${ms}ms — MidFirst, Sutton, First Fidelity`);
   record(ms < 5000, 'Performance OK (<5s)', `${ms}ms`);
 
   out.innerHTML += `<h3>Test 3: Bank + CU hybrid comparison</h3>`;
   const [b3, c3] = await Promise.all([fetchBank(4063), fetchCU(5536, 'Navy Federal')]);
-  record(b3?.inst && c3?.name, 'Bank + CU together', `Bank: ${b3?.inst?.NAME} · CU: ${c3?.name}`);
+  record(!!(b3?.inst && c3?.name), 'Bank + CU together', `Bank: ${b3?.inst?.NAME} · CU: ${c3?.name}`);
 
   out.innerHTML += `<h3>Test 4: Metric value extraction</h3>`;
   if (b2a?.latest) {
     const roa = Number(b2a.latest.ROA);
-    record(!isNaN(roa) && roa > 0, 'ROA is numeric', `Value: ${roa}`);
+    record(!!(!isNaN(roa) && roa > 0), 'ROA is numeric', `Value: ${roa}`);
     const assets = Number(b2a.inst?.ASSET);
-    record(!isNaN(assets) && assets > 0, 'Assets is numeric', `$${(assets/1000).toFixed(0)}M`);
-    record(typeof b2a.inst.WEBADDR === 'string' || b2a.inst.WEBADDR === undefined, 'WEBADDR field accessible', b2a.inst.WEBADDR || '(none)');
+    record(!!(!isNaN(assets) && assets > 0), 'Assets is numeric', `$${(assets/1000).toFixed(0)}M`);
+    record(!!(typeof b2a.inst.WEBADDR === 'string' || b2a.inst.WEBADDR === undefined), 'WEBADDR field accessible', b2a.inst.WEBADDR || '(none)');
   }
 
   out.innerHTML += `<h3>Test 5: Best-in-class detection logic</h3>`;
-  const vals = [b2a?.latest?.ROA, b2b?.latest?.ROA, b2c?.latest?.ROA].map(Number).filter(v=>!isNaN(v));
+  // Re-fetch for Test 5 since b2a/b2b/b2c are out of scope here
+  const fresh = await Promise.all([fetchBank(4063), fetchBank(5962), fetchBank(23473)]);
+  const vals = fresh.map(b => Number(b?.latest?.ROA)).filter(v => !isNaN(v));
   const best = Math.max(...vals);
-  record(vals.length === 3 && best > 0, 'Math.max picks best ROA', `Values: [${vals.map(v=>v.toFixed(2)).join(', ')}] → best: ${best.toFixed(2)}%`);
-  const lowVals = [b2a?.latest?.LNLSDEPR, b2b?.latest?.LNLSDEPR, b2c?.latest?.LNLSDEPR].map(Number).filter(v=>!isNaN(v));
+  record(!!(vals.length === 3 && best > 0), 'Math.max picks best ROA', `Values: [${vals.map(v=>v.toFixed(2)).join(', ')}] → best: ${best.toFixed(2)}%`);
+  const lowVals = fresh.map(b => Number(b?.latest?.LNLSDEPR)).filter(v => !isNaN(v));
   const bestLow = Math.min(...lowVals);
-  record(lowVals.length > 0, 'Math.min picks lowest delinquency', `Values: [${lowVals.map(v=>v.toFixed(2)).join(', ')}] → best (low): ${bestLow.toFixed(2)}%`);
+  record(!!(lowVals.length > 0), 'Math.min picks lowest delinquency', `Values: [${lowVals.map(v=>v.toFixed(2)).join(', ')}] → best (low): ${bestLow.toFixed(2)}%`);
 
   out.innerHTML += `<h3>Test 6: Edge cases</h3>`;
   // Bank with sparse data (CERT 59363 — special purpose)
   const b6 = await fetchBank(59363);
-  record(b6 !== null, 'CERT 59363 (no inst record) handled gracefully', `inst: ${b6?.inst?'present':'null (expected)'} · latest: ${b6?.latest?'present':'missing'}`);
+  record(!!(b6 !== null), 'CERT 59363 (no inst record) handled gracefully', `inst: ${b6?.inst?'present':'null (expected)'} · latest: ${b6?.latest?'present':'missing'}`);
   // Invalid CERT
   const b7 = await fetchBank(999999);
-  record(b7?.inst === undefined, 'Invalid CERT returns null inst', `inst: ${b7?.inst===undefined?'undefined ✓':'unexpected'}`);
+  record(!!(b7?.inst === undefined), 'Invalid CERT returns null inst', `inst: ${b7?.inst===undefined?'undefined ✓':'unexpected'}`);
 
   out.innerHTML += `<h3>Test 7: URL routing</h3>`;
-  record(window.location.pathname === '/compare-test.html', 'Direct page load works', `Path: ${window.location.pathname}`);
+  record(!!(window.location.pathname === '/compare-test.html'), 'Direct page load works', `Path: ${window.location.pathname}`);
   // Test that /compare resolves
   try {
     const r = await fetch('/compare', { method: 'HEAD' });
@@ -104,7 +106,7 @@ async function run() {
       compareList.push({ key, cert: id, type: 'bank' });
     }
   });
-  record(compareList.length === 3, 'Max 3 enforcement works', `Final list: ${compareList.map(i=>i.cert).join(',')} (oldest dropped)`);
+  record(!!(compareList.length === 3), 'Max 3 enforcement works', `Final list: ${compareList.map(i=>i.cert).join(',')} (oldest dropped)`);
 
   // Dedupe test
   const dedup = [];
@@ -112,7 +114,7 @@ async function run() {
     const key = `bank:${id}`;
     if (!dedup.find(i => i.key === key)) dedup.push({ key, cert: id });
   });
-  record(dedup.length === 1, 'Duplicate prevention works', `Same item added 3x → list size: ${dedup.length}`);
+  record(!!(dedup.length === 1), 'Duplicate prevention works', `Same item added 3x → list size: ${dedup.length}`);
 
   const total = pass + fail + warn;
   const pct = Math.round(pass/total*100);
