@@ -1,8 +1,6 @@
 // MCP Stats endpoint — read-only summary of usage from Netlify Blobs
 // Public endpoint — only shows aggregated counts, no PII
 
-const { getStore } = require('@netlify/blobs');
-
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') {
     return {
@@ -12,6 +10,8 @@ exports.handler = async (event) => {
   }
 
   try {
+    // Dynamic import to avoid ESM/CJS conflict at module load time
+    const { getStore } = await import('@netlify/blobs');
     const store = getStore('mcp-analytics');
     const list = await store.list({ prefix: '_counters/' });
     const days = list.blobs || [];

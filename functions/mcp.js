@@ -2,8 +2,6 @@
 // Implements MCP (Model Context Protocol) over HTTP using JSON-RPC 2.0
 // Spec: https://modelcontextprotocol.io/
 
-const { getStore } = require('@netlify/blobs');
-
 const FDIC_BASE = 'https://banks.data.fdic.gov/api';
 
 // ── Tool Definitions ─────────────────────────────────────────────────────────
@@ -91,6 +89,8 @@ function hashIP(ip) {
 
 async function logCall(event, { method, toolName, clientName, durationMs, success, errorMsg }) {
   try {
+    // Dynamic import — never crashes top-level handler, gracefully fails if module is broken
+    const { getStore } = await import('@netlify/blobs');
     const store = getStore('mcp-analytics');
     const ip = event.headers?.['x-forwarded-for']?.split(',')[0]?.trim() ||
                event.headers?.['client-ip'] || 'unknown';
