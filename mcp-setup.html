@@ -10,6 +10,7 @@
 <meta property="og:url" content="https://vaultbot.ai/mcp/setup">
 <meta property="og:image" content="https://vaultbot.ai/og-image.png?v=4">
 <link rel="canonical" href="https://vaultbot.ai/mcp/setup">
+<script src="https://js.hcaptcha.com/1/api.js" async defer></script>
 <style>
 :root {
   --bg: #0f1240;
@@ -165,7 +166,11 @@ ul.examples { color: var(--muted); font-size: 14px; line-height: 1.9; }
           </select>
         </div>
 
-        <button type="submit" class="btn-submit" id="submit-btn">Get install instructions →</button>
+        <div class="field" style="display:flex;justify-content:center;margin:20px 0;">
+  <div class="h-captcha" data-sitekey="10000000-ffff-ffff-ffff-000000000001" data-callback="onCaptchaSuccess" data-theme="dark"></div>
+</div>
+<input type="hidden" name="captcha_token" id="captcha_token">
+<button type="submit" class="btn-submit" id="submit-btn">Get install instructions →</button>
         <div class="error" id="error-msg"></div>
 
         <div class="privacy">
@@ -179,9 +184,9 @@ ul.examples { color: var(--muted); font-size: 14px; line-height: 1.9; }
   <div id="setup">
     <div class="success-banner">
       <div style="display:flex;align-items:center;gap:10px;font-weight:600;font-size:15px;">
-        <span class="check">✓</span> You're in. Here's how to install.
+        <span class="check">✓</span> You're in. Install guide sent to your email.
       </div>
-      <p style="margin:8px 0 0;font-size:13px;">A copy is also being sent to your email for reference.</p>
+      <p style="margin:8px 0 0;font-size:13px;">Check your inbox (or spam folder) for a copy of the config and full setup steps. The instructions below work immediately too.</p>
     </div>
 
     <h2>Setup — 2 minutes</h2>
@@ -262,6 +267,10 @@ const setupSection = document.getElementById('setup');
 const errorMsg = document.getElementById('error-msg');
 const submitBtn = document.getElementById('submit-btn');
 
+window.onCaptchaSuccess = function(token) {
+  document.getElementById('captcha_token').value = token;
+};
+
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
   errorMsg.textContent = '';
@@ -276,6 +285,7 @@ form.addEventListener('submit', async (e) => {
     role: formData.get('role'),
     use_case: formData.get('use_case'),
     source: formData.get('source'),
+    captcha_token: document.getElementById('captcha_token').value,
   };
 
   try {
