@@ -174,24 +174,54 @@ async function getBankProfile(args) {
 
 async function getIndustryMetrics(args) {
   const { year } = args || {};
-  const yearFilter = year ? `&filters=REPDTE%3A%5B${year}1231%20TO%20${year}1231%5D` : '';
-  const url = `${FDIC_BASE}/financials?fields=REPDTE,ASSET,DEP,NETINC,ROA,ROE,NIMY&limit=10000&sort_by=ASSET&sort_order=DESC${yearFilter}`;
-  const r = await fetch(url).then(r => r.json()).catch(() => ({ data: [] }));
-  const recs = (r.data || []).map(d => d.data);
-  if (!recs.length) throw new Error('No data found for that period');
-  const totalAssets = recs.reduce((s, x) => s + (Number(x.ASSET) || 0), 0);
-  const totalDeposits = recs.reduce((s, x) => s + (Number(x.DEP) || 0), 0);
-  const totalNetInc = recs.reduce((s, x) => s + (Number(x.NETINC) || 0), 0);
-  const avgROA = recs.reduce((s, x) => s + (Number(x.ROA) || 0), 0) / recs.length;
-  const avgROE = recs.reduce((s, x) => s + (Number(x.ROE) || 0), 0) / recs.length;
+
+  // FDIC's "summary" endpoint gives aggregate data we want — no need to fetch all 4500+ records
+  // But it requires REPDTE in YYYYMMDD format. If no year given, use latest available (Q3 2025).
+  const period = year ? `${year}1231` : '20250930';
+
+  // Use /financials with proper date filter and paginate to get all records
+  const fields = 'REPDTE,ASSET,DEP,NETINC,ROA,ROE,NIMY';
+  const filter = `REPDTE%3A${period}`;
+  const allRecs = [];
+  let offset = 0;
+  const pageSize = 10000;
+
+  // Fetch all pages until we get fewer than pageSize back
+  while (offset < 50000) {
+    const url = `${FDIC_BASE}/financials?filters=${filter}&fields=${fields}&limit=${pageSize}&offset=${offset}&sort_by=ASSET&sort_order=DESC`;
+    const r = await fetch(url).then(r => r.json()).catch(() => ({ data: [] }));
+    const page = (r.data || []).map(d => d.data);
+    allRecs.push(...page);
+    if (page.length < pageSize) break;
+    offset += pageSize;
+  }
+
+  // If specific year requested but no data, try Q3 of that year (FDIC publishes quarterly)
+  if (allRecs.length === 0 && year) {
+    const fallbackPeriod = `${year}0930`;
+    const url = `${FDIC_BASE}/financials?filters=REPDTE%3A${fallbackPeriod}&fields=${fields}&limit=10000&sort_by=ASSET&sort_order=DESC`;
+    const r = await fetch(url).then(r => r.json()).catch(() => ({ data: [] }));
+    allRecs.push(...((r.data || []).map(d => d.data)));
+  }
+
+  if (!allRecs.length) throw new Error(`No data found for ${year || 'latest period'}. FDIC data is published quarterly — try year 2024 or 2025.`);
+
+  const totalAssets = allRecs.reduce((s, x) => s + (Number(x.ASSET) || 0), 0);
+  const totalDeposits = allRecs.reduce((s, x) => s + (Number(x.DEP) || 0), 0);
+  const totalNetInc = allRecs.reduce((s, x) => s + (Number(x.NETINC) || 0), 0);
+  const avgROA = allRecs.reduce((s, x) => s + (Number(x.ROA) || 0), 0) / allRecs.length;
+  const avgROE = allRecs.reduce((s, x) => s + (Number(x.ROE) || 0), 0) / allRecs.length;
+  const avgNIM = allRecs.reduce((s, x) => s + (Number(x.NIMY) || 0), 0) / allRecs.length;
+
   return {
-    period: recs[0]?.REPDTE,
-    total_banks: recs.length,
+    period: allRecs[0]?.REPDTE,
+    total_banks: allRecs.length,
     total_assets_thousands: totalAssets,
     total_deposits_thousands: totalDeposits,
     total_net_income_thousands: totalNetInc,
     avg_roa_percent: Number(avgROA.toFixed(3)),
     avg_roe_percent: Number(avgROE.toFixed(2)),
+    avg_nim_percent: Number(avgNIM.toFixed(3)),
     industry_url: 'https://vaultbot.ai/industry',
   };
 }
