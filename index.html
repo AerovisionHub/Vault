@@ -2862,7 +2862,17 @@ async function initCompare() {
     { label: 'Members',             fn: d => d.type==='bank'?null:Number(d.raw?.members||0),                           fmt: v=>v?fmtNum(v):'—', dir:'neutral' },
     { label: 'Location',            fn: d => d.type==='bank'?`${d.inst?.CITY||''}, ${d.inst?.STALP||''}`:`${d.raw?.city||''}, ${d.raw?.state||''}`, fmt:v=>v||'—', dir:'neutral' },
     { label: 'Charter Type',        fn: d => d.type==='bank'?decodeInstcat(d.inst?.INSTCAT).label:(d.raw?.type||'Credit Union'), fmt:v=>v||'—', dir:'neutral' },
-    { label: 'Est. Year',           fn: d => d.type==='bank'?(d.inst?.ESTYMD||'').slice(0,4):null, fmt:v=>v||'—', dir:'neutral' },
+    { label: 'Est. Year',           fn: d => {
+      if (d.type !== 'bank' || !d.inst?.ESTYMD) return null;
+      const s = String(d.inst.ESTYMD);
+      // Handle MM/DD/YYYY format (e.g. "07/01/1981")
+      if (s.includes('/')) { const p = s.split('/'); return p[2] || null; }
+      // Handle YYYYMMDD format (e.g. "19810701")
+      if (/^\d{8}$/.test(s)) return s.slice(0,4);
+      // Handle YYYY-MM-DD format
+      if (s.includes('-')) return s.split('-')[0];
+      return null;
+    }, fmt:v=>v||'—', dir:'neutral' },
     { label: 'Website',             fn: d => d.type==='bank'?(d.inst?.WEBADDR||null):(d.raw?.website||null), fmt:v=>v||'—', dir:'neutral', isLink:true },
   ];
 
@@ -4449,7 +4459,7 @@ function renderAbout() {
           <div class="ai-feature-heading" style="margin-top:24px">// Roadmap</div>
           <div class="ai-feature-list">
             <div class="ai-feature-item ai-soon">⭐ MCP directory submissions — mcp.so, smithery.ai, glama.ai</div>
-            <div class="ai-feature-item ai-soon">⭐ Header UI cleanup — consolidate to 3-5 nav items + dropdowns</div>
+            <div class="ai-feature-item ai-soon">⭐ Header redesign — consolidate to 3-5 items + dropdowns + persistent search bar (desktop) / inline page search (mobile)</div>
             <div class="ai-feature-item ai-soon">⭐ PDF + Excel export for in-tool reports (for non-MCP users)</div>
             <div class="ai-feature-item ai-soon">ZIP code proximity filter on Find a Lender</div>
             <div class="ai-feature-item ai-soon">CU M&amp;A data (NCUA merger reports)</div>
