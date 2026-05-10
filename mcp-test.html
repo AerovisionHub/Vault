@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Vault MCP Test</title>
+<style>body{font-family:monospace;background:#0f1240;color:#fff;padding:24px;max-width:1000px;margin:0 auto;}
+.r{background:rgba(255,255,255,0.05);padding:10px 14px;border-radius:6px;margin:6px 0;font-size:11px;line-height:1.7;white-space:pre-wrap;word-break:break-word;max-height:300px;overflow-y:auto;}
+.pass{color:#4ade80;} .fail{color:#f87171;}
+h3{color:#4db8ff;margin:14px 0 4px;}
+#summary{font-size:15px;padding:14px;border-radius:8px;margin:12px 0;font-weight:700;}</style></head><body>
+<h2 style="color:#4db8ff">⚡ Vault MCP Server — Live Test</h2>
+<p style="color:#9ca3af;font-size:11px;">Endpoint: https://vaultbot.ai/.netlify/functions/mcp</p>
+<div id="summary"></div>
+<div id="out">Running tests…</div>
+<script>
+const MCP = '/.netlify/functions/mcp';
+let pass = 0, fail = 0;
+
+function log(ok, label, detail) {
+  const out = document.getElementById('out');
+  if (ok) pass++; else fail++;
+  out.innerHTML += `<div class="r ${ok?'pass':'fail'}">${ok?'✓':'✗'} <strong>${label}</strong>${detail?'<br>'+detail:''}</div>`;
+}
+
+async function rpc(method, params) {
+  const body = JSON.stringify({ jsonrpc:'2.0', id:1, method, params });
+  const r = await fetch(MCP, { method:'POST', headers:{'Content-Type':'application/json'}, body });
+  return r.json();
+}
+
+async function run() {
+  document.getElementById('out').innerHTML = '';
+
+  // 1. GET — server info
+  document.getElementById('out').innerHTML += '<h3>Test 1: Server Health Check (GET)</h3>';
+  try {
+    const r = await fetch(MCP);
+    const data = await r.json();
+    log(r.ok && data.name === 'vault-mcp', 'GET / — server info', `Status: ${r.status} · Server: ${data.name} v${data.version} · Tools: ${data.tools?.length}`);
+  } catch(e) { log(false, 'GET / failed', e.message); }
+
+  // 2. initialize
+  document.getElementById('out').innerHTML += '<h3>Test 2: initialize</h3>';
+  try {
+    const r = await rpc('initialize');
+    log(!!r.result?.serverInfo?.name, 'MCP initialize', `Protocol: ${r.result?.protocolVersion} · Server: ${r.result?.serverInfo?.name}`);
+  } catch(e) { log(false, 'initialize failed', e.message); }
+
+  // 3. tools/list
+  document.getElementById('out').innerHTML += '<h3>Test 3: tools/list</h3>';
+  try {
+    const r = await rpc('tools/list');
+    const tools = r.result?.tools || [];
+    log(tools.length === 6, 'tools/list returns 6 tools', tools.map(t => t.name).join(', '));
+  } catch(e) { log(false, 'tools/list failed', e.message); }
+
+  // 4. search_institutions
+  document.getElementById('out').innerHTML += '<h3>Test 4: search_institutions("Sutton Bank")</h3>';
+  try {
+    const r = await rpc('tools/call', { name:'search_institutions', arguments:{ query:'Sutton Bank', limit:3 } });
+    const text = r.result?.content?.[0]?.text;
+    const data = JSON.parse(text);
+    const sutton = data.find(b => b.cert === 5962);
+    log(!!sutton, 'Found Sutton Bank in results', `Got ${data.length} results · CERT 5962: ${sutton ? sutton.name : 'MISSING'}`);
+  } catch(e) { log(false, 'search_institutions failed', e.message); }
+
+  // 5. get_bank_profile
+  document.getElementById('out').innerHTML += '<h3>Test 5: get_bank_profile(cert: "23473")</h3>';
+  try {
+    const r = await rpc('tools/call', { name:'get_bank_profile', arguments:{ cert:'23473' } });
+    const text = r.result?.content?.[0]?.text;
+    const profile = JSON.parse(text);
+    const ok = profile.name?.includes('First Fidelity') && profile.latest_financials?.roa_percent != null;
+    log(ok, 'Got First Fidelity profile with financials', `Name: ${profile.name} · ROA: ${profile.latest_financials?.roa_percent?.toFixed(2)}% · History: ${profile.quarterly_history?.length} quarters`);
+  } catch(e) { log(false, 'get_bank_profile failed', e.message); }
+
+  // 6. get_industry_metrics
+  document.getElementById('out').innerHTML += '<h3>Test 6: get_industry_metrics</h3>';
+  try {
+    const r = await rpc('tools/call', { name:'get_industry_metrics', arguments:{} });
+    const text = r.result?.content?.[0]?.text;
+    const metrics = JSON.parse(text);
+    log(metrics.total_banks > 1000, 'Industry metrics returned', `${metrics.total_banks} banks · $${(metrics.total_assets_thousands/1e9).toFixed(1)}T assets · Avg ROA: ${metrics.avg_roa_percent}%`);
+  } catch(e) { log(false, 'get_industry_metrics failed', e.message); }
+
+  // 7. get_recent_charters
+  document.getElementById('out').innerHTML += '<h3>Test 7: get_recent_charters(year: 2025)</h3>';
+  try {
+    const r = await rpc('tools/call', { name:'get_recent_charters', arguments:{ year:2025 } });
+    const text = r.result?.content?.[0]?.text;
+    const charters = JSON.parse(text);
+    log(charters.length >= 1, '2025 charters returned', `Found ${charters.length} new charters · First: ${charters[0]?.name}`);
+  } catch(e) { log(false, 'get_recent_charters failed', e.message); }
+
+  // 8. get_ma_activity
+  document.getElementById('out').innerHTML += '<h3>Test 8: get_ma_activity</h3>';
+  try {
+    const r = await rpc('tools/call', { name:'get_ma_activity', arguments:{ year:2026, limit:5 } });
+    const text = r.result?.content?.[0]?.text;
+    const deals = JSON.parse(text);
+    log(deals.length >= 1, 'M&A deals returned', `Found ${deals.length} deals · First: ${deals[0]?.acquirer?.name} acquired ${deals[0]?.acquired?.name}`);
+  } catch(e) { log(false, 'get_ma_activity failed', e.message); }
+
+  // 9. get_lender_rankings
+  document.getElementById('out').innerHTML += '<h3>Test 9: get_lender_rankings(state: "OK")</h3>';
+  try {
+    const r = await rpc('tools/call', { name:'get_lender_rankings', arguments:{ state:'OK', limit:5 } });
+    const text = r.result?.content?.[0]?.text;
+    const lenders = JSON.parse(text);
+    log(lenders.length >= 1, 'Oklahoma lender rankings returned', `Top: ${lenders[0]?.name} · Score: ${lenders[0]?.lending_score}`);
+  } catch(e) { log(false, 'get_lender_rankings failed', e.message); }
+
+  // 10. Error handling
+  document.getElementById('out').innerHTML += '<h3>Test 10: Error handling — unknown tool</h3>';
+  try {
+    const r = await rpc('tools/call', { name:'nonexistent_tool', arguments:{} });
+    log(r.error?.code === -32601, 'Unknown tool returns proper error', `Error: ${r.error?.message}`);
+  } catch(e) { log(false, 'error handling failed', e.message); }
+
+  const total = pass + fail;
+  const pct = Math.round(pass/total*100);
+  const c = fail===0?'#4ade80':pct>=80?'#fbbf24':'#f87171';
+  const bg = fail===0?'rgba(74,222,128,0.1)':'rgba(248,113,113,0.1)';
+  document.getElementById('summary').style.cssText = `background:${bg};border:1px solid ${c};padding:14px;border-radius:8px;`;
+  document.getElementById('summary').innerHTML = `<span style="color:${c}">${pass}/${total} passed${fail?` · ${fail} failed`:''} (${pct}%)</span>`;
+}
+run();
+</script></body></html>
