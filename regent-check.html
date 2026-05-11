@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Regent Bank — Field Verification</title>
+<style>body{font-family:monospace;background:#0f1240;color:#fff;padding:24px;max-width:900px;margin:0 auto;}
+.r{background:rgba(255,255,255,0.05);padding:10px 14px;border-radius:6px;margin:6px 0;font-size:12px;line-height:1.7;}
+.good{color:#4ade80;} .bad{color:#f87171;} .info{color:#4db8ff;}
+h3{color:#4db8ff;margin:14px 0 6px;}</style></head><body>
+<h2 style="color:#4db8ff">Regent Bank — Field Verification (CERT 4160)</h2>
+<p style="color:#9ca3af;font-size:12px;">Confirming the credit quality fix using user's reference data</p>
+<div id="out">Loading…</div>
+<script>
+async function run() {
+  const out = document.getElementById('out');
+  out.innerHTML = '';
+
+  // Call live MCP for Regent
+  const r = await fetch('/.netlify/functions/mcp', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ jsonrpc:'2.0', id:1, method:'tools/call', params:{ name:'get_bank_profile', arguments:{cert:'4160'} } })
+  });
+  const d = await r.json();
+  const profile = JSON.parse(d.result.content[0].text);
+  const fin = profile.latest_financials;
+
+  out.innerHTML += `<h3>What the live MCP returns now:</h3>`;
+  out.innerHTML += `<div class="r"><strong class="good">noncurrent_loans_percent (NCLNLSR):</strong> ${fin.noncurrent_loans_percent?.toFixed(2)}%<br><span style="color:#9ca3af">User's correct calc: 2.29% (38.1M noncurrent / 1,663M loans). Should match.</span></div>`;
+  out.innerHTML += `<div class="r"><strong class="info">loan_to_deposit_ratio_percent (LNLSDEPR):</strong> ${fin.loan_to_deposit_ratio_percent?.toFixed(2)}%<br><span style="color:#9ca3af">User saw 95.13% labeled as "delinquency" — that was actually L/D ratio.</span></div>`;
+  out.innerHTML += `<div class="r"><strong>Other ratios for sanity check:</strong><br>ROA: ${fin.roa_percent?.toFixed(2)}% (user saw 1.08%)<br>ROE: ${fin.roe_percent?.toFixed(2)}% (user saw 11.69%)<br>NIM: ${fin.nim_percent?.toFixed(2)}% (user saw 4.16%)<br>Capital: ${fin.capital_ratio_percent?.toFixed(2)}% (user saw 10.20%)</div>`;
+  out.innerHTML += `<h3>Full latest_financials object:</h3><div class="r">${JSON.stringify(fin, null, 2)}</div>`;
+}
+run();
+</script></body></html>
