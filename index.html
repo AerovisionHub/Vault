@@ -811,14 +811,14 @@ async function searchFDIC(query) {
 
 async function getFDICDetail(cert) {
   // Institution info
-  const instFields = 'NAME,CERT,CITY,STALP,ADDRESS,ZIP,WEBADDR,ESTYMD,ACTIVE,INSTCAT,CHRTAGNT,INSDATE,REPDTE,ASSET,DEP,EQ,NETINC,INTINC,NONII,NONIX,LNLSNET,REPDTE,STNAME,SC,LNLSDEPR,HCTMULT,NAMEHCR';
+  const instFields = 'NAME,CERT,CITY,STALP,ADDRESS,ZIP,WEBADDR,ESTYMD,ACTIVE,INSTCAT,CHRTAGNT,INSDATE,REPDTE,ASSET,DEP,EQ,NETINC,INTINC,NONII,NONIX,LNLSNET,REPDTE,STNAME,SC,LNLSDEPR,NCLNLSR,HCTMULT,NAMEHCR';
   const instUrl = `${FDIC_BASE}/institutions?filters=CERT%3A${cert}&fields=${instFields}&limit=1`;
   const instR = await fetch(instUrl);
   const instData = await instR.json();
   let inst = instData.data?.[0]?.data;
 
   // Financial history (last 8 quarters)
-  const finFields = 'REPDTE,ASSET,DEP,EQ,NETINC,INTINC,NONII,NONIX,LNLSNET,RBC1AAJ,ROA,ROE,INTEXP,NIMY,LNLSDEPR,EFFRATIO,SC,NUMEMP';
+  const finFields = 'REPDTE,ASSET,DEP,EQ,NETINC,INTINC,NONII,NONIX,LNLSNET,RBC1AAJ,ROA,ROE,INTEXP,NIMY,LNLSDEPR,NCLNLSR,EFFRATIO,SC,NUMEMP';
   const finUrl = `${FDIC_BASE}/financials?filters=CERT%3A${cert}&fields=${finFields}&limit=8&sort_by=REPDTE&sort_order=DESC`;
   const finR = await fetch(finUrl);
   const finData = await finR.json();
@@ -2856,7 +2856,8 @@ async function initCompare() {
     { label: 'ROE',                 fn: d => d.type==='bank'?Number(d.latest?.ROE||0):null,                             fmt: v=>v!=null?v.toFixed(2)+'%':'—', dir:'high' },
     { label: 'Net Interest Margin', fn: d => d.type==='bank'?Number(d.latest?.NIMY||0):null,                            fmt: v=>v!=null?v.toFixed(2)+'%':'—', dir:'high' },
     { label: 'Capital Ratio',       fn: d => d.type==='bank'?Number(d.latest?.RBC1AAJ||0):null,                         fmt: v=>v!=null?v.toFixed(1)+'%':'—', dir:'high' },
-    { label: 'Delinquency Rate',    fn: d => d.type==='bank'?Number(d.latest?.LNLSDEPR||0):null,                        fmt: v=>v!=null?v.toFixed(2)+'%':'—', dir:'low' },
+    { label: 'Noncurrent Loans %',  fn: d => d.type==='bank'?Number(d.latest?.NCLNLSR||0):null,                        fmt: v=>v!=null?v.toFixed(2)+'%':'—', dir:'low' },
+    { label: 'Loan/Deposit Ratio',  fn: d => d.type==='bank'?Number(d.latest?.LNLSDEPR||0):null,                        fmt: v=>v!=null?v.toFixed(2)+'%':'—', dir:'neutral' },
     { label: 'Net Income',          fn: d => d.type==='bank'?Number(d.latest?.NETINC||0)*1000:null,                     fmt: v=>v!=null?fmt$(thousands(v/1000)):'—', dir:'high' },
     { label: 'Employees',           fn: d => d.type==='bank'?Number(d.latest?.NUMEMP||0):Number(d.raw?.employees||0),  fmt: v=>v?fmtNum(v):'—', dir:'neutral' },
     { label: 'Members',             fn: d => d.type==='bank'?null:Number(d.raw?.members||0),                           fmt: v=>v?fmtNum(v):'—', dir:'neutral' },
@@ -3094,7 +3095,7 @@ async function runLenderSearch() {
     }
 
     // Build financials query
-    const finFields = 'CERT,ASSET,DEP,LNLSRES,LNLSRE,LNCI,LNCON,LNLSNET,RBC1AAJ,ROA,LNLSDEPR,NIMY,REPDTE';
+    const finFields = 'CERT,ASSET,DEP,LNLSRES,LNLSRE,LNCI,LNCON,LNLSNET,RBC1AAJ,ROA,LNLSDEPR,NCLNLSR,NIMY,REPDTE';
     let filters;
 
     if (certSet) {
@@ -3160,7 +3161,7 @@ async function runLenderSearch() {
       const totalLoans  = (Number(r.LNLSNET) || 0) / assets * 100;
       const capital     = Number(r.RBC1AAJ) || 0;
       const roa         = Number(r.ROA) || 0;
-      const delinq      = Number(r.LNLSDEPR) || 0;
+      const delinq      = Number(r.NCLNLSR) || 0;  // true credit quality metric, not loan/deposit
       const nim         = Number(r.NIMY) || 0;
 
       // Composite lending score (0–100)

@@ -167,7 +167,7 @@ async function searchInstitutions(args) {
 async function getBankProfile(args) {
   const { cert } = args;
   const instFields = 'NAME,CERT,CITY,STALP,ADDRESS,ZIP,WEBADDR,ESTYMD,ACTIVE,INSTCAT,CHRTAGNT,REPDTE,ASSET,DEP,EQ,NETINC,STNAME,NAMEHCR';
-  const finFields = 'REPDTE,ASSET,DEP,EQ,NETINC,RBC1AAJ,ROA,ROE,NIMY,LNLSDEPR,NUMEMP';
+  const finFields = 'REPDTE,ASSET,DEP,EQ,NETINC,RBC1AAJ,ROA,ROE,NIMY,NCLNLSR,LNLSDEPR,NUMEMP';
   const [iR, fR] = await Promise.all([
     fetch(`${FDIC_BASE}/institutions?filters=CERT%3A${cert}&fields=${instFields}&limit=1`).then(r => r.json()),
     fetch(`${FDIC_BASE}/financials?filters=CERT%3A${cert}&fields=${finFields}&limit=8&sort_by=REPDTE&sort_order=DESC`).then(r => r.json()),
@@ -197,7 +197,8 @@ async function getBankProfile(args) {
       roe_percent: latest.ROE,
       nim_percent: latest.NIMY,
       capital_ratio_percent: latest.RBC1AAJ,
-      delinquency_rate_percent: latest.LNLSDEPR,
+      noncurrent_loans_percent: latest.NCLNLSR,
+      loan_to_deposit_ratio_percent: latest.LNLSDEPR,
       employees: latest.NUMEMP,
     },
     quarterly_history: history.map(h => ({
@@ -311,7 +312,7 @@ async function getLenderRankings(args) {
   if (city)  instFilters += `%20AND%20CITY%3A${encodeURIComponent(city)}*`;
 
   const fields = 'NAME,CERT,CITY,STALP,ASSET,DEP,WEBADDR';
-  const finFields = 'CERT,RBC1AAJ,ROA,LNLSDEPR,LNLSNET,ASSET';
+  const finFields = 'CERT,RBC1AAJ,ROA,NCLNLSR,LNLSDEPR,LNLSNET,ASSET';
 
   // Step 1: get filtered institutions
   const instR = await fetch(`${FDIC_BASE}/institutions?filters=${instFilters}&fields=${fields}&limit=200&sort_by=ASSET&sort_order=DESC`).then(r => r.json()).catch(() => ({ data: [] }));
@@ -329,7 +330,7 @@ async function getLenderRankings(args) {
     if (!fin) return null;
     const loanRatio = (Number(fin.LNLSNET) || 0) / (Number(fin.ASSET) || 1) * 100;
     const cap = Number(fin.RBC1AAJ) || 0;
-    const delinq = Number(fin.LNLSDEPR) || 0;
+    const delinq = Number(fin.NCLNLSR) || 0;
     const roa = Number(fin.ROA) || 0;
     const score = (
       Math.min(loanRatio, 100) * 0.35 +
@@ -346,7 +347,7 @@ async function getLenderRankings(args) {
       lending_score: Number(score.toFixed(1)),
       loan_to_asset_ratio: Number(loanRatio.toFixed(1)),
       capital_ratio_percent: cap,
-      delinquency_percent: delinq,
+      noncurrent_loans_percent: delinq,
       roa_percent: roa,
       website: inst.WEBADDR || null,
       profile_url: `https://vaultbot.ai/bank/${inst.CERT}`,
