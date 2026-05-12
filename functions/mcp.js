@@ -91,7 +91,11 @@ async function logCall(event, { method, toolName, clientName, durationMs, succes
   try {
     // Dynamic import — never crashes top-level handler, gracefully fails if module is broken
     const { getStore } = await import('@netlify/blobs');
-    const store = getStore('mcp-analytics');
+    const store = getStore({
+      name: 'mcp-analytics',
+      siteID: process.env.NETLIFY_SITE_ID || process.env.SITE_ID,
+      token: process.env.NETLIFY_BLOBS_TOKEN || process.env.NETLIFY_API_TOKEN,
+    });
     const ip = event.headers?.['x-forwarded-for']?.split(',')[0]?.trim() ||
                event.headers?.['client-ip'] || 'unknown';
     const userAgent = event.headers?.['user-agent'] || 'unknown';

@@ -17,7 +17,11 @@ exports.handler = async (event) => {
     let store;
     try {
       const { getStore } = await import('@netlify/blobs');
-      store = getStore('mcp-analytics');
+      store = getStore({
+        name: 'mcp-analytics',
+        siteID: process.env.NETLIFY_SITE_ID || process.env.SITE_ID,
+        token: process.env.NETLIFY_BLOBS_TOKEN || process.env.NETLIFY_API_TOKEN,
+      });
     } catch (e) {
       console.log('Blobs init failed (returning empty):', e.message);
       return { statusCode: 200, headers: HEADERS, body: JSON.stringify(EMPTY) };
