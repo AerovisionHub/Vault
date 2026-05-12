@@ -1,22 +1,42 @@
 // MCP Stats endpoint — read-only summary of usage from Netlify Blobs
-// Public endpoint — only shows aggregated counts, no PII
+// Returns valid empty response if store has no data or fails to load
 
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') {
-    return {
-      statusCode: 204,
-      headers: { 'Access-Control-Allow-Origin': '*' },
-    };
+    return { statusCode: 204, headers: { 'Access-Control-Allow-Origin': '*' } };
   }
 
-  try {
-    // Dynamic import to avoid ESM/CJS conflict at module load time
-    const { getStore } = await import('@netlify/blobs');
-    const store = getStore('mcp-analytics');
-    const list = await store.list({ prefix: '_counters/' });
-    const days = list.blobs || [];
+  const HEADERS = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' };
+  const EMPTY = {
+    all_time: { total_calls: 0, unique_users: 0, total_errors: 0, error_rate: '0%', tool_usage: {}, client_usage: {} },
+    daily: [],
+    last_updated: new Date().toISOString(),
+  };
 
-    // Fetch all daily counters
+  try {
+    let store;
+    try {
+      const { getStore } = await import('@netlify/blobs');
+      store = getStore('mcp-analytics');
+    } catch (e) {
+      console.log('Blobs init failed (returning empty):', e.message);
+      return { statusCode: 200, headers: HEADERS, body: JSON.stringify(EMPTY) };
+    }
+
+    let days = [];
+    try {
+      const list = await store.list({ prefix: '_counters/' });
+      days = list.blobs || [];
+    } catch (e) {
+      console.log('store.list failed (returning empty):', e.message);
+      return { statusCode: 200, headers: HEADERS, body: JSON.stringify(EMPTY) };
+    }
+
+    if (!days.length) {
+      return { statusCode: 200, headers: HEADERS, body: JSON.stringify(EMPTY) };
+    }
+
+    // Fetch each daily counter — skip any that fail
     const dayData = await Promise.all(
       days.map(async (b) => {
         try { return await store.get(b.key, { type: 'json' }); }
@@ -26,7 +46,6 @@ exports.handler = async (event) => {
 
     const valid = dayData.filter(Boolean).sort((a, b) => (b.day || '').localeCompare(a.day || ''));
 
-    // Aggregate totals
     const totals = {
       total_calls: 0,
       total_unique_users: new Set(),
@@ -44,7 +63,7 @@ exports.handler = async (event) => {
 
     return {
       statusCode: 200,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      headers: HEADERS,
       body: JSON.stringify({
         all_time: {
           total_calls: totals.total_calls,
@@ -66,10 +85,7 @@ exports.handler = async (event) => {
       }),
     };
   } catch (e) {
-    return {
-      statusCode: 500,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ error: e.message }),
-    };
+    console.error('Stats endpoint unexpected error:', e.message);
+    return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ ...EMPTY, error: e.message }) };
   }
 };
