@@ -133,7 +133,10 @@ async function logCall(event, { method, toolName, clientName, durationMs, succes
 
 // ── Tool Implementations ─────────────────────────────────────────────────────
 async function searchInstitutions(args) {
-  const { query, state, limit = 20 } = args;
+  const { query, state, limit = 20 } = args || {};
+  if (!query || typeof query !== 'string' || !query.trim()) {
+    throw new Error('Required parameter "query" missing or empty. Provide a search term like a bank name or city.');
+  }
   const max = Math.min(Number(limit) || 20, 50);
   const fields = 'NAME,CERT,CITY,STALP,ASSET,REPDTE,WEBADDR,INSTCAT';
   const stopWords = new Set(['of','the','and','a','an','at','in','for','by','to','&']);
@@ -459,7 +462,23 @@ exports.handler = async (event) => {
       case 'ping':
         return reply({});
 
+      // MCP protocol notifications — client-to-server signals that don't need a response.
+      // Per JSON-RPC 2.0 spec, these have no 'id' field and the server should not reply with an error.
+      // Per MCP spec, these include: notifications/initialized, notifications/roots/list_changed, etc.
+      case 'initialized':
+      case 'notifications/initialized':
+      case 'notifications/roots/list_changed':
+      case 'notifications/cancelled':
+      case 'notifications/progress':
+        await safeLog({ method, durationMs: Date.now()-t0, success: true });
+        return { statusCode: 204, headers: { 'Access-Control-Allow-Origin': '*' } };
+
       default:
+        // Treat any other 'notifications/*' or methods without an id as silent notifications
+        if (method?.startsWith('notifications/') || id === undefined || id === null) {
+          await safeLog({ method, durationMs: Date.now()-t0, success: true });
+          return { statusCode: 204, headers: { 'Access-Control-Allow-Origin': '*' } };
+        }
         await safeLog({ method, durationMs: Date.now()-t0, success: false, errorMsg: 'Unknown method' });
         return err(-32601, `Method not found: ${method}`);
     }
