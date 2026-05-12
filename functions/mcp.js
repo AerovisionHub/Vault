@@ -410,9 +410,17 @@ exports.handler = async (event) => {
   const t0 = Date.now();
   let toolName = null, clientName = null, success = true, errorMsg = null;
 
-  // Fire-and-forget logging — never await, never let logging break the response
-  const safeLog = (data) => {
-    logCall(event, data).catch(e => console.error('Analytics log fail (non-blocking):', e.message));
+  // Await logging with a short timeout — fire-and-forget gets killed by Lambda
+  // when handler returns. We give it 1 second max, then move on regardless.
+  const safeLog = async (data) => {
+    try {
+      await Promise.race([
+        logCall(event, data),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('log timeout')), 1000)),
+      ]);
+    } catch (e) {
+      console.error('Analytics log fail (non-blocking):', e.message);
+    }
   };
 
   try {
@@ -420,7 +428,7 @@ exports.handler = async (event) => {
       case 'initialize': {
         clientName = params?.clientInfo?.name || 'unknown';
         const clientVersion = params?.clientInfo?.version || 'unknown';
-        safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
+        await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
           serverInfo: { name: 'vault-mcp', version: '1.1.0' },
@@ -429,7 +437,7 @@ exports.handler = async (event) => {
       }
 
       case 'tools/list':
-        safeLog({ method, durationMs: Date.now()-t0, success: true });
+        await safeLog({ method, durationMs: Date.now()-t0, success: true });
         return reply({ tools: TOOLS });
 
       case 'tools/call': {
@@ -437,11 +445,11 @@ exports.handler = async (event) => {
         toolName = name;
         const handler = TOOL_HANDLERS[name];
         if (!handler) {
-          safeLog({ method, toolName, durationMs: Date.now()-t0, success: false, errorMsg: 'Unknown tool' });
+          await safeLog({ method, toolName, durationMs: Date.now()-t0, success: false, errorMsg: 'Unknown tool' });
           return err(-32601, `Unknown tool: ${name}`);
         }
         const data = await handler(args || {});
-        safeLog({ method, toolName, durationMs: Date.now()-t0, success: true });
+        await safeLog({ method, toolName, durationMs: Date.now()-t0, success: true });
         return reply({
           content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
           isError: false,
@@ -452,12 +460,12 @@ exports.handler = async (event) => {
         return reply({});
 
       default:
-        safeLog({ method, durationMs: Date.now()-t0, success: false, errorMsg: 'Unknown method' });
+        await safeLog({ method, durationMs: Date.now()-t0, success: false, errorMsg: 'Unknown method' });
         return err(-32601, `Method not found: ${method}`);
     }
   } catch (e) {
     errorMsg = e.message;
-    safeLog({ method, toolName, durationMs: Date.now()-t0, success: false, errorMsg });
+    await safeLog({ method, toolName, durationMs: Date.now()-t0, success: false, errorMsg });
     return err(-32603, 'Internal error', e.message);
   }
 };
