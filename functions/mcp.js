@@ -463,21 +463,29 @@ exports.handler = async (event) => {
         return reply({});
 
       // MCP protocol notifications — client-to-server signals that don't need a response.
-      // Per JSON-RPC 2.0 spec, these have no 'id' field and the server should not reply with an error.
-      // Per MCP spec, these include: notifications/initialized, notifications/roots/list_changed, etc.
+      // Per JSON-RPC 2.0 spec, these have no 'id' field. We return 200 with empty body
+      // (more compatible with HTTP-bridged MCP clients than 204 No Content).
       case 'initialized':
       case 'notifications/initialized':
       case 'notifications/roots/list_changed':
       case 'notifications/cancelled':
       case 'notifications/progress':
         await safeLog({ method, durationMs: Date.now()-t0, success: true });
-        return { statusCode: 204, headers: { 'Access-Control-Allow-Origin': '*' } };
+        return {
+          statusCode: 200,
+          headers: CORS_HEADERS,
+          body: '',
+        };
 
       default:
         // Treat any other 'notifications/*' or methods without an id as silent notifications
         if (method?.startsWith('notifications/') || id === undefined || id === null) {
           await safeLog({ method, durationMs: Date.now()-t0, success: true });
-          return { statusCode: 204, headers: { 'Access-Control-Allow-Origin': '*' } };
+          return {
+            statusCode: 200,
+            headers: CORS_HEADERS,
+            body: '',
+          };
         }
         await safeLog({ method, durationMs: Date.now()-t0, success: false, errorMsg: 'Unknown method' });
         return err(-32601, `Method not found: ${method}`);
