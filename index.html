@@ -566,6 +566,42 @@
     .two-col { grid-template-columns: 1fr; gap: 24px; }
     .ai-bar-label { width: 100px; font-size: 11px; }
     #siteFooter { padding: 10px 16px; }
+
+    /* === Mobile QA fixes (May 2026) === */
+    /* Workflow steps: collapse 5-column grid (3 cards + 2 arrows) into stacked single column */
+    .workflow-grid { grid-template-columns: 1fr !important; gap: 12px !important; }
+    .workflow-arrow { display: none !important; }
+    .workflow-step { padding: 18px !important; }
+    /* Home stats: 4 across is too cramped — go to 2x2 */
+    .home-stats-row { grid-template-columns: repeat(2, 1fr) !important; gap: 12px !important; margin-top: 32px !important; margin-bottom: 48px !important; }
+    /* News cards: stack instead of side-by-side */
+    .home-news-grid { grid-template-columns: 1fr !important; gap: 12px !important; }
+    /* Peer cards: stack for readability */
+    .peers-grid { grid-template-columns: 1fr !important; gap: 10px !important; }
+    /* Industry KPIs (used on /industry, /charters, /ma, /lenders): 2x2 not 4-across */
+    .industry-kpis { grid-template-columns: repeat(2, 1fr) !important; gap: 10px !important; }
+    .industry-kpi { padding: 14px !important; }
+    /* Bank profile institution meta row: stack */
+    .inst-meta-row { flex-direction: column !important; gap: 8px !important; align-items: flex-start !important; }
+    /* Lead capture row on home page: stack */
+    .lead-row { flex-direction: column !important; gap: 12px !important; }
+    .lead-row input, .lead-row select, .lead-row button { width: 100% !important; }
+    /* AI bar row labels: more room */
+    .ai-bar-row { flex-direction: row !important; gap: 8px !important; align-items: center !important; }
+    /* Tables: ensure horizontal scroll containers, give tables breathing room */
+    table { font-size: 12px !important; }
+    table th, table td { padding: 8px 6px !important; }
+    /* Headings: scale down */
+    h1 { font-size: 28px !important; line-height: 1.2 !important; }
+    h2 { font-size: 22px !important; }
+    /* Industry chart grid: single column on mobile */
+    .industry-chart-grid { grid-template-columns: 1fr !important; gap: 16px !important; }
+    /* Compare page table */
+    .compare-table { min-width: 480px !important; }
+    /* Prevent body horizontal scroll */
+    body { overflow-x: hidden !important; }
+    /* Container max-width fixes for very small phones */
+    .inst-meta { font-size: 13px !important; flex-wrap: wrap !important; }
   }
 </style>
 
