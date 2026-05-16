@@ -122,6 +122,15 @@ function sendWelcomeEmail(user) {
 <span style="color:#7e8bb0;">}</span>
         </div>
       </td></tr>
+      <!-- Prerequisites -->
+      <tr><td style="padding:30px 36px 0;">
+        <div style="font-family:ui-monospace,'SF Mono',Monaco,monospace;font-size:10px;color:#b06ef3;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:14px;font-weight:600;">→ Before you start</div>
+        <div style="background:rgba(176,110,243,0.06);border:1px solid rgba(176,110,243,0.2);border-radius:8px;padding:14px 18px;color:#c8cfe6;font-size:13px;line-height:1.65;">
+          Vault MCP requires <strong style="color:#fff;">Node.js 18 or higher</strong> on your machine. Most developer Macs already have it.<br>
+          Quick check: open Terminal, run <code style="background:rgba(77,184,255,0.1);padding:2px 6px;border-radius:4px;font-size:12px;color:#4db8ff;">node --version</code>. If you see <code style="background:rgba(77,184,255,0.1);padding:2px 6px;border-radius:4px;font-size:12px;color:#4db8ff;">v18</code> or higher, you're set.<br>
+          Don't have Node? Download it from <a href="https://nodejs.org" style="color:#4db8ff;text-decoration:none;font-weight:600;">nodejs.org</a> (LTS version, 2 min install).
+        </div>
+      </td></tr>
       <!-- Steps -->
       <tr><td style="padding:30px 36px 0;">
         <div style="font-family:ui-monospace,'SF Mono',Monaco,monospace;font-size:10px;color:#4db8ff;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:14px;font-weight:600;">→ Quick install</div>
@@ -148,6 +157,16 @@ function sendWelcomeEmail(user) {
           <span style="color:#7e8bb0;">"</span>Show me bank mergers from 2025<span style="color:#7e8bb0;">"</span><br>
           <span style="color:#7e8bb0;">"</span>Compare U.S. banking industry 2024 vs 2025<span style="color:#7e8bb0;">"</span><br>
           <span style="color:#7e8bb0;">"</span>Find top community lenders in Oklahoma<span style="color:#7e8bb0;">"</span>
+        </div>
+      </td></tr>
+      <!-- Troubleshooting -->
+      <tr><td style="padding:30px 36px 0;">
+        <div style="font-family:ui-monospace,'SF Mono',Monaco,monospace;font-size:10px;color:#4db8ff;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:14px;font-weight:600;">→ Troubleshooting</div>
+        <div style="color:#c8cfe6;font-size:13px;line-height:1.65;">
+          <strong style="color:#fff;">Seeing <code style="background:rgba(248,113,113,0.12);padding:2px 6px;border-radius:4px;font-size:12px;color:#f87171;">spawn npx ENOENT</code> or "Server disconnected"?</strong><br>
+          Claude can't find <code style="background:rgba(77,184,255,0.1);padding:2px 6px;border-radius:4px;font-size:12px;color:#4db8ff;">npx</code> in its PATH. Open Terminal, run <code style="background:rgba(77,184,255,0.1);padding:2px 6px;border-radius:4px;font-size:12px;color:#4db8ff;">which npx</code>, and replace <code style="background:rgba(77,184,255,0.1);padding:2px 6px;border-radius:4px;font-size:12px;color:#4db8ff;">"command": "npx"</code> in your config with the full path it prints (e.g. <code style="background:rgba(77,184,255,0.1);padding:2px 6px;border-radius:4px;font-size:12px;color:#4db8ff;">"/usr/local/bin/npx"</code>). Save, fully quit Claude (⌘Q), reopen.
+          <br><br>
+          <strong style="color:#fff;">Still stuck?</strong> Reply to this email with the contents of your <code style="background:rgba(77,184,255,0.1);padding:2px 6px;border-radius:4px;font-size:12px;color:#4db8ff;">mcp-server-vault-banking.log</code> file (found in <code style="background:rgba(77,184,255,0.1);padding:2px 6px;border-radius:4px;font-size:12px;color:#4db8ff;">~/Library/Logs/Claude/</code>) and I'll personally help debug.
         </div>
       </td></tr>
       <!-- CTAs -->
