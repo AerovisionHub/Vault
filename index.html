@@ -2790,27 +2790,75 @@ async function initAboutMCPStats() {
     const all = d.all_time || {};
 
     const callsEl = document.getElementById('mcp-stat-calls');
-    const usersEl = document.getElementById('mcp-stat-users');
-    const topToolEl = document.getElementById('mcp-stat-top-tool');
-    const topClientEl = document.getElementById('mcp-stat-top-client');
-
     if (!callsEl) return; // not on about page
+
+    const usersEl = document.getElementById('mcp-stat-users');
+    const clientsEl = document.getElementById('mcp-stat-clients');
+    const uptimeEl = document.getElementById('mcp-stat-uptime');
+    const toolBreakdownEl = document.getElementById('mcp-tool-breakdown');
+    const clientDiversityEl = document.getElementById('mcp-client-diversity');
 
     if (!all.total_calls) {
       callsEl.textContent = '0';
-      usersEl.textContent = '0';
-      topToolEl.textContent = 'Be the first';
-      topClientEl.textContent = 'Be the first';
+      if (usersEl) usersEl.textContent = '0';
+      if (clientsEl) clientsEl.textContent = '0';
+      if (uptimeEl) uptimeEl.textContent = '—';
+      if (toolBreakdownEl) toolBreakdownEl.innerHTML = '<div style="color:var(--muted);font-size:12px;">Be the first to use Vault MCP.</div>';
+      if (clientDiversityEl) clientDiversityEl.innerHTML = '<span style="color:var(--muted);">No clients connected yet.</span>';
       return;
     }
 
+    // Headline KPIs
     callsEl.textContent = all.total_calls.toLocaleString();
-    usersEl.textContent = all.unique_users.toLocaleString();
+    if (usersEl) usersEl.textContent = all.unique_users.toLocaleString();
 
-    const tools = Object.entries(all.tool_usage || {}).sort((a,b) => b[1]-a[1]);
     const clients = Object.entries(all.client_usage || {}).sort((a,b) => b[1]-a[1]);
-    topToolEl.textContent = tools[0]?.[0] || '—';
-    topClientEl.textContent = clients[0]?.[0]?.split('/')[0] || '—';
+    if (clientsEl) clientsEl.textContent = clients.length.toLocaleString();
+
+    // Uptime = 100 - error rate
+    if (uptimeEl) {
+      const rate = parseFloat((all.error_rate || '0').replace('%','')) || 0;
+      const uptime = (100 - rate).toFixed(2);
+      uptimeEl.textContent = uptime + '%';
+    }
+
+    // Tool usage breakdown — top 5 tools as horizontal bars
+    if (toolBreakdownEl) {
+      const tools = Object.entries(all.tool_usage || {}).sort((a,b) => b[1]-a[1]).slice(0, 6);
+      const maxToolCalls = tools[0]?.[1] || 1;
+      toolBreakdownEl.innerHTML = tools.map(([name, count]) => {
+        const pct = (count / maxToolCalls * 100).toFixed(0);
+        return `
+          <div style="display:flex;align-items:center;gap:12px;font-size:12px;">
+            <div style="flex:0 0 170px;font-family:var(--mono);color:var(--accent);font-size:11px;">${name}</div>
+            <div style="flex:1;background:rgba(255,255,255,0.05);border-radius:4px;height:8px;overflow:hidden;">
+              <div style="width:${pct}%;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:4px;"></div>
+            </div>
+            <div style="flex:0 0 50px;text-align:right;font-family:var(--mono);font-weight:600;color:var(--text);">${count.toLocaleString()}</div>
+          </div>
+        `;
+      }).join('') || '<div style="color:var(--muted);font-size:12px;">No tool calls yet.</div>';
+    }
+
+    // Client diversity narrative — humanize the client list
+    if (clientDiversityEl) {
+      // Group clients into categories
+      const groups = { 'Claude Desktop': 0, 'Claude Code': 0, 'Claude.ai web': 0, 'Custom agents': 0, 'Test/Setup': 0 };
+      clients.forEach(([name, n]) => {
+        if (name.startsWith('claude-code')) groups['Claude Code'] += n;
+        else if (name.startsWith('claude-ai (via mcp-remote') || name.startsWith('Anthropic/ClaudeAI')) groups['Claude.ai web'] += n;
+        else if (name.includes('mcp-remote-fallback-test')) groups['Test/Setup'] += n;
+        else groups['Custom agents'] += n;
+      });
+
+      const items = Object.entries(groups)
+        .filter(([_, n]) => n > 0)
+        .sort((a,b) => b[1]-a[1])
+        .map(([label, n]) => `<span style="display:inline-block;background:rgba(77,184,255,0.08);border:1px solid rgba(77,184,255,0.2);border-radius:6px;padding:4px 10px;font-family:var(--mono);font-size:11px;margin-right:6px;margin-bottom:6px;"><span style="color:var(--accent);">${label}</span> <span style="color:var(--muted);">·</span> <span style="color:var(--text);">${n.toLocaleString()}</span></span>`);
+
+      clientDiversityEl.innerHTML = items.join('') +
+        `<div style="font-size:12px;color:var(--muted);margin-top:10px;line-height:1.6;">Including community bankers, fintech founders, regulators, and custom AI agents.</div>`;
+    }
   } catch(e) {
     // Silent fail — just leave dashes if stats unavailable
   }
@@ -4383,31 +4431,55 @@ function renderAbout() {
 
       <!-- Live MCP Usage Stats -->
       <div class="ai-feature-heading" style="margin-bottom:14px;">⚡ Vault MCP — Live Usage</div>
-      <p style="font-size:13px;color:var(--muted);margin:0 0 16px;line-height:1.7;">
+      <p style="font-size:13px;color:var(--muted);margin:0 0 20px;line-height:1.7;">
         Vault MCP (<a href="/mcp" style="color:var(--accent);">vaultbot.ai/mcp</a>) is the first banking intelligence Model Context Protocol server.
-        Any AI agent — Claude Desktop, Cline, Continue — can call its 6 tools to query 4,500+ banks live.
-        These numbers update in real time as developers and bankers use it.
+        Any AI agent — Claude Desktop, Claude Code, Claude.ai web, or custom MCP clients — can call its tools to query 4,500+ banks live.
+        These numbers update in real time as bankers, developers, and analysts use it.
       </p>
-      <div id="mcp-stats-widget" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:24px;">
-        <div class="mcp-stat" style="background:rgba(77,184,255,0.08);border:1px solid rgba(77,184,255,0.2);border-radius:10px;padding:14px 16px;">
-          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">Tool calls</div>
-          <div id="mcp-stat-calls" style="font-size:24px;font-weight:700;font-family:var(--serif);color:var(--accent);">—</div>
+
+      <!-- Headline KPIs -->
+      <div id="mcp-stats-widget" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px;">
+        <div class="mcp-stat" style="background:rgba(77,184,255,0.08);border:1px solid rgba(77,184,255,0.2);border-radius:10px;padding:16px;">
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Tool calls</div>
+          <div id="mcp-stat-calls" style="font-size:32px;font-weight:700;font-family:var(--serif);color:var(--accent);line-height:1;">—</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:6px;font-family:var(--mono);">since May 11, 2026</div>
         </div>
-        <div class="mcp-stat" style="background:rgba(74,222,128,0.08);border:1px solid rgba(74,222,128,0.2);border-radius:10px;padding:14px 16px;">
-          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">Unique users</div>
-          <div id="mcp-stat-users" style="font-size:24px;font-weight:700;font-family:var(--serif);color:#4ade80;">—</div>
+        <div class="mcp-stat" style="background:rgba(74,222,128,0.08);border:1px solid rgba(74,222,128,0.2);border-radius:10px;padding:16px;">
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Unique users</div>
+          <div id="mcp-stat-users" style="font-size:32px;font-weight:700;font-family:var(--serif);color:#4ade80;line-height:1;">—</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:6px;font-family:var(--mono);">across AI agents worldwide</div>
         </div>
-        <div class="mcp-stat" style="background:rgba(176,110,243,0.08);border:1px solid rgba(176,110,243,0.2);border-radius:10px;padding:14px 16px;">
-          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">Top tool</div>
-          <div id="mcp-stat-top-tool" style="font-size:14px;font-weight:600;font-family:var(--mono);color:#b06ef3;line-height:1.4;padding-top:4px;">—</div>
+        <div class="mcp-stat" style="background:rgba(176,110,243,0.08);border:1px solid rgba(176,110,243,0.2);border-radius:10px;padding:16px;">
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Distinct MCP clients</div>
+          <div id="mcp-stat-clients" style="font-size:32px;font-weight:700;font-family:var(--serif);color:#b06ef3;line-height:1;">—</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:6px;font-family:var(--mono);">apps, agents & custom builds</div>
         </div>
-        <div class="mcp-stat" style="background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);border-radius:10px;padding:14px 16px;">
-          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">Top client</div>
-          <div id="mcp-stat-top-client" style="font-size:14px;font-weight:600;font-family:var(--mono);color:#fbbf24;line-height:1.4;padding-top:4px;">—</div>
+        <div class="mcp-stat" style="background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);border-radius:10px;padding:16px;">
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Uptime</div>
+          <div id="mcp-stat-uptime" style="font-size:32px;font-weight:700;font-family:var(--serif);color:#fbbf24;line-height:1;">—</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:6px;font-family:var(--mono);">success rate (all calls)</div>
         </div>
       </div>
+
+      <!-- Tool usage breakdown -->
+      <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:14px;">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:14px;">Most-used tools</div>
+        <div id="mcp-tool-breakdown" style="display:flex;flex-direction:column;gap:8px;">
+          <div style="color:var(--muted);font-size:12px;">Loading…</div>
+        </div>
+      </div>
+
+      <!-- Client diversity callout -->
+      <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:24px;">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Who's connected</div>
+        <div id="mcp-client-diversity" style="font-size:13px;color:var(--text);line-height:1.7;">
+          <span style="color:var(--muted);">Loading…</span>
+        </div>
+      </div>
+
       <div style="margin-bottom:32px;">
         <a href="/mcp" style="display:inline-block;padding:10px 22px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:white;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;font-family:var(--mono);letter-spacing:0.04em;">Try Vault MCP →</a>
+        <a href="/mcp/stats" style="display:inline-block;padding:10px 22px;background:transparent;border:1px solid var(--border);color:var(--text);text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;font-family:var(--mono);letter-spacing:0.04em;margin-left:8px;">Full dashboard →</a>
       </div>
 
       <hr class="ai-inner-divider">
@@ -4454,9 +4526,11 @@ function renderAbout() {
             <div class="ai-feature-item ai-done">Contact form on all pages → Netlify Forms</div>
             <div class="ai-feature-item ai-done">Side-by-side institution comparison</div>
             <div class="ai-feature-item ai-done">SEO-friendly slug URLs (/bank/name-city-state-cert)</div>
-            <div class="ai-feature-item ai-done">⚡ Vault MCP Server — 6 tools, JSON-RPC, live</div>
+            <div class="ai-feature-item ai-done">⚡ Vault MCP Server — 8 tools, JSON-RPC, live</div>
             <div class="ai-feature-item ai-done">Gated MCP install flow with branded welcome email</div>
             <div class="ai-feature-item ai-done">Live MCP usage analytics dashboard</div>
+            <div class="ai-feature-item ai-done">MCP: asset quality detail (PD 30-89, PD 90+, nonaccrual, OREO)</div>
+            <div class="ai-feature-item ai-done">MCP: loan mix breakdown (RE/C&I/Ag/Consumer + CRE concentration)</div>
             <div class="ai-feature-item ai-done">M&amp;A Activity page (/ma) — FDIC deal tracker</div>
             <div class="ai-feature-item ai-done">New Charters page (/charters)</div>
             <div class="ai-feature-item ai-done">Problem Banks + NIM + ROA/ROE industry charts</div>
@@ -4499,8 +4573,6 @@ function renderAbout() {
             <div class="ai-feature-item ai-soon">⭐ Notion documentation workspace — full project handoff doc (accounts, licenses, domains, ownership, transfer steps)</div>
             <div class="ai-feature-item ai-soon">⭐ Header redesign — consolidate to 3-5 items + dropdowns + persistent search bar (desktop) / inline page search (mobile)</div>
             <div class="ai-feature-item ai-soon">⭐ MCP: full derived-metric audit (user-requested) — validate every calculated field against FDIC definitions</div>
-            <div class="ai-feature-item ai-soon">⭐ MCP: asset quality detail tool (PD 30-89, PD 90+, nonaccrual, OREO)</div>
-            <div class="ai-feature-item ai-soon">⭐ MCP: loan mix breakdown (RE / C&I / Ag / Consumer)</div>
             <div class="ai-feature-item ai-soon">⭐ MCP: brokered deposit detail + branch/SOD data</div>
             <div class="ai-feature-item ai-soon">⭐ PDF + Excel export for in-tool reports (for non-MCP users)</div>
             <div class="ai-feature-item ai-soon">ZIP code proximity filter on Find a Lender</div>

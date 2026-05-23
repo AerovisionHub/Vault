@@ -75,6 +75,30 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: 'get_asset_quality_detail',
+    description: 'Get detailed asset quality breakdown for a specific bank: past-due loan aging buckets (30-89 days, 90+ days), nonaccrual loans, OREO (foreclosed real estate), loan loss reserves, and net charge-offs. Use this to assess credit quality, identify problem loans, evaluate reserve adequacy, or answer questions like "is this bank having credit problems?" Returns up to 8 quarters of history.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        cert: { type: 'string', description: 'FDIC certificate number (required). Get from search_institutions.' },
+        quarters: { type: 'number', description: 'How many quarters of history to return (default 4, max 8)' },
+      },
+      required: ['cert'],
+    },
+  },
+  {
+    name: 'get_loan_mix',
+    description: 'Get loan portfolio composition for a specific bank, broken down by category: Real Estate (with sub-breakdowns for residential 1-4 family, commercial RE, and construction), Commercial & Industrial (C&I), Agricultural, and Consumer loans. Returns absolute dollar amounts and percentage of total loans. Use this to understand a bank\'s lending strategy, identify concentration risk, or answer questions like "what kind of bank is this?" or "how exposed are they to commercial real estate?"',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        cert: { type: 'string', description: 'FDIC certificate number (required). Get from search_institutions.' },
+        quarters: { type: 'number', description: 'How many quarters of history to return (default 1 = latest only, max 8)' },
+      },
+      required: ['cert'],
+    },
+  },
 ];
 
 // ── Analytics Layer ──────────────────────────────────────────────────────────
@@ -363,6 +387,165 @@ async function getLenderRankings(args) {
   return scored.slice(0, max);
 }
 
+async function getAssetQualityDetail(args) {
+  const { cert, quarters = 4 } = args || {};
+  if (!cert) throw new Error('Required parameter "cert" missing. Get a CERT from search_institutions.');
+  const max = Math.min(Math.max(Number(quarters) || 4, 1), 8);
+
+  // FDIC asset quality fields:
+  // P3ASSET: Past Due 30-89 days
+  // P9ASSET: Past Due 90+ days still accruing
+  // NAASSET: Nonaccrual loans
+  // ORE: Other Real Estate Owned (OREO)
+  // LNATRES: Allowance for Loan & Lease Losses (loan loss reserves)
+  // NTLNLS: Net loan charge-offs YTD
+  // LNLSGR: Gross loans (denominator for ratios)
+  // ASSET: Total assets (for OREO/assets ratio)
+  const finFields = 'REPDTE,LNLSGR,ASSET,P3ASSET,P9ASSET,NAASSET,ORE,LNATRES,NTLNLS,NCLNLSR';
+
+  const fR = await fetch(`${FDIC_BASE}/financials?filters=CERT%3A${cert}&fields=${finFields}&limit=${max}&sort_by=REPDTE&sort_order=DESC`).then(r => r.json()).catch(() => ({ data: [] }));
+  const history = (fR.data || []).map(d => d.data).filter(Boolean);
+  if (!history.length) throw new Error(`No financial data found for CERT ${cert}. Verify the CERT with search_institutions or get_bank_profile.`);
+
+  // Also fetch institution name for context
+  const iR = await fetch(`${FDIC_BASE}/institutions?filters=CERT%3A${cert}&fields=NAME,CITY,STALP&limit=1`).then(r => r.json()).catch(() => ({ data: [] }));
+  const inst = iR.data?.[0]?.data;
+
+  const quarterly = history.map(h => {
+    const grossLoans = Number(h.LNLSGR) || 0;
+    const totalAssets = Number(h.ASSET) || 0;
+    const pd30_89 = Number(h.P3ASSET) || 0;
+    const pd90 = Number(h.P9ASSET) || 0;
+    const nonaccrual = Number(h.NAASSET) || 0;
+    const oreo = Number(h.ORE) || 0;
+    const reserves = Number(h.LNATRES) || 0;
+    const chargeoffs = Number(h.NTLNLS) || 0;
+    const noncurrent = pd90 + nonaccrual;
+    const totalProblem = pd30_89 + pd90 + nonaccrual + oreo;
+
+    return {
+      report_date: h.REPDTE,
+      // Aging buckets (thousands of $)
+      past_due_30_89_days_thousands: pd30_89,
+      past_due_90_plus_days_thousands: pd90,
+      nonaccrual_loans_thousands: nonaccrual,
+      oreo_thousands: oreo,
+      // Reserves & charge-offs
+      loan_loss_reserves_thousands: reserves,
+      net_chargeoffs_ytd_thousands: chargeoffs,
+      gross_loans_thousands: grossLoans,
+      // Computed ratios
+      noncurrent_loans_thousands: noncurrent,
+      noncurrent_loans_percent: grossLoans > 0 ? Number((noncurrent / grossLoans * 100).toFixed(2)) : null,
+      total_problem_assets_thousands: totalProblem,
+      problem_assets_to_loans_percent: grossLoans > 0 ? Number((totalProblem / grossLoans * 100).toFixed(2)) : null,
+      oreo_to_assets_percent: totalAssets > 0 ? Number((oreo / totalAssets * 100).toFixed(3)) : null,
+      reserve_coverage_of_noncurrent_percent: noncurrent > 0 ? Number((reserves / noncurrent * 100).toFixed(1)) : null,
+      reserves_to_loans_percent: grossLoans > 0 ? Number((reserves / grossLoans * 100).toFixed(2)) : null,
+      fdic_calculated_noncurrent_percent: h.NCLNLSR != null ? Number(h.NCLNLSR) : null,
+    };
+  });
+
+  return {
+    cert,
+    name: inst?.NAME || `CERT ${cert}`,
+    city: inst?.CITY,
+    state: inst?.STALP,
+    quarters_returned: quarterly.length,
+    latest_quarter: quarterly[0] || null,
+    quarterly_history: quarterly,
+    interpretation_notes: {
+      noncurrent_loans_percent: 'Industry healthy range: 0.5-1.5%. Above 3% indicates elevated credit stress.',
+      problem_assets_to_loans_percent: 'Includes 30-89 day past due, 90+ day past due, nonaccrual, and OREO as % of gross loans.',
+      reserve_coverage_of_noncurrent_percent: 'Above 100% means reserves fully cover noncurrent loans. Below 60% may indicate under-reserving.',
+      oreo: 'Other Real Estate Owned — foreclosed properties on bank balance sheet. New OREO often signals worked-out problem loans.',
+    },
+    profile_url: `https://vaultbot.ai/bank/${cert}`,
+  };
+}
+
+async function getLoanMix(args) {
+  const { cert, quarters = 1 } = args || {};
+  if (!cert) throw new Error('Required parameter "cert" missing. Get a CERT from search_institutions.');
+  const max = Math.min(Math.max(Number(quarters) || 1, 1), 8);
+
+  // FDIC loan mix fields:
+  // LNRE: Total real estate loans
+  // LNRECONS: Construction & land development
+  // LNRENRES: Nonresidential RE (commercial RE — CRE)
+  // LNRERES: 1-4 family residential RE
+  // LNREMULT: Multifamily residential (5+ units)
+  // LNCI: Commercial & industrial loans (non-RE)
+  // LNAG: Agricultural production loans
+  // LNCON: Consumer loans (total)
+  // LNLSGR: Gross loans & leases (denominator)
+  const finFields = 'REPDTE,LNLSGR,LNRE,LNRECONS,LNRENRES,LNRERES,LNREMULT,LNCI,LNAG,LNCON';
+
+  const fR = await fetch(`${FDIC_BASE}/financials?filters=CERT%3A${cert}&fields=${finFields}&limit=${max}&sort_by=REPDTE&sort_order=DESC`).then(r => r.json()).catch(() => ({ data: [] }));
+  const history = (fR.data || []).map(d => d.data).filter(Boolean);
+  if (!history.length) throw new Error(`No financial data found for CERT ${cert}. Verify the CERT with search_institutions or get_bank_profile.`);
+
+  // Institution name for context
+  const iR = await fetch(`${FDIC_BASE}/institutions?filters=CERT%3A${cert}&fields=NAME,CITY,STALP&limit=1`).then(r => r.json()).catch(() => ({ data: [] }));
+  const inst = iR.data?.[0]?.data;
+
+  const pct = (n, d) => d > 0 ? Number((n / d * 100).toFixed(2)) : null;
+
+  const quarterly = history.map(h => {
+    const total = Number(h.LNLSGR) || 0;
+    const totalRE = Number(h.LNRE) || 0;
+    const construction = Number(h.LNRECONS) || 0;
+    const cre = Number(h.LNRENRES) || 0;
+    const resi = Number(h.LNRERES) || 0;
+    const multifamily = Number(h.LNREMULT) || 0;
+    const ci = Number(h.LNCI) || 0;
+    const ag = Number(h.LNAG) || 0;
+    const consumer = Number(h.LNCON) || 0;
+    const otherLoans = Math.max(0, total - totalRE - ci - ag - consumer);
+
+    return {
+      report_date: h.REPDTE,
+      gross_loans_thousands: total,
+      // Top-level category breakdown
+      categories: {
+        real_estate: { thousands: totalRE, percent_of_loans: pct(totalRE, total) },
+        commercial_industrial: { thousands: ci, percent_of_loans: pct(ci, total) },
+        agricultural: { thousands: ag, percent_of_loans: pct(ag, total) },
+        consumer: { thousands: consumer, percent_of_loans: pct(consumer, total) },
+        other: { thousands: otherLoans, percent_of_loans: pct(otherLoans, total) },
+      },
+      // Real estate subcategories
+      real_estate_breakdown: {
+        residential_1_4_family: { thousands: resi, percent_of_loans: pct(resi, total), percent_of_re: pct(resi, totalRE) },
+        multifamily: { thousands: multifamily, percent_of_loans: pct(multifamily, total), percent_of_re: pct(multifamily, totalRE) },
+        commercial_real_estate: { thousands: cre, percent_of_loans: pct(cre, total), percent_of_re: pct(cre, totalRE) },
+        construction_land_dev: { thousands: construction, percent_of_loans: pct(construction, total), percent_of_re: pct(construction, totalRE) },
+      },
+      // Concentration flags
+      concentration_flags: {
+        commercial_re_concentration_percent: pct(cre + construction, total),
+        cre_construction_warning: pct(cre + construction, total) > 300 ? 'High CRE+Construction concentration vs capital (regulator threshold)' : null,
+      },
+    };
+  });
+
+  return {
+    cert,
+    name: inst?.NAME || `CERT ${cert}`,
+    city: inst?.CITY,
+    state: inst?.STALP,
+    quarters_returned: quarterly.length,
+    latest_quarter: quarterly[0] || null,
+    quarterly_history: quarterly,
+    interpretation_notes: {
+      categories: 'Five top-level loan categories. Percentages are of gross loans & leases.',
+      real_estate_breakdown: 'RE subcategories break out the four key types regulators watch.',
+      cre_concentration: 'Commercial RE + Construction over 300% of risk-based capital flags regulator attention (FDIC FIL-22-2006).',
+    },
+    profile_url: `https://vaultbot.ai/bank/${cert}`,
+  };
+}
+
 // ── MCP JSON-RPC Handler ─────────────────────────────────────────────────────
 const TOOL_HANDLERS = {
   search_institutions: searchInstitutions,
@@ -371,6 +554,8 @@ const TOOL_HANDLERS = {
   get_recent_charters: getRecentCharters,
   get_ma_activity: getMAActivity,
   get_lender_rankings: getLenderRankings,
+  get_asset_quality_detail: getAssetQualityDetail,
+  get_loan_mix: getLoanMix,
 };
 
 const CORS_HEADERS = {
@@ -387,7 +572,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.1.0',
+        name: 'vault-mcp', version: '1.2.0',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -434,7 +619,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.1.0' },
+          serverInfo: { name: 'vault-mcp', version: '1.2.0' },
           capabilities: { tools: {} },
         });
       }

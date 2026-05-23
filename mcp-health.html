@@ -38,8 +38,8 @@ async function run() {
   const list = await rpc('tools/list');
   log(list.data?.result?.tools?.length === 6, 'tools/list returns 6 tools', list.raw.slice(0,200));
 
-  // 3-8. Each tool
-  document.getElementById('out').innerHTML += '<h3>All 6 tools</h3>';
+  // 3-10. Each tool
+  document.getElementById('out').innerHTML += '<h3>All 8 tools</h3>';
   const tests = [
     ['search_institutions', { query: 'Sutton Bank', limit: 1 }],
     ['get_bank_profile', { cert: '5962' }],
@@ -47,6 +47,8 @@ async function run() {
     ['get_recent_charters', { year: 2025 }],
     ['get_ma_activity', { year: 2025, limit: 3 }],
     ['get_lender_rankings', { state: 'OK', limit: 3 }],
+    ['get_asset_quality_detail', { cert: '5962', quarters: 2 }],
+    ['get_loan_mix', { cert: '5962' }],
   ];
   for (const [name, args] of tests) {
     try {

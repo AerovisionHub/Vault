@@ -145,7 +145,7 @@ function sendWelcomeEmail(user) {
             <span style="color:#4db8ff;font-family:ui-monospace,monospace;font-weight:700;">03</span> &nbsp;&nbsp;Quit Claude Desktop completely <span style="color:#7e8bb0;">(⌘Q)</span>, reopen
           </td></tr>
           <tr><td style="padding:8px 0;color:#c8cfe6;font-size:14px;line-height:1.6;">
-            <span style="color:#4db8ff;font-family:ui-monospace,monospace;font-weight:700;">04</span> &nbsp;&nbsp;Click the tools icon — <code style="background:rgba(77,184,255,0.1);padding:2px 6px;border-radius:4px;font-size:12px;color:#4db8ff;">vault-banking</code> appears with 6 tools
+            <span style="color:#4db8ff;font-family:ui-monospace,monospace;font-weight:700;">04</span> &nbsp;&nbsp;Click the tools icon — <code style="background:rgba(77,184,255,0.1);padding:2px 6px;border-radius:4px;font-size:12px;color:#4db8ff;">vault-banking</code> appears with 8 tools
           </td></tr>
         </table>
       </td></tr>
