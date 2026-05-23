@@ -5,7 +5,7 @@
 .pass{color:#4ade80;} .fail{color:#f87171;}
 h3{color:#4db8ff;margin:14px 0 4px;}</style></head><body>
 <h2 style="color:#4db8ff">MCP Health Check — Live Test</h2>
-<p style="color:#9ca3af;font-size:11px;">Testing all 6 tools + protocol methods on the live endpoint</p>
+<p style="color:#9ca3af;font-size:11px;">Testing all 8 tools + protocol methods on the live endpoint</p>
 <div id="out">Loading…</div>
 <script>
 const MCP = '/.netlify/functions/mcp';
@@ -36,7 +36,7 @@ async function run() {
 
   // 2. tools/list
   const list = await rpc('tools/list');
-  log(list.data?.result?.tools?.length === 6, 'tools/list returns 6 tools', list.raw.slice(0,200));
+  log(list.data?.result?.tools?.length === 8, 'tools/list returns 8 tools', list.raw.slice(0,200));
 
   // 3-10. Each tool
   document.getElementById('out').innerHTML += '<h3>All 8 tools</h3>';

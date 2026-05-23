@@ -77,7 +77,7 @@ const TOOLS = [
   },
   {
     name: 'get_asset_quality_detail',
-    description: 'Get detailed asset quality breakdown for a specific bank: past-due loan aging buckets (30-89 days, 90+ days), nonaccrual loans, OREO (foreclosed real estate), loan loss reserves, and net charge-offs. Use this to assess credit quality, identify problem loans, evaluate reserve adequacy, or answer questions like "is this bank having credit problems?" Returns up to 8 quarters of history.',
+    description: 'Get detailed asset quality breakdown for a specific bank: noncurrent loans, OREO (foreclosed real estate), loan loss reserves, loan loss provision, net charge-offs, and key credit-quality ratios. Use this to assess credit quality, identify problem loans, evaluate reserve adequacy, or answer questions like "is this bank having credit problems?" Returns up to 8 quarters of history.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -392,19 +392,27 @@ async function getAssetQualityDetail(args) {
   if (!cert) throw new Error('Required parameter "cert" missing. Get a CERT from search_institutions.');
   const max = Math.min(Math.max(Number(quarters) || 4, 1), 8);
 
-  // FDIC asset quality fields:
-  // P3ASSET: Past Due 30-89 days
-  // P9ASSET: Past Due 90+ days still accruing
-  // NAASSET: Nonaccrual loans
-  // ORE: Other Real Estate Owned (OREO)
-  // LNATRES: Allowance for Loan & Lease Losses (loan loss reserves)
-  // NTLNLS: Net loan charge-offs YTD
-  // LNLSGR: Gross loans (denominator for ratios)
-  // ASSET: Total assets (for OREO/assets ratio)
-  const finFields = 'REPDTE,LNLSGR,ASSET,P3ASSET,P9ASSET,NAASSET,ORE,LNATRES,NTLNLS,NCLNLSR';
+  // FDIC asset quality fields — using fields verified against the BankFind v2 API.
+  // Past-due aging is not consistently exposed at the consolidated level via this API; we use
+  // FDIC's pre-computed noncurrent ratio (NCLNLSR) and core asset-quality fields.
+  // Core fields confirmed working:
+  //   NCLNLSR: Noncurrent loans % (precomputed by FDIC)
+  //   LNATRES: Allowance for Loan & Lease Losses (loan loss reserves)
+  //   ORE: Other Real Estate Owned (OREO)
+  //   NTLNLSQ: Net charge-offs to loans QTD
+  //   LNLSGR: Gross loans (denominator)
+  //   ASSET: Total assets
+  //   ELNATR: Earnings, Loan Loss Allowance Provision
+  const finFields = 'REPDTE,LNLSGR,ASSET,ORE,LNATRES,NTLNLSQ,NCLNLSR,ELNATR';
 
-  const fR = await fetch(`${FDIC_BASE}/financials?filters=CERT%3A${cert}&fields=${finFields}&limit=${max}&sort_by=REPDTE&sort_order=DESC`).then(r => r.json()).catch(() => ({ data: [] }));
-  const history = (fR.data || []).map(d => d.data).filter(Boolean);
+  let history;
+  try {
+    const fR = await fetch(`${FDIC_BASE}/financials?filters=CERT%3A${cert}&fields=${finFields}&limit=${max}&sort_by=REPDTE&sort_order=DESC`).then(r => r.json());
+    if (fR.errors) throw new Error('FDIC API error: ' + JSON.stringify(fR.errors));
+    history = (fR.data || []).map(d => d.data).filter(Boolean);
+  } catch (e) {
+    throw new Error(`Failed to fetch financials for CERT ${cert}: ${e.message}`);
+  }
   if (!history.length) throw new Error(`No financial data found for CERT ${cert}. Verify the CERT with search_institutions or get_bank_profile.`);
 
   // Also fetch institution name for context
@@ -414,35 +422,30 @@ async function getAssetQualityDetail(args) {
   const quarterly = history.map(h => {
     const grossLoans = Number(h.LNLSGR) || 0;
     const totalAssets = Number(h.ASSET) || 0;
-    const pd30_89 = Number(h.P3ASSET) || 0;
-    const pd90 = Number(h.P9ASSET) || 0;
-    const nonaccrual = Number(h.NAASSET) || 0;
     const oreo = Number(h.ORE) || 0;
     const reserves = Number(h.LNATRES) || 0;
-    const chargeoffs = Number(h.NTLNLS) || 0;
-    const noncurrent = pd90 + nonaccrual;
-    const totalProblem = pd30_89 + pd90 + nonaccrual + oreo;
+    const provision = Number(h.ELNATR) || 0;
+    const noncurrentPct = h.NCLNLSR != null ? Number(h.NCLNLSR) : null;
+    // Derive noncurrent loans $ from FDIC's precomputed ratio
+    const noncurrentLoans = (noncurrentPct != null && grossLoans > 0) ? Math.round(grossLoans * noncurrentPct / 100) : null;
+    const chargeoffPct = h.NTLNLSQ != null ? Number(h.NTLNLSQ) : null;
 
     return {
       report_date: h.REPDTE,
-      // Aging buckets (thousands of $)
-      past_due_30_89_days_thousands: pd30_89,
-      past_due_90_plus_days_thousands: pd90,
-      nonaccrual_loans_thousands: nonaccrual,
-      oreo_thousands: oreo,
-      // Reserves & charge-offs
-      loan_loss_reserves_thousands: reserves,
-      net_chargeoffs_ytd_thousands: chargeoffs,
+      // Dollar amounts (thousands)
       gross_loans_thousands: grossLoans,
-      // Computed ratios
-      noncurrent_loans_thousands: noncurrent,
-      noncurrent_loans_percent: grossLoans > 0 ? Number((noncurrent / grossLoans * 100).toFixed(2)) : null,
-      total_problem_assets_thousands: totalProblem,
-      problem_assets_to_loans_percent: grossLoans > 0 ? Number((totalProblem / grossLoans * 100).toFixed(2)) : null,
-      oreo_to_assets_percent: totalAssets > 0 ? Number((oreo / totalAssets * 100).toFixed(3)) : null,
-      reserve_coverage_of_noncurrent_percent: noncurrent > 0 ? Number((reserves / noncurrent * 100).toFixed(1)) : null,
+      noncurrent_loans_thousands: noncurrentLoans,
+      oreo_thousands: oreo,
+      loan_loss_reserves_thousands: reserves,
+      loan_loss_provision_ytd_thousands: provision,
+      // Ratios
+      noncurrent_loans_percent: noncurrentPct,
+      net_chargeoffs_to_loans_qtd_percent: chargeoffPct,
       reserves_to_loans_percent: grossLoans > 0 ? Number((reserves / grossLoans * 100).toFixed(2)) : null,
-      fdic_calculated_noncurrent_percent: h.NCLNLSR != null ? Number(h.NCLNLSR) : null,
+      reserve_coverage_of_noncurrent_percent: (noncurrentLoans && noncurrentLoans > 0) ? Number((reserves / noncurrentLoans * 100).toFixed(1)) : null,
+      oreo_to_assets_percent: totalAssets > 0 ? Number((oreo / totalAssets * 100).toFixed(3)) : null,
+      problem_assets_thousands: (noncurrentLoans || 0) + oreo,
+      problem_assets_to_loans_percent: grossLoans > 0 ? Number(((((noncurrentLoans || 0) + oreo) / grossLoans) * 100).toFixed(2)) : null,
     };
   });
 
@@ -455,10 +458,11 @@ async function getAssetQualityDetail(args) {
     latest_quarter: quarterly[0] || null,
     quarterly_history: quarterly,
     interpretation_notes: {
-      noncurrent_loans_percent: 'Industry healthy range: 0.5-1.5%. Above 3% indicates elevated credit stress.',
-      problem_assets_to_loans_percent: 'Includes 30-89 day past due, 90+ day past due, nonaccrual, and OREO as % of gross loans.',
+      noncurrent_loans_percent: 'FDIC-precomputed ratio. Industry healthy range: 0.5–1.5%. Above 3% indicates elevated credit stress.',
       reserve_coverage_of_noncurrent_percent: 'Above 100% means reserves fully cover noncurrent loans. Below 60% may indicate under-reserving.',
+      net_chargeoffs_to_loans_qtd_percent: 'Quarter-to-date net charge-offs as % of loans. Annualized rate above 0.5% is elevated.',
       oreo: 'Other Real Estate Owned — foreclosed properties on bank balance sheet. New OREO often signals worked-out problem loans.',
+      note: 'Past-due aging bucket detail (30-89, 90+) is sourced from Call Report Schedule RC-N and not available via this consolidated API endpoint. For aging buckets at the institution level, consult the bank\'s Call Report directly.',
     },
     profile_url: `https://vaultbot.ai/bank/${cert}`,
   };
