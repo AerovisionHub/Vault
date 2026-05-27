@@ -813,6 +813,11 @@ async function searchFDIC(query) {
     `${FDIC_BASE}/institutions?search=${encodeURIComponent(q)}&fields=${fields}&limit=30&sort_by=ASSET&sort_order=DESC&filters=ACTIVE%3A1`,
     // Starts-with on each distinctive/meaningful word independently (OR-style, not AND)
     ...searchWords.map(w => `${FDIC_BASE}/institutions?filters=NAME%3A${encodeURIComponent(w)}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=50&sort_by=ASSET&sort_order=DESC`),
+    // For SHORT single-word queries (≤6 chars, single token), also run contains-anywhere up front —
+    // catches cases like "Vast" → "Vast Bank" where fulltext misses, and short queries that should be aggressive
+    ...((tokenWords.length === 1 && tokenWords[0].length <= 6) ? [
+      `${FDIC_BASE}/institutions?filters=NAME%3A*${encodeURIComponent(tokenWords[0])}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=50&sort_by=ASSET&sort_order=DESC`
+    ] : []),
     // "The"-prefixed starts-with
     `${FDIC_BASE}/institutions?filters=NAME%3AThe*${encodeURIComponent(searchWords[0])}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC`,
     // Website domain search
@@ -1922,12 +1927,36 @@ function renderDetail() {
   const d = state.detail;
   if (!d) return '<div class="state-msg"><div class="spinner"></div><br>Loading…</div>';
 
+  if (d.type === 'error') {
+    return `
+      <div class="state-msg" style="text-align:center;padding:60px 20px;">
+        <div style="font-size:48px;margin-bottom:16px;">⚠</div>
+        <div style="font-size:18px;color:var(--text);margin-bottom:12px;">Couldn't load that institution</div>
+        <div style="color:var(--muted);font-size:14px;margin-bottom:24px;max-width:480px;margin-left:auto;margin-right:auto;line-height:1.6;">
+          ${escAttr(d.msg || 'The FDIC or NCUA API returned an error.')}
+        </div>
+        <button onclick="window.history.back()" style="padding:10px 24px;background:var(--accent);color:#0f1240;border:none;border-radius:8px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer;">← Back to results</button>
+      </div>`;
+  }
+
   if (d.type === 'bank') return renderBankDetail(d);
   return renderCUDetail(d);
 }
 
 function renderBankDetail(d) {
   const { inst, history } = d;
+  // Defensive guard: if FDIC API failed/timed out, inst may be undefined
+  if (!inst) {
+    return `
+      <div class="state-msg" style="text-align:center;padding:60px 20px;">
+        <div style="font-size:48px;margin-bottom:16px;">⚠</div>
+        <div style="font-size:18px;color:var(--text);margin-bottom:12px;">Couldn't load bank profile</div>
+        <div style="color:var(--muted);font-size:14px;margin-bottom:24px;max-width:480px;margin-left:auto;margin-right:auto;line-height:1.6;">
+          The FDIC API didn't return data for this institution. This sometimes happens for very recent charters, special-purpose entities, or during FDIC service hiccups.
+        </div>
+        <button onclick="window.history.back()" style="padding:10px 24px;background:var(--accent);color:#0f1240;border:none;border-radius:8px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer;">← Back to results</button>
+      </div>`;
+  }
   const latest = history?.[0];
 
   const assets    = thousands(inst.ASSET);
