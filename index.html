@@ -727,6 +727,19 @@ function fmtNum(n) {
   return Number(n).toLocaleString();
 }
 
+// Escape a string for safe use inside an HTML attribute value (double-quoted).
+// Critical for bank/CU names containing & " ' < > characters which would
+// otherwise break the surrounding tag and silently kill click handlers.
+function escAttr(s) {
+  if (s === null || s === undefined) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 function thousands(n) {
   // FDIC reports in $thousands
   return Number(n) * 1000;
@@ -1213,7 +1226,7 @@ function renderCUPeers(peers, currentCU) {
     const pAssets = p.assets || 0;
     const pct = Math.max(4, pAssets / maxAssets * 100);
     return `
-      <div class="peer-card" data-id="${p.id}" data-name="${p.name}" data-assets="${p.assets||0}" data-members="${p.members||0}" data-cutype="${p.type||''}" data-city="${p.city||''}" data-state="${p.state||''}" data-type="cu">
+      <div class="peer-card" data-id="${escAttr(p.id)}" data-name="${escAttr(p.name)}" data-assets="${escAttr(p.assets||0)}" data-members="${escAttr(p.members||0)}" data-cutype="${escAttr(p.type||'')}" data-city="${escAttr(p.city||'')}" data-state="${escAttr(p.state||'')}" data-type="cu">
         <div class="peer-badge">Peer CU</div>
         <div class="peer-name">${p.name}</div>
         <div class="peer-location">${p.city}, ${p.state}</div>
@@ -1892,7 +1905,7 @@ function renderResults() {
             </div>
           </div>
         </a>` : `
-        <div class="result-item" data-id="${r.id}" data-type="${r.type}" data-name="${r.name || ''}" data-assets="${r.assets||0}" data-members="${r.members||0}" data-cutype="${r.cuType||r.type||''}" data-city="${r.city||''}" data-state="${r.state||''}">
+        <div class="result-item" data-id="${escAttr(r.id)}" data-type="${escAttr(r.type)}" data-name="${escAttr(r.name)}" data-assets="${escAttr(r.assets||0)}" data-members="${escAttr(r.members||0)}" data-cutype="${escAttr(r.cuType||r.type||'')}" data-city="${escAttr(r.city||'')}" data-state="${escAttr(r.state||'')}">
           <div>
             <div class="result-name">${r.name}</div>
             <div class="result-meta">${r.city || '—'}, ${r.state || '—'} · ${r.type === 'bank' ? 'CERT #' + r.id : 'CU #' + r.id}</div>
