@@ -705,6 +705,47 @@
 const FDIC_BASE = 'https://banks.data.fdic.gov/api';
 const NCUA_BASE = 'https://data.ncua.gov/api';
 
+// FDIC fetch with rate-limit + bad-response detection.
+// FDIC returns plain-text "You've exceeded the rate limit" when throttling, which crashes
+// .json(). This wrapper detects that case and throws a clean, user-friendly error so the
+// detail page can show a "try again" message instead of cryptic "Unexpected token Y..." text.
+async function fetchFDIC(url, opts = {}) {
+  const { timeoutMs = 12000 } = opts;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let response;
+  try {
+    response = await fetch(url, { signal: controller.signal });
+  } catch (e) {
+    clearTimeout(timer);
+    if (e.name === 'AbortError') throw new Error('FDIC API is slow right now. Please try again in a moment.');
+    throw new Error('Could not reach the FDIC API. Check your connection and try again.');
+  }
+  clearTimeout(timer);
+
+  // Read raw text first so we can inspect on parse failure
+  const text = await response.text();
+
+  // Detect rate-limit / throttle response (FDIC returns plain text, not JSON)
+  if (text.startsWith("You've exceeded") || text.toLowerCase().includes('rate limit')) {
+    throw new Error('The FDIC API is rate-limiting Vault right now. Please wait a moment and try again — usually clears within 30 seconds.');
+  }
+
+  // Detect HTTP error
+  if (!response.ok) {
+    if (response.status === 429) throw new Error('FDIC API rate limit hit. Please wait 30 seconds and retry.');
+    if (response.status >= 500) throw new Error(`FDIC API error (${response.status}). Try again in a moment.`);
+    throw new Error(`FDIC API returned ${response.status}.`);
+  }
+
+  // Try JSON parse — if it fails, the response wasn't JSON (likely HTML error page)
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new Error('FDIC API returned an unexpected response. Please try again.');
+  }
+}
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 function fmt$(n) {
@@ -867,15 +908,13 @@ async function getFDICDetail(cert) {
   // Institution info
   const instFields = 'NAME,CERT,CITY,STALP,ADDRESS,ZIP,WEBADDR,ESTYMD,ACTIVE,INSTCAT,CHRTAGNT,INSDATE,REPDTE,ASSET,DEP,EQ,NETINC,INTINC,NONII,NONIX,LNLSNET,REPDTE,STNAME,SC,LNLSDEPR,NCLNLSR,HCTMULT,NAMEHCR';
   const instUrl = `${FDIC_BASE}/institutions?filters=CERT%3A${cert}&fields=${instFields}&limit=1`;
-  const instR = await fetch(instUrl);
-  const instData = await instR.json();
+  const instData = await fetchFDIC(instUrl);
   let inst = instData.data?.[0]?.data;
 
   // Financial history (last 8 quarters)
   const finFields = 'REPDTE,ASSET,DEP,EQ,NETINC,INTINC,NONII,NONIX,LNLSNET,RBC1AAJ,ROA,ROE,INTEXP,NIMY,LNLSDEPR,NCLNLSR,EFFRATIO,SC,NUMEMP';
   const finUrl = `${FDIC_BASE}/financials?filters=CERT%3A${cert}&fields=${finFields}&limit=8&sort_by=REPDTE&sort_order=DESC`;
-  const finR = await fetch(finUrl);
-  const finData = await finR.json();
+  const finData = await fetchFDIC(finUrl);
   const history = (finData.data || []).map(d => d.data);
 
   // Some CERTs exist in financials but not institutions table
@@ -1034,8 +1073,7 @@ async function fetchPeers(inst, history) {
   try {
     // First try: same state, similar assets
     let url = `${FDIC_BASE}/institutions?filters=STALP%3A${state}%20AND%20ACTIVE%3A1%20AND%20ASSET%3A%5B${minAssets}%20TO%20${maxAssets}%5D&fields=${fields}&limit=30&sort_by=ASSET&sort_order=DESC`;
-    let r = await fetch(url);
-    let data = await r.json();
+    let data = await fetchFDIC(url).catch(() => ({ data: [] }));
     let peers = (data.data || [])
       .map(d => d.data)
       .filter(d => d.CERT !== currentCert);
@@ -1043,8 +1081,7 @@ async function fetchPeers(inst, history) {
     // If fewer than 3, broaden to national same asset range
     if (peers.length < 3) {
       const url2 = `${FDIC_BASE}/institutions?filters=ACTIVE%3A1%20AND%20ASSET%3A%5B${minAssets}%20TO%20${maxAssets}%5D&fields=${fields}&limit=50&sort_by=ASSET&sort_order=DESC`;
-      const r2 = await fetch(url2);
-      const data2 = await r2.json();
+      const data2 = await fetchFDIC(url2).catch(() => ({ data: [] }));
       peers = (data2.data || [])
         .map(d => d.data)
         .filter(d => d.CERT !== currentCert);
@@ -1059,8 +1096,7 @@ async function fetchPeers(inst, history) {
     const peersWithFinancials = await Promise.all(peers.map(async (peer) => {
       try {
         const finUrl = `${FDIC_BASE}/financials?filters=CERT%3A${peer.CERT}&fields=ROA,ROE,REPDTE,ASSET&limit=1&sort_by=REPDTE&sort_order=DESC`;
-        const fr = await fetch(finUrl);
-        const fd = await fr.json();
+        const fd = await fetchFDIC(finUrl);
         const fin = fd.data?.[0]?.data || {};
         return { ...peer, ROA: fin.ROA, ROE: fin.ROE };
       } catch(e) {
@@ -1932,10 +1968,13 @@ function renderDetail() {
       <div class="state-msg" style="text-align:center;padding:60px 20px;">
         <div style="font-size:48px;margin-bottom:16px;">⚠</div>
         <div style="font-size:18px;color:var(--text);margin-bottom:12px;">Couldn't load that institution</div>
-        <div style="color:var(--muted);font-size:14px;margin-bottom:24px;max-width:480px;margin-left:auto;margin-right:auto;line-height:1.6;">
+        <div style="color:var(--muted);font-size:14px;margin-bottom:24px;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.6;">
           ${escAttr(d.msg || 'The FDIC or NCUA API returned an error.')}
         </div>
-        <button onclick="window.history.back()" style="padding:10px 24px;background:var(--accent);color:#0f1240;border:none;border-radius:8px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer;">← Back to results</button>
+        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+          <button onclick="location.reload()" style="padding:10px 24px;background:var(--accent);color:#0f1240;border:none;border-radius:8px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer;">↻ Try again</button>
+          <button onclick="window.history.back()" style="padding:10px 24px;background:transparent;border:1px solid var(--border);color:var(--text);border-radius:8px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer;">← Back to results</button>
+        </div>
       </div>`;
   }
 
