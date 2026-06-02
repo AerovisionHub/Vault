@@ -1,8 +1,50 @@
-// Vault MCP Server v1.1 — banking intelligence for AI agents with usage analytics
+// Vault MCP Server v1.2 — banking intelligence for AI agents with usage analytics
 // Implements MCP (Model Context Protocol) over HTTP using JSON-RPC 2.0
 // Spec: https://modelcontextprotocol.io/
 
 const FDIC_BASE = 'https://banks.data.fdic.gov/api';
+
+// FDIC fetch with rate-limit + bad-response detection.
+// FDIC returns plain text "You've exceeded the rate limit..." when throttling, which crashes
+// res.json() with cryptic errors. This wrapper detects all common failure modes and throws
+// clean, descriptive errors that bubble up to the MCP client as useful messages.
+async function fetchFDIC(url, opts = {}) {
+  const { timeoutMs = 12000 } = opts;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let response;
+  try {
+    response = await fetch(url, { signal: controller.signal });
+  } catch (e) {
+    clearTimeout(timer);
+    if (e.name === 'AbortError') throw new Error('FDIC API timeout (>12s). Try again.');
+    throw new Error(`FDIC API network error: ${e.message}`);
+  }
+  clearTimeout(timer);
+
+  const text = await response.text();
+
+  if (text.startsWith("You've exceeded") || text.toLowerCase().includes('rate limit')) {
+    throw new Error('FDIC API is rate-limiting requests. Try again in 30-60 seconds.');
+  }
+  if (!response.ok) {
+    if (response.status === 429) throw new Error('FDIC API rate limit (HTTP 429). Wait 30 seconds.');
+    if (response.status === 400) throw new Error(`FDIC API rejected the request (HTTP 400). Likely an invalid field name. Response: ${text.slice(0, 200)}`);
+    if (response.status >= 500) throw new Error(`FDIC API error (HTTP ${response.status}). Try again.`);
+    throw new Error(`FDIC API returned HTTP ${response.status}.`);
+  }
+  try {
+    const json = JSON.parse(text);
+    // FDIC sometimes returns 200 with errors in the body
+    if (json.errors) {
+      throw new Error(`FDIC API error: ${JSON.stringify(json.errors).slice(0, 200)}`);
+    }
+    return json;
+  } catch (e) {
+    if (e.message.startsWith('FDIC')) throw e; // re-throw our own errors
+    throw new Error(`FDIC returned non-JSON response: ${text.slice(0, 150)}`);
+  }
+}
 
 // ── Tool Definitions ─────────────────────────────────────────────────────────
 const TOOLS = [
@@ -407,16 +449,15 @@ async function getAssetQualityDetail(args) {
 
   let history;
   try {
-    const fR = await fetch(`${FDIC_BASE}/financials?filters=CERT%3A${cert}&fields=${finFields}&limit=${max}&sort_by=REPDTE&sort_order=DESC`).then(r => r.json());
-    if (fR.errors) throw new Error('FDIC API error: ' + JSON.stringify(fR.errors));
+    const fR = await fetchFDIC(`${FDIC_BASE}/financials?filters=CERT%3A${cert}&fields=${finFields}&limit=${max}&sort_by=REPDTE&sort_order=DESC`);
     history = (fR.data || []).map(d => d.data).filter(Boolean);
   } catch (e) {
-    throw new Error(`Failed to fetch financials for CERT ${cert}: ${e.message}`);
+    throw new Error(`Asset quality lookup for CERT ${cert}: ${e.message}`);
   }
-  if (!history.length) throw new Error(`No financial data found for CERT ${cert}. Verify the CERT with search_institutions or get_bank_profile.`);
+  if (!history.length) throw new Error(`No financial data found for CERT ${cert}. The certificate may be inactive or not FDIC-insured. Verify with search_institutions or get_bank_profile first.`);
 
   // Also fetch institution name for context
-  const iR = await fetch(`${FDIC_BASE}/institutions?filters=CERT%3A${cert}&fields=NAME,CITY,STALP&limit=1`).then(r => r.json()).catch(() => ({ data: [] }));
+  const iR = await fetchFDIC(`${FDIC_BASE}/institutions?filters=CERT%3A${cert}&fields=NAME,CITY,STALP&limit=1`).catch(() => ({ data: [] }));
   const inst = iR.data?.[0]?.data;
 
   const quarterly = history.map(h => {
@@ -473,24 +514,33 @@ async function getLoanMix(args) {
   if (!cert) throw new Error('Required parameter "cert" missing. Get a CERT from search_institutions.');
   const max = Math.min(Math.max(Number(quarters) || 1, 1), 8);
 
-  // FDIC loan mix fields:
-  // LNRE: Total real estate loans
-  // LNRECONS: Construction & land development
-  // LNRENRES: Nonresidential RE (commercial RE — CRE)
-  // LNRERES: 1-4 family residential RE
-  // LNREMULT: Multifamily residential (5+ units)
-  // LNCI: Commercial & industrial loans (non-RE)
-  // LNAG: Agricultural production loans
-  // LNCON: Consumer loans (total)
-  // LNLSGR: Gross loans & leases (denominator)
-  const finFields = 'REPDTE,LNLSGR,LNRE,LNRECONS,LNRENRES,LNRERES,LNREMULT,LNCI,LNAG,LNCON';
+  // FDIC loan mix fields. LNREMULT (multifamily) is the most likely to cause field-name issues
+  // in BankFind v2, so we try with it first, then fall back without it if FDIC rejects the query.
+  const fieldsWithMult = 'REPDTE,LNLSGR,LNRE,LNRECONS,LNRENRES,LNRERES,LNREMULT,LNCI,LNAG,LNCON';
+  const fieldsNoMult   = 'REPDTE,LNLSGR,LNRE,LNRECONS,LNRENRES,LNRERES,LNCI,LNAG,LNCON';
 
-  const fR = await fetch(`${FDIC_BASE}/financials?filters=CERT%3A${cert}&fields=${finFields}&limit=${max}&sort_by=REPDTE&sort_order=DESC`).then(r => r.json()).catch(() => ({ data: [] }));
-  const history = (fR.data || []).map(d => d.data).filter(Boolean);
-  if (!history.length) throw new Error(`No financial data found for CERT ${cert}. Verify the CERT with search_institutions or get_bank_profile.`);
+  let history = null;
+  let usedMultifamily = true;
+  try {
+    const fR = await fetchFDIC(`${FDIC_BASE}/financials?filters=CERT%3A${cert}&fields=${fieldsWithMult}&limit=${max}&sort_by=REPDTE&sort_order=DESC`);
+    history = (fR.data || []).map(d => d.data).filter(Boolean);
+  } catch (e) {
+    // If FDIC rejected the field list (HTTP 400), retry without LNREMULT
+    if (e.message.includes('400') || e.message.toLowerCase().includes('field')) {
+      const fR = await fetchFDIC(`${FDIC_BASE}/financials?filters=CERT%3A${cert}&fields=${fieldsNoMult}&limit=${max}&sort_by=REPDTE&sort_order=DESC`);
+      history = (fR.data || []).map(d => d.data).filter(Boolean);
+      usedMultifamily = false;
+    } else {
+      throw e; // re-throw rate limit, timeout, etc.
+    }
+  }
+
+  if (!history || !history.length) {
+    throw new Error(`No financial data found for CERT ${cert}. The certificate may be inactive or not FDIC-insured. Verify with search_institutions or get_bank_profile first.`);
+  }
 
   // Institution name for context
-  const iR = await fetch(`${FDIC_BASE}/institutions?filters=CERT%3A${cert}&fields=NAME,CITY,STALP&limit=1`).then(r => r.json()).catch(() => ({ data: [] }));
+  const iR = await fetchFDIC(`${FDIC_BASE}/institutions?filters=CERT%3A${cert}&fields=NAME,CITY,STALP&limit=1`).catch(() => ({ data: [] }));
   const inst = iR.data?.[0]?.data;
 
   const pct = (n, d) => d > 0 ? Number((n / d * 100).toFixed(2)) : null;
@@ -501,11 +551,20 @@ async function getLoanMix(args) {
     const construction = Number(h.LNRECONS) || 0;
     const cre = Number(h.LNRENRES) || 0;
     const resi = Number(h.LNRERES) || 0;
-    const multifamily = Number(h.LNREMULT) || 0;
+    const multifamily = usedMultifamily ? (Number(h.LNREMULT) || 0) : null;
     const ci = Number(h.LNCI) || 0;
     const ag = Number(h.LNAG) || 0;
     const consumer = Number(h.LNCON) || 0;
     const otherLoans = Math.max(0, total - totalRE - ci - ag - consumer);
+
+    const reBreakdown = {
+      residential_1_4_family: { thousands: resi, percent_of_loans: pct(resi, total), percent_of_re: pct(resi, totalRE) },
+      commercial_real_estate: { thousands: cre, percent_of_loans: pct(cre, total), percent_of_re: pct(cre, totalRE) },
+      construction_land_dev: { thousands: construction, percent_of_loans: pct(construction, total), percent_of_re: pct(construction, totalRE) },
+    };
+    if (multifamily !== null) {
+      reBreakdown.multifamily = { thousands: multifamily, percent_of_loans: pct(multifamily, total), percent_of_re: pct(multifamily, totalRE) };
+    }
 
     return {
       report_date: h.REPDTE,
@@ -519,12 +578,7 @@ async function getLoanMix(args) {
         other: { thousands: otherLoans, percent_of_loans: pct(otherLoans, total) },
       },
       // Real estate subcategories
-      real_estate_breakdown: {
-        residential_1_4_family: { thousands: resi, percent_of_loans: pct(resi, total), percent_of_re: pct(resi, totalRE) },
-        multifamily: { thousands: multifamily, percent_of_loans: pct(multifamily, total), percent_of_re: pct(multifamily, totalRE) },
-        commercial_real_estate: { thousands: cre, percent_of_loans: pct(cre, total), percent_of_re: pct(cre, totalRE) },
-        construction_land_dev: { thousands: construction, percent_of_loans: pct(construction, total), percent_of_re: pct(construction, totalRE) },
-      },
+      real_estate_breakdown: reBreakdown,
       // Concentration flags
       concentration_flags: {
         commercial_re_concentration_percent: pct(cre + construction, total),
@@ -541,10 +595,12 @@ async function getLoanMix(args) {
     quarters_returned: quarterly.length,
     latest_quarter: quarterly[0] || null,
     quarterly_history: quarterly,
+    multifamily_data_available: usedMultifamily,
     interpretation_notes: {
       categories: 'Five top-level loan categories. Percentages are of gross loans & leases.',
-      real_estate_breakdown: 'RE subcategories break out the four key types regulators watch.',
+      real_estate_breakdown: 'RE subcategories break out the key types regulators watch.',
       cre_concentration: 'Commercial RE + Construction over 300% of risk-based capital flags regulator attention (FDIC FIL-22-2006).',
+      multifamily: usedMultifamily ? 'Multifamily (5+ unit residential) included.' : 'Multifamily data not available in this query (FDIC field not exposed for this institution).',
     },
     profile_url: `https://vaultbot.ai/bank/${cert}`,
   };
@@ -576,7 +632,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.2.0',
+        name: 'vault-mcp', version: '1.2.2',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -623,7 +679,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.2.0' },
+          serverInfo: { name: 'vault-mcp', version: '1.2.2' },
           capabilities: { tools: {} },
         });
       }
