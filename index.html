@@ -2900,6 +2900,60 @@ async function initAboutMCPStats() {
       uptimeEl.textContent = uptime + '%';
     }
 
+    // Weekly trend chart — aggregate daily data into weeks since launch (May 11, 2026)
+    const weeklyEl = document.getElementById('mcp-weekly-chart');
+    if (weeklyEl) {
+      const launch = new Date(Date.UTC(2026, 4, 11)); // May 11, 2026 UTC
+      const buckets = {};
+      (d.daily || []).forEach(entry => {
+        const dt = new Date(entry.day + 'T00:00:00Z');
+        const idx = Math.floor((dt - launch) / (7 * 86400000));
+        if (idx < 0) return;
+        if (!buckets[idx]) buckets[idx] = { calls: 0, idx };
+        buckets[idx].calls += entry.calls;
+      });
+      const weeks = Object.values(buckets).sort((a,b) => a.idx - b.idx);
+      const fmtDate = (dt) => (dt.getUTCMonth()+1) + '/' + dt.getUTCDate();
+      const weeksLabeled = weeks.map(w => {
+        const start = new Date(launch.getTime() + w.idx * 7 * 86400000);
+        const end = new Date(start.getTime() + 6 * 86400000);
+        return { ...w, label: 'Wk ' + (w.idx+1), range: fmtDate(start)+'–'+fmtDate(end) };
+      });
+      if (!weeksLabeled.length) {
+        weeklyEl.innerHTML = '<div style="color:var(--muted);font-size:12px;">No usage data yet.</div>';
+      } else {
+        const maxCalls = Math.max(...weeksLabeled.map(w => w.calls), 1);
+        const totalCalls = weeksLabeled.reduce((sum, w) => sum + w.calls, 0);
+        // Render as SVG bars
+        const barWidth = 60;
+        const gap = 16;
+        const chartHeight = 140;
+        const labelHeight = 40;
+        const valueHeight = 18;
+        const totalWidth = weeksLabeled.length * (barWidth + gap) - gap;
+        const svgHeight = chartHeight + labelHeight + valueHeight + 10;
+        const colors = ['#4db8ff', '#7c8cff', '#a070f7', '#b06ef3', '#c66de3', '#d96cd2'];
+        const bars = weeksLabeled.map((w, i) => {
+          const barHeight = Math.max(2, (w.calls / maxCalls) * chartHeight);
+          const x = i * (barWidth + gap);
+          const y = valueHeight + (chartHeight - barHeight);
+          const color = colors[i % colors.length];
+          return `
+            <text x="${x + barWidth/2}" y="${valueHeight - 4}" text-anchor="middle" fill="var(--text)" font-family="var(--mono)" font-size="13" font-weight="700">${w.calls.toLocaleString()}</text>
+            <rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" fill="${color}" rx="6" ry="6" opacity="0.85"/>
+            <text x="${x + barWidth/2}" y="${valueHeight + chartHeight + 18}" text-anchor="middle" fill="var(--text)" font-family="var(--mono)" font-size="12" font-weight="600">${w.label}</text>
+            <text x="${x + barWidth/2}" y="${valueHeight + chartHeight + 33}" text-anchor="middle" fill="var(--muted)" font-family="var(--mono)" font-size="10">${w.range}</text>
+          `;
+        }).join('');
+        weeklyEl.innerHTML = `
+          <svg width="100%" viewBox="0 0 ${totalWidth} ${svgHeight}" preserveAspectRatio="xMidYMid meet" style="max-width:${totalWidth}px;display:block;margin:0 auto;">
+            ${bars}
+          </svg>
+          <div style="text-align:center;font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:10px;letter-spacing:0.08em;">${totalCalls.toLocaleString()} TOTAL CALLS ACROSS ${weeksLabeled.length} ${weeksLabeled.length === 1 ? 'WEEK' : 'WEEKS'}</div>
+        `;
+      }
+    }
+
     // Tool usage breakdown — top 5 tools as horizontal bars
     if (toolBreakdownEl) {
       const tools = Object.entries(all.tool_usage || {}).sort((a,b) => b[1]-a[1]).slice(0, 6);
@@ -4536,6 +4590,14 @@ function renderAbout() {
           <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Uptime</div>
           <div id="mcp-stat-uptime" style="font-size:32px;font-weight:700;font-family:var(--serif);color:#fbbf24;line-height:1;">—</div>
           <div style="font-size:10px;color:var(--muted);margin-top:6px;font-family:var(--mono);">success rate (all calls)</div>
+        </div>
+      </div>
+
+      <!-- Weekly trend chart -->
+      <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:14px;">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:14px;">Weekly tool calls since launch (May 11, 2026)</div>
+        <div id="mcp-weekly-chart" style="min-height:180px;">
+          <div style="color:var(--muted);font-size:12px;">Loading…</div>
         </div>
       </div>
 
