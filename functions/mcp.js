@@ -50,7 +50,7 @@ async function fetchFDIC(url, opts = {}) {
 const TOOLS = [
   {
     name: 'search_institutions',
-    description: 'Search FDIC-insured banks and savings institutions by name, city, or fuzzy match. Returns up to 20 institutions ranked by relevance and asset size. Use this when a user asks about a specific bank or wants to find banks matching certain criteria.',
+    description: 'Search FDIC-insured banks and credit unions by name, city, or partial match. Returns up to 20 results ranked by relevance and asset size. Typically responds in 2-4 seconds. Use this first to get a CERT number before calling other tools.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -63,18 +63,18 @@ const TOOLS = [
   },
   {
     name: 'get_bank_profile',
-    description: 'Get detailed profile for a single FDIC-insured bank by certificate number (CERT). Returns institution details, latest financials (assets, deposits, ROA, ROE, NIM, capital ratio), and 8 quarters of historical data.',
+    description: 'Get detailed profile for a single FDIC-insured bank by certificate number (CERT). Returns institution details, latest financials (assets, deposits, ROA, ROE, NIM, capital ratio), and 8 quarters of historical data. Typically responds in 3-6 seconds — two FDIC API calls run in parallel. Note: always run search_institutions first to get the CERT.',
     inputSchema: {
       type: 'object',
       properties: {
-        cert: { type: 'string', description: 'FDIC certificate number (e.g. "23473" for First Fidelity Bank)' },
+        cert: { type: 'string', description: 'FDIC certificate number (e.g. "23473"). Get this from search_institutions first.' },
       },
       required: ['cert'],
     },
   },
   {
     name: 'get_industry_metrics',
-    description: 'Get aggregate banking industry metrics — total banks, total assets, average ROA/ROE/NIM, problem banks count, and historical trends. Use for industry-level analysis questions.',
+    description: 'Get aggregate U.S. banking industry metrics — total banks, total assets, average ROA/ROE/NIM, and trends. Note: this tool scans up to 5,000 bank records and typically takes 8-15 seconds. Let the user know it may take a moment before calling.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -84,7 +84,7 @@ const TOOLS = [
   },
   {
     name: 'get_recent_charters',
-    description: 'List newly chartered FDIC-insured banks (de novo banks). Returns bank name, location, charter date, charter agent, asset size, and holding company.',
+    description: 'List newly chartered FDIC-insured banks (de novo banks). Returns bank name, location, charter date, charter agent, asset size, and holding company. Typically responds in 2-4 seconds.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -94,7 +94,7 @@ const TOOLS = [
   },
   {
     name: 'get_ma_activity',
-    description: 'List recent bank mergers, acquisitions, and failures from FDIC regulatory filings. Returns acquirer, acquired institution, effective date, and transaction type (merger vs assisted/failure).',
+    description: 'List recent bank mergers, acquisitions, and failures from FDIC regulatory filings. Returns acquirer, acquired institution, effective date, and transaction type. Typically responds in 2-4 seconds.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -105,7 +105,7 @@ const TOOLS = [
   },
   {
     name: 'get_lender_rankings',
-    description: 'Get banks ranked by composite Lending Score (loan concentration + capital strength + asset quality + ROA). Filter by state, city, or asset size tier. Use for "find a lender" or "best banks for X loans" questions.',
+    description: 'Get banks ranked by composite Lending Score (loan concentration + capital strength + asset quality + ROA). Filter by state, city, or asset size tier. Typically responds in 5-10 seconds — fetches and scores up to 200 institutions. Let the user know it may take a moment before calling.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -119,24 +119,24 @@ const TOOLS = [
   },
   {
     name: 'get_asset_quality_detail',
-    description: 'Get detailed asset quality breakdown for a specific bank: noncurrent loans, OREO (foreclosed real estate), loan loss reserves, loan loss provision, net charge-offs, and key credit-quality ratios. Use this to assess credit quality, identify problem loans, evaluate reserve adequacy, or answer questions like "is this bank having credit problems?" Returns up to 8 quarters of history.',
+    description: 'Get detailed credit quality breakdown for a specific bank: noncurrent loans, OREO (foreclosed real estate), loan loss reserves, net charge-offs, and key ratios. Returns up to 8 quarters of history. Typically responds in 3-6 seconds. Use to answer "is this bank having credit problems?" or assess reserve adequacy.',
     inputSchema: {
       type: 'object',
       properties: {
         cert: { type: 'string', description: 'FDIC certificate number (required). Get from search_institutions.' },
-        quarters: { type: 'number', description: 'How many quarters of history to return (default 4, max 8)' },
+        quarters: { type: 'number', description: 'Quarters of history to return (default 4, max 8)' },
       },
       required: ['cert'],
     },
   },
   {
     name: 'get_loan_mix',
-    description: 'Get loan portfolio composition for a specific bank, broken down by category: Real Estate (with sub-breakdowns for residential 1-4 family, commercial RE, and construction), Commercial & Industrial (C&I), Agricultural, and Consumer loans. Returns absolute dollar amounts and percentage of total loans. Use this to understand a bank\'s lending strategy, identify concentration risk, or answer questions like "what kind of bank is this?" or "how exposed are they to commercial real estate?"',
+    description: 'Get loan portfolio composition for a specific bank: Real Estate (residential, commercial RE, construction), C&I, Agricultural, and Consumer. Returns dollar amounts and % of total loans. Typically responds in 3-6 seconds. Use to understand lending strategy or CRE concentration risk.',
     inputSchema: {
       type: 'object',
       properties: {
         cert: { type: 'string', description: 'FDIC certificate number (required). Get from search_institutions.' },
-        quarters: { type: 'number', description: 'How many quarters of history to return (default 1 = latest only, max 8)' },
+        quarters: { type: 'number', description: 'Quarters of history (default 1 = latest only, max 8)' },
       },
       required: ['cert'],
     },
@@ -631,7 +631,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.2.3',
+        name: 'vault-mcp', version: '1.2.4',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -678,7 +678,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.2.3' },
+          serverInfo: { name: 'vault-mcp', version: '1.2.4' },
           capabilities: { tools: {} },
         });
       }
@@ -695,10 +695,17 @@ exports.handler = async (event) => {
           await safeLog({ method, toolName, durationMs: Date.now()-t0, success: false, errorMsg: 'Unknown tool' });
           return err(-32601, `Unknown tool: ${name}`);
         }
+        const toolStart = Date.now();
         const data = await handler(args || {});
+        const durationMs = Date.now() - toolStart;
+        // Attach timing so the AI agent can naturally report "fetched in X seconds"
+        // without the user wondering if something hung.
+        const enriched = typeof data === 'object' && data !== null && !Array.isArray(data)
+          ? { ...data, _vault_meta: { fetched_in_ms: durationMs, fetched_in_s: Number((durationMs/1000).toFixed(1)), powered_by: 'Vault MCP by iDENTIFY · vaultbot.ai' } }
+          : data;
         await safeLog({ method, toolName, durationMs: Date.now()-t0, success: true });
         return reply({
-          content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+          content: [{ type: 'text', text: JSON.stringify(enriched, null, 2) }],
           isError: false,
         });
       }
