@@ -242,8 +242,8 @@ async function getBankProfile(args) {
   const instFields = 'NAME,CERT,CITY,STALP,ADDRESS,ZIP,WEBADDR,ESTYMD,ACTIVE,INSTCAT,CHRTAGNT,REPDTE,ASSET,DEP,EQ,NETINC,STNAME,NAMEHCR';
   const finFields = 'REPDTE,ASSET,DEP,EQ,NETINC,RBC1AAJ,ROA,ROE,NIMY,NCLNLSR,LNLSDEPR,NUMEMP';
   const [iR, fR] = await Promise.all([
-    fetch(`${FDIC_BASE}/institutions?filters=CERT%3A${cert}&fields=${instFields}&limit=1`).then(r => r.json()),
-    fetch(`${FDIC_BASE}/financials?filters=CERT%3A${cert}&fields=${finFields}&limit=8&sort_by=REPDTE&sort_order=DESC`).then(r => r.json()),
+    fetchFDIC(`${FDIC_BASE}/institutions?filters=CERT%3A${cert}&fields=${instFields}&limit=1`),
+    fetchFDIC(`${FDIC_BASE}/financials?filters=CERT%3A${cert}&fields=${finFields}&limit=8&sort_by=REPDTE&sort_order=DESC`),
   ]);
   const inst = iR.data?.[0]?.data;
   const history = (fR.data || []).map(d => d.data);
@@ -334,7 +334,7 @@ async function getRecentCharters(args) {
   const filters = year
     ? `ESTYMD%3A%5B${year}0101%20TO%20${year}1231%5D%20AND%20ACTIVE%3A1`
     : `ESTYMD%3A%5B20230101%20TO%2099999999%5D%20AND%20ACTIVE%3A1`;
-  const r = await fetch(`${FDIC_BASE}/institutions?filters=${filters}&fields=${fields}&limit=100&sort_by=ESTYMD&sort_order=DESC`).then(r => r.json()).catch(() => ({ data: [] }));
+  const r = await fetchFDIC(`${FDIC_BASE}/institutions?filters=${filters}&fields=${fields}&limit=100&sort_by=ESTYMD&sort_order=DESC`).catch(() => ({ data: [] }));
   return (r.data || []).map(d => ({
     cert: d.data.CERT,
     name: d.data.NAME,
@@ -356,7 +356,7 @@ async function getMAActivity(args) {
   let filters = 'REPORT_TYPE%3A223';
   if (year) filters += `%20AND%20EFFDATE%3A%5B${year}0101%20TO%20${year}1231%5D`;
   else filters += `%20AND%20EFFDATE%3A%5B20230101%20TO%2099999999%5D`;
-  const r = await fetch(`${FDIC_BASE}/history?filters=${filters}&fields=${fields}&limit=${max}&sort_by=EFFDATE&sort_order=DESC`).then(r => r.json()).catch(() => ({ data: [] }));
+  const r = await fetchFDIC(`${FDIC_BASE}/history?filters=${filters}&fields=${fields}&limit=${max}&sort_by=EFFDATE&sort_order=DESC`).catch(() => ({ data: [] }));
   const seen = new Map();
   (r.data || []).forEach(d => {
     if (!seen.has(d.data.TRANSNUM)) seen.set(d.data.TRANSNUM, d.data);
@@ -385,17 +385,16 @@ async function getLenderRankings(args) {
   if (city)  instFilters += `%20AND%20CITY%3A${encodeURIComponent(city)}*`;
 
   const fields = 'NAME,CERT,CITY,STALP,ASSET,DEP,WEBADDR';
-  const finFields = 'CERT,RBC1AAJ,ROA,NCLNLSR,LNLSDEPR,LNLSNET,ASSET';
+  const finFields = 'CERT,RBC1AAJ,ROA,NCLNLSR,LNLSDEPR,LNLSNET,ASSET,REPDTE';
 
-  // Step 1: get filtered institutions
-  const instR = await fetch(`${FDIC_BASE}/institutions?filters=${instFilters}&fields=${fields}&limit=200&sort_by=ASSET&sort_order=DESC`).then(r => r.json()).catch(() => ({ data: [] }));
+  // Run institution + financials queries in parallel with the same filters to save ~3-5s
+  const [instR, finR] = await Promise.all([
+    fetchFDIC(`${FDIC_BASE}/institutions?filters=${instFilters}&fields=${fields}&limit=200&sort_by=ASSET&sort_order=DESC`).catch(() => ({ data: [] })),
+    fetchFDIC(`${FDIC_BASE}/financials?filters=${instFilters}&fields=${finFields}&limit=200&sort_by=ASSET&sort_order=DESC`).catch(() => ({ data: [] })),
+  ]);
   const insts = (instR.data || []).map(d => d.data).filter(Boolean);
   if (!insts.length) return [];
 
-  // Step 2: get financials for those specific CERTs (financials endpoint doesn't support ASSET range filters)
-  const certList = insts.map(i => i.CERT).slice(0, 200).join('%20OR%20CERT%3A');
-  const finFilters = `CERT%3A${certList}`;
-  const finR = await fetch(`${FDIC_BASE}/financials?filters=${finFilters}&fields=${finFields}&limit=200&sort_by=ASSET&sort_order=DESC`).then(r => r.json()).catch(() => ({ data: [] }));
   const fins = new Map((finR.data || []).map(d => [d.data?.CERT, d.data]).filter(([k]) => k));
 
   const scored = insts.map(inst => {
@@ -632,7 +631,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.2.2',
+        name: 'vault-mcp', version: '1.2.3',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -679,7 +678,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.2.2' },
+          serverInfo: { name: 'vault-mcp', version: '1.2.3' },
           capabilities: { tools: {} },
         });
       }

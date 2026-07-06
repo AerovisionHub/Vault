@@ -68,3 +68,9 @@
   from = "/mcp/stats"
   to = "/mcp-stats.html"
   status = 200
+
+[functions]
+  node_bundler = "esbuild"
+
+[functions."mcp"]
+  timeout = 26
