@@ -149,18 +149,15 @@ const TOOLS = [
 const crypto = require('crypto');
 
 // ── Netlify Blobs cache ───────────────────────────────────────────────────────
-// @netlify/blobs is marked external in netlify.toml so esbuild doesn't bundle it.
-// Netlify injects NETLIFY_BLOBS_CONTEXT at runtime — getStore() reads it automatically.
-const { getStore } = require('@netlify/blobs');
-
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 function getBlobStore() {
   try {
+    const { getStore } = require('@netlify/blobs');
     return getStore('vault-fdic-cache');
   } catch(e) {
-    console.log('[vault-cache] getBlobStore failed:', e.message);
-    return null;
+    console.log('[vault-cache] getBlobStore unavailable:', e.message);
+    return null; // graceful degradation — falls through to live FDIC
   }
 }
 
