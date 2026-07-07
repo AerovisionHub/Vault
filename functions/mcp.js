@@ -158,7 +158,15 @@ async function getBlobStore() {
     // require() crashes with "require() of ES Module ... not supported".
     // logCall() already does this correctly for the analytics store.
     const { getStore } = await import('@netlify/blobs');
-    return getStore('vault-fdic-cache');
+    // This is a legacy V1 function — Netlify does not auto-inject blob
+    // context for V1 (only V2/Edge get zero-config getStore()). Per
+    // Netlify's own docs, V1 functions must supply siteID/token manually,
+    // exactly like logCall() already does for the analytics store.
+    return getStore({
+      name: 'vault-fdic-cache',
+      siteID: process.env.NETLIFY_SITE_ID || process.env.SITE_ID,
+      token: process.env.NETLIFY_BLOBS_TOKEN || process.env.NETLIFY_API_TOKEN,
+    });
   } catch(e) {
     console.log('[vault-cache] getBlobStore unavailable:', e.message);
     return null; // graceful degradation — falls through to live FDIC
