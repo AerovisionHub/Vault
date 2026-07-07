@@ -171,6 +171,7 @@ async function cacheGet(key) {
       await store.delete(key).catch(() => {});
       return null;
     }
+    console.log('[vault-cache] HIT:', key, 'age:', Math.round((Date.now() - raw._cached_at) / 3600000) + 'h');
     return raw;
   } catch(e) {
     console.log('[vault-cache] cacheGet error:', e.message);
@@ -182,8 +183,8 @@ async function cacheSet(key, data) {
   try {
     const store = getBlobStore();
     if (!store) return;
-    await store.set(key, JSON.stringify({ ...data, _cached_at: Date.now() }));
-    console.log('[vault-cache] stored:', key);
+    await store.setJSON(key, { ...data, _cached_at: Date.now() });
+    console.log('[vault-cache] STORED:', key);
   } catch(e) {
     console.log('[vault-cache] cacheSet error:', e.message);
   }
