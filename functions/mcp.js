@@ -154,11 +154,7 @@ const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 function getBlobStore() {
   try {
     const { getStore } = require('@netlify/blobs');
-    return getStore({
-      name: 'vault-fdic-cache',
-      siteID: process.env.NETLIFY_SITE_ID || process.env.SITE_ID,
-      token: process.env.NETLIFY_BLOBS_TOKEN || process.env.NETLIFY_API_TOKEN,
-    });
+    return getStore('vault-fdic-cache');
   } catch(e) {
     console.log('[vault-cache] getBlobStore unavailable:', e.message);
     return null; // graceful degradation — falls through to live FDIC
