@@ -1,6 +1,7 @@
 [build]
   publish = "."
   functions = "functions"
+  command = "npm install"
 
 # SPA routing — send all paths to index.html
 [[redirects]]
@@ -71,6 +72,7 @@
 
 [functions]
   node_bundler = "esbuild"
+  external_node_modules = ["@netlify/blobs"]
 
 [functions."mcp"]
   timeout = 26

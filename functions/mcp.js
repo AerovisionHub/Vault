@@ -149,23 +149,20 @@ const TOOLS = [
 const crypto = require('crypto');
 
 // ── Netlify Blobs cache ───────────────────────────────────────────────────────
-// Caches FDIC bank profiles, asset quality, and loan mix data by CERT.
-// FDIC call reports are filed quarterly — 7-day TTL is very safe.
-// Cache hit: ~100-200ms. Cache miss: normal FDIC fetch (3-6s), then stored.
-// Storage: ~3KB per bank. 1,000 banks = 3MB. Well within Netlify free tier (1GB).
-let _blobStore = null;
-function getBlobStore() {
-  if (_blobStore) return _blobStore;
-  try {
-    const { getStore } = require('@netlify/blobs');
-    _blobStore = getStore({ name: 'vault-fdic-cache', consistency: 'strong' });
-    return _blobStore;
-  } catch(e) {
-    return null; // graceful degradation if blobs unavailable (local dev, etc.)
-  }
-}
+// @netlify/blobs is marked external in netlify.toml so esbuild doesn't bundle it.
+// Netlify injects NETLIFY_BLOBS_CONTEXT at runtime — getStore() reads it automatically.
+const { getStore } = require('@netlify/blobs');
 
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+function getBlobStore() {
+  try {
+    return getStore('vault-fdic-cache');
+  } catch(e) {
+    console.log('[vault-cache] getBlobStore failed:', e.message);
+    return null;
+  }
+}
 
 async function cacheGet(key) {
   try {
@@ -173,14 +170,14 @@ async function cacheGet(key) {
     if (!store) return null;
     const raw = await store.get(key, { type: 'json' });
     if (!raw) return null;
-    // Manual TTL check — Netlify Blobs TTL isn't always reliable on free tier
     if (raw._cached_at && (Date.now() - raw._cached_at) > CACHE_TTL_MS) {
       await store.delete(key).catch(() => {});
       return null;
     }
     return raw;
   } catch(e) {
-    return null; // never let a cache failure break a real request
+    console.log('[vault-cache] cacheGet error:', e.message);
+    return null;
   }
 }
 
@@ -189,8 +186,9 @@ async function cacheSet(key, data) {
     const store = getBlobStore();
     if (!store) return;
     await store.set(key, JSON.stringify({ ...data, _cached_at: Date.now() }));
+    console.log('[vault-cache] stored:', key);
   } catch(e) {
-    // cache write failure is silent — user still gets fresh data
+    console.log('[vault-cache] cacheSet error:', e.message);
   }
 }
 
