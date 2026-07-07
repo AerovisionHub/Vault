@@ -565,7 +565,7 @@ async function getAssetQualityDetail(args) {
     };
   });
 
-  return {
+  const result = {
     cert,
     name: inst?.NAME || `CERT ${cert}`,
     city: inst?.CITY,
@@ -669,7 +669,7 @@ async function getLoanMix(args) {
     };
   });
 
-  return {
+  const result = {
     cert,
     name: inst?.NAME || `CERT ${cert}`,
     city: inst?.CITY,
