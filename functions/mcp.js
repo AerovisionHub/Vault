@@ -148,6 +148,52 @@ const TOOLS = [
 // Privacy: we hash the IP, never store full IP; we capture client name from MCP handshake but no other PII.
 const crypto = require('crypto');
 
+// ── Netlify Blobs cache ───────────────────────────────────────────────────────
+// Caches FDIC bank profiles, asset quality, and loan mix data by CERT.
+// FDIC call reports are filed quarterly — 7-day TTL is very safe.
+// Cache hit: ~100-200ms. Cache miss: normal FDIC fetch (3-6s), then stored.
+// Storage: ~3KB per bank. 1,000 banks = 3MB. Well within Netlify free tier (1GB).
+let _blobStore = null;
+function getBlobStore() {
+  if (_blobStore) return _blobStore;
+  try {
+    const { getStore } = require('@netlify/blobs');
+    _blobStore = getStore({ name: 'vault-fdic-cache', consistency: 'strong' });
+    return _blobStore;
+  } catch(e) {
+    return null; // graceful degradation if blobs unavailable (local dev, etc.)
+  }
+}
+
+const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+async function cacheGet(key) {
+  try {
+    const store = getBlobStore();
+    if (!store) return null;
+    const raw = await store.get(key, { type: 'json' });
+    if (!raw) return null;
+    // Manual TTL check — Netlify Blobs TTL isn't always reliable on free tier
+    if (raw._cached_at && (Date.now() - raw._cached_at) > CACHE_TTL_MS) {
+      await store.delete(key).catch(() => {});
+      return null;
+    }
+    return raw;
+  } catch(e) {
+    return null; // never let a cache failure break a real request
+  }
+}
+
+async function cacheSet(key, data) {
+  try {
+    const store = getBlobStore();
+    if (!store) return;
+    await store.set(key, JSON.stringify({ ...data, _cached_at: Date.now() }));
+  } catch(e) {
+    // cache write failure is silent — user still gets fresh data
+  }
+}
+
 function hashIP(ip) {
   if (!ip) return 'unknown';
   return crypto.createHash('sha256').update(ip + 'vault-salt').digest('hex').slice(0, 12);
@@ -239,6 +285,16 @@ async function searchInstitutions(args) {
 
 async function getBankProfile(args) {
   const { cert } = args;
+  if (!cert) throw new Error('Required parameter "cert" missing. Use search_institutions to get a CERT first.');
+
+  // ── Cache check ──────────────────────────────────────────────────────────
+  const cacheKey = `bank-profile-${cert}`;
+  const cached = await cacheGet(cacheKey);
+  if (cached) {
+    return { ...cached, _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) } };
+  }
+
+  // ── Cache miss: fetch from FDIC ──────────────────────────────────────────
   const instFields = 'NAME,CERT,CITY,STALP,ADDRESS,ZIP,WEBADDR,ESTYMD,ACTIVE,INSTCAT,CHRTAGNT,REPDTE,ASSET,DEP,EQ,NETINC,STNAME,NAMEHCR';
   const finFields = 'REPDTE,ASSET,DEP,EQ,NETINC,RBC1AAJ,ROA,ROE,NIMY,NCLNLSR,LNLSDEPR,NUMEMP';
   const [iR, fR] = await Promise.all([
@@ -249,8 +305,8 @@ async function getBankProfile(args) {
   const history = (fR.data || []).map(d => d.data);
   if (!inst && !history.length) throw new Error(`No institution found for CERT ${cert}`);
   const latest = history[0] || {};
-  return {
-    cert: cert,
+  const result = {
+    cert,
     name: inst?.NAME || `CERT ${cert}`,
     city: inst?.CITY,
     state: inst?.STALP,
@@ -283,7 +339,12 @@ async function getBankProfile(args) {
       roe_percent: h.ROE,
     })),
     profile_url: `https://vaultbot.ai/bank/${cert}`,
+    _cache: { hit: false, stored_at: new Date().toISOString() },
   };
+
+  // Store in cache (fire-and-forget — don't delay the response)
+  cacheSet(cacheKey, result).catch(() => {});
+  return result;
 }
 
 async function getIndustryMetrics(args) {
@@ -433,6 +494,11 @@ async function getAssetQualityDetail(args) {
   if (!cert) throw new Error('Required parameter "cert" missing. Get a CERT from search_institutions.');
   const max = Math.min(Math.max(Number(quarters) || 4, 1), 8);
 
+  // Cache key includes quarters so different depth requests cache separately
+  const cacheKey = `asset-quality-${cert}-q${max}`;
+  const cached = await cacheGet(cacheKey);
+  if (cached) return { ...cached, _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) } };
+
   // FDIC asset quality fields — using fields verified against the BankFind v2 API.
   // Past-due aging is not consistently exposed at the consolidated level via this API; we use
   // FDIC's pre-computed noncurrent ratio (NCLNLSR) and core asset-quality fields.
@@ -505,13 +571,20 @@ async function getAssetQualityDetail(args) {
       note: 'Past-due aging bucket detail (30-89, 90+) is sourced from Call Report Schedule RC-N and not available via this consolidated API endpoint. For aging buckets at the institution level, consult the bank\'s Call Report directly.',
     },
     profile_url: `https://vaultbot.ai/bank/${cert}`,
+    _cache: { hit: false, stored_at: new Date().toISOString() },
   };
+  cacheSet(cacheKey, result).catch(() => {});
+  return result;
 }
 
 async function getLoanMix(args) {
   const { cert, quarters = 1 } = args || {};
   if (!cert) throw new Error('Required parameter "cert" missing. Get a CERT from search_institutions.');
   const max = Math.min(Math.max(Number(quarters) || 1, 1), 8);
+
+  const cacheKey = `loan-mix-${cert}-q${max}`;
+  const cached = await cacheGet(cacheKey);
+  if (cached) return { ...cached, _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) } };
 
   // FDIC loan mix fields. LNREMULT (multifamily) is the most likely to cause field-name issues
   // in BankFind v2, so we try with it first, then fall back without it if FDIC rejects the query.
@@ -602,7 +675,10 @@ async function getLoanMix(args) {
       multifamily: usedMultifamily ? 'Multifamily (5+ unit residential) included.' : 'Multifamily data not available in this query (FDIC field not exposed for this institution).',
     },
     profile_url: `https://vaultbot.ai/bank/${cert}`,
+    _cache: { hit: false, stored_at: new Date().toISOString() },
   };
+  cacheSet(cacheKey, result).catch(() => {});
+  return result;
 }
 
 // ── MCP JSON-RPC Handler ─────────────────────────────────────────────────────
@@ -631,7 +707,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.2.4',
+        name: 'vault-mcp', version: '1.3.0',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -678,7 +754,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.2.4' },
+          serverInfo: { name: 'vault-mcp', version: '1.3.0' },
           capabilities: { tools: {} },
         });
       }
