@@ -151,9 +151,13 @@ const crypto = require('crypto');
 // ── Netlify Blobs cache ───────────────────────────────────────────────────────
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
-function getBlobStore() {
+async function getBlobStore() {
   try {
-    const { getStore } = require('@netlify/blobs');
+    // Must use dynamic import, not require(). @netlify/blobs' CJS entry
+    // internally requires @netlify/runtime-utils, which is ESM-only —
+    // require() crashes with "require() of ES Module ... not supported".
+    // logCall() already does this correctly for the analytics store.
+    const { getStore } = await import('@netlify/blobs');
     return getStore('vault-fdic-cache');
   } catch(e) {
     console.log('[vault-cache] getBlobStore unavailable:', e.message);
@@ -163,7 +167,7 @@ function getBlobStore() {
 
 async function cacheGet(key) {
   try {
-    const store = getBlobStore();
+    const store = await getBlobStore();
     if (!store) return null;
     const raw = await store.get(key, { type: 'json' });
     if (!raw) return null;
@@ -181,7 +185,7 @@ async function cacheGet(key) {
 
 async function cacheSet(key, data) {
   try {
-    const store = getBlobStore();
+    const store = await getBlobStore();
     if (!store) return;
     await store.setJSON(key, { ...data, _cached_at: Date.now() });
     console.log('[vault-cache] STORED:', key);
