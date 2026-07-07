@@ -350,8 +350,10 @@ async function getBankProfile(args) {
     _cache: { hit: false, stored_at: new Date().toISOString() },
   };
 
-  // Store in cache (fire-and-forget — don't delay the response)
-  cacheSet(cacheKey, result).catch(() => {});
+  // Store in cache — awaited, not fire-and-forget. Serverless containers can
+  // freeze immediately after the response returns, racing an unawaited write;
+  // this was silently dropping cache stores on faster-returning endpoints.
+  await cacheSet(cacheKey, result).catch(() => {});
   return result;
 }
 
@@ -581,7 +583,7 @@ async function getAssetQualityDetail(args) {
     profile_url: `https://vaultbot.ai/bank/${cert}`,
     _cache: { hit: false, stored_at: new Date().toISOString() },
   };
-  cacheSet(cacheKey, result).catch(() => {});
+  await cacheSet(cacheKey, result).catch(() => {});
   return result;
 }
 
@@ -685,7 +687,7 @@ async function getLoanMix(args) {
     profile_url: `https://vaultbot.ai/bank/${cert}`,
     _cache: { hit: false, stored_at: new Date().toISOString() },
   };
-  cacheSet(cacheKey, result).catch(() => {});
+  await cacheSet(cacheKey, result).catch(() => {});
   return result;
 }
 
