@@ -359,6 +359,10 @@ async function getBankProfile(args) {
 
 async function getIndustryMetrics(args) {
   const { year } = args || {};
+  const cacheKey = `industry-metrics-${year || 'current'}`;
+  const cached = await cacheGet(cacheKey);
+  if (cached) return { ...cached, _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) } };
+
   const period = year ? `${year}1231` : '20250930';
   const fields = 'REPDTE,ASSET,DEP,NETINC,ROA,ROE,NIMY';
   const filter = `REPDTE%3A${period}`;
@@ -386,7 +390,7 @@ async function getIndustryMetrics(args) {
   const avgROA = allRecs.reduce((s, x) => s + (Number(x.ROA) || 0), 0) / allRecs.length;
   const avgROE = allRecs.reduce((s, x) => s + (Number(x.ROE) || 0), 0) / allRecs.length;
   const avgNIM = allRecs.reduce((s, x) => s + (Number(x.NIMY) || 0), 0) / allRecs.length;
-  return {
+  const result = {
     period: allRecs[0]?.REPDTE,
     total_banks: allRecs.length,
     total_assets_thousands: totalAssets,
@@ -396,17 +400,24 @@ async function getIndustryMetrics(args) {
     avg_roe_percent: Number(avgROE.toFixed(2)),
     avg_nim_percent: Number(avgNIM.toFixed(3)),
     industry_url: 'https://vaultbot.ai/industry',
+    _cache: { hit: false, stored_at: new Date().toISOString() },
   };
+  await cacheSet(cacheKey, result).catch(() => {});
+  return result;
 }
 
 async function getRecentCharters(args) {
   const { year } = args || {};
+  const cacheKey = `recent-charters-${year || 'all'}`;
+  const cached = await cacheGet(cacheKey);
+  if (cached) return { ...cached, _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) } };
+
   const fields = 'NAME,CERT,CITY,STALP,ASSET,ESTYMD,CHRTAGNT,WEBADDR,NAMEHCR';
   const filters = year
     ? `ESTYMD%3A%5B${year}0101%20TO%20${year}1231%5D%20AND%20ACTIVE%3A1`
     : `ESTYMD%3A%5B20230101%20TO%2099999999%5D%20AND%20ACTIVE%3A1`;
   const r = await fetchFDIC(`${FDIC_BASE}/institutions?filters=${filters}&fields=${fields}&limit=100&sort_by=ESTYMD&sort_order=DESC`).catch(() => ({ data: [] }));
-  return (r.data || []).map(d => ({
+  const charters = (r.data || []).map(d => ({
     cert: d.data.CERT,
     name: d.data.NAME,
     city: d.data.CITY,
@@ -418,11 +429,22 @@ async function getRecentCharters(args) {
     holding_company: d.data.NAMEHCR || null,
     profile_url: `https://vaultbot.ai/bank/${d.data.CERT}`,
   }));
+  const result = {
+    charters,
+    count: charters.length,
+    _cache: { hit: false, stored_at: new Date().toISOString() },
+  };
+  await cacheSet(cacheKey, result).catch(() => {});
+  return result;
 }
 
 async function getMAActivity(args) {
   const { year, limit = 50 } = args || {};
   const max = Math.min(Number(limit) || 50, 200);
+  const cacheKey = `ma-activity-${year || 'all'}-${max}`;
+  const cached = await cacheGet(cacheKey);
+  if (cached) return { ...cached, _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) } };
+
   const fields = 'TRANSNUM,EFFDATE,CHANGECODE_DESC,ACQ_INSTNAME,ACQ_CERT,ACQ_PCITY,ACQ_PSTALP,OUT_INSTNAME,OUT_CERT,OUT_PCITY,OUT_PSTALP,ASSISTED_PAYOUT_FLAG';
   let filters = 'REPORT_TYPE%3A223';
   if (year) filters += `%20AND%20EFFDATE%3A%5B${year}0101%20TO%20${year}1231%5D`;
@@ -432,18 +454,29 @@ async function getMAActivity(args) {
   (r.data || []).forEach(d => {
     if (!seen.has(d.data.TRANSNUM)) seen.set(d.data.TRANSNUM, d.data);
   });
-  return [...seen.values()].map(d => ({
+  const transactions = [...seen.values()].map(d => ({
     transaction_number: d.TRANSNUM,
     effective_date: d.EFFDATE,
     transaction_type: d.ASSISTED_PAYOUT_FLAG ? 'failure' : 'merger',
     acquirer: { name: d.ACQ_INSTNAME, cert: d.ACQ_CERT, city: d.ACQ_PCITY, state: d.ACQ_PSTALP },
     acquired: { name: d.OUT_INSTNAME, cert: d.OUT_CERT, city: d.OUT_PCITY, state: d.OUT_PSTALP },
   }));
+  const result = {
+    transactions,
+    count: transactions.length,
+    _cache: { hit: false, stored_at: new Date().toISOString() },
+  };
+  await cacheSet(cacheKey, result).catch(() => {});
+  return result;
 }
 
 async function getLenderRankings(args) {
   const { state, city, loan_type = 'residential', asset_size = 'community', limit = 25 } = args || {};
   const max = Math.min(Number(limit) || 25, 100);
+  const cacheKey = `lender-rankings-${state || 'all'}-${city || 'all'}-${loan_type}-${asset_size}-${max}`;
+  const cached = await cacheGet(cacheKey);
+  if (cached) return { ...cached, _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) } };
+
   const sizeRanges = {
     community: '0%20TO%201000000',
     regional:  '1000000%20TO%2010000000',
@@ -464,7 +497,11 @@ async function getLenderRankings(args) {
     fetchFDIC(`${FDIC_BASE}/financials?filters=${instFilters}&fields=${finFields}&limit=200&sort_by=ASSET&sort_order=DESC`).catch(() => ({ data: [] })),
   ]);
   const insts = (instR.data || []).map(d => d.data).filter(Boolean);
-  if (!insts.length) return [];
+  if (!insts.length) {
+    const empty = { rankings: [], count: 0, _cache: { hit: false, stored_at: new Date().toISOString() } };
+    await cacheSet(cacheKey, empty).catch(() => {});
+    return empty;
+  }
 
   const fins = new Map((finR.data || []).map(d => [d.data?.CERT, d.data]).filter(([k]) => k));
 
@@ -496,7 +533,14 @@ async function getLenderRankings(args) {
       profile_url: `https://vaultbot.ai/bank/${inst.CERT}`,
     };
   }).filter(Boolean).sort((a, b) => b.lending_score - a.lending_score);
-  return scored.slice(0, max);
+  const rankings = scored.slice(0, max);
+  const result = {
+    rankings,
+    count: rankings.length,
+    _cache: { hit: false, stored_at: new Date().toISOString() },
+  };
+  await cacheSet(cacheKey, result).catch(() => {});
+  return result;
 }
 
 async function getAssetQualityDetail(args) {
