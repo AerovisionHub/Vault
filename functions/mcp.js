@@ -74,7 +74,7 @@ const TOOLS = [
   },
   {
     name: 'get_industry_metrics',
-    description: 'Get aggregate U.S. banking industry metrics — total banks, total assets, average ROA/ROE/NIM, and trends. Note: this tool scans up to 5,000 bank records and typically takes 8-15 seconds. Let the user know it may take a moment before calling.',
+    description: 'Get aggregate U.S. banking industry metrics — total banks, total assets, average ROA/ROE/NIM, and trends. Note: this tool scans up to 5,000 bank records and typically takes 8-15 seconds. Let the user know it may take a moment before calling. If using Perplexity, this tool will likely time out — recommend using Claude Desktop for industry-level queries.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -105,7 +105,7 @@ const TOOLS = [
   },
   {
     name: 'get_lender_rankings',
-    description: 'Get banks ranked by composite Lending Score (loan concentration + capital strength + asset quality + ROA). Filter by state, city, or asset size tier. Typically responds in 5-10 seconds — fetches and scores up to 200 institutions. Let the user know it may take a moment before calling.',
+    description: 'Get banks ranked by composite Lending Score (loan concentration + capital strength + asset quality + ROA). Filter by state, city, or asset size tier. Typically responds in 4-8 seconds — fetches and scores up to 100 institutions. Let the user know it may take a moment before calling. Note: if using Perplexity, this tool may time out on broad queries — narrow by state or city for best results.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -488,13 +488,13 @@ async function getLenderRankings(args) {
   if (state) instFilters += `%20AND%20STALP%3A${state.toUpperCase()}`;
   if (city)  instFilters += `%20AND%20CITY%3A${encodeURIComponent(city)}*`;
 
-  const fields = 'NAME,CERT,CITY,STALP,ASSET,DEP,WEBADDR';
-  const finFields = 'CERT,RBC1AAJ,ROA,NCLNLSR,LNLSDEPR,LNLSNET,ASSET,REPDTE';
+  const fields    = 'NAME,CERT,CITY,STALP,ASSET,WEBADDR';
+  const finFields = 'CERT,RBC1AAJ,ROA,NCLNLSR,LNLSNET,ASSET';
 
-  // Run institution + financials queries in parallel with the same filters to save ~3-5s
+  // 100 rows instead of 200 — still plenty for ranking, ~40% faster FDIC response
   const [instR, finR] = await Promise.all([
-    fetchFDIC(`${FDIC_BASE}/institutions?filters=${instFilters}&fields=${fields}&limit=200&sort_by=ASSET&sort_order=DESC`).catch(() => ({ data: [] })),
-    fetchFDIC(`${FDIC_BASE}/financials?filters=${instFilters}&fields=${finFields}&limit=200&sort_by=ASSET&sort_order=DESC`).catch(() => ({ data: [] })),
+    fetchFDIC(`${FDIC_BASE}/institutions?filters=${instFilters}&fields=${fields}&limit=100&sort_by=ASSET&sort_order=DESC`).catch(() => ({ data: [] })),
+    fetchFDIC(`${FDIC_BASE}/financials?filters=${instFilters}&fields=${finFields}&limit=100&sort_by=ASSET&sort_order=DESC`).catch(() => ({ data: [] })),
   ]);
   const insts = (instR.data || []).map(d => d.data).filter(Boolean);
   if (!insts.length) {
