@@ -100,7 +100,7 @@ pre code { background: transparent; padding: 0; color: inherit; }
   <div class="eyebrow">// Vault MCP Server</div>
   <h1>Banking intelligence,<br>any AI agent.</h1>
   <p class="lede">
-    The first banking intelligence MCP server. Connect Claude Desktop, Cline, Continue, or any
+    The first banking intelligence MCP server. Connect Claude Desktop, Claude Code, Perplexity, Cline, Continue, or any
     Model Context Protocol-compatible agent to live FDIC banking data — search 4,317 banks,
     pull financials, track M&amp;A, find new charters, all via tool calls.
   </p>
@@ -136,6 +136,42 @@ pre code { background: transparent; padding: 0; color: inherit; }
     <li>"Show me bank mergers from 2025"</li>
     <li>"How is the U.S. banking industry performing in 2024 vs 2025?"</li>
   </ul>
+
+  <h2>Client compatibility</h2>
+  <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;padding:18px 20px;margin-bottom:28px;">
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:8px 0;color:var(--muted);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;">Client</td>
+        <td style="padding:8px 0;color:var(--muted);font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;text-align:right;">Status</td>
+      </tr>
+      <tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:10px 0;">Claude Desktop</td>
+        <td style="padding:10px 0;text-align:right;color:#4ade80;">✓ Fully supported — no timeout ceiling</td>
+      </tr>
+      <tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:10px 0;">Claude Code</td>
+        <td style="padding:10px 0;text-align:right;color:#4ade80;">✓ Fully supported</td>
+      </tr>
+      <tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:10px 0;">Cline / Continue</td>
+        <td style="padding:10px 0;text-align:right;color:#4ade80;">✓ Fully supported</td>
+      </tr>
+      <tr>
+        <td style="padding:10px 0;">Perplexity</td>
+        <td style="padding:10px 0;text-align:right;color:#fbbf24;">△ Works with caveats — see below</td>
+      </tr>
+    </table>
+    <p style="font-size:13px;color:var(--muted);line-height:1.7;margin:16px 0 0;">
+      Perplexity enforces a hard 15-second timeout on MCP tool calls at its proxy layer. Vault's response-caching
+      layer (shipped July 2026) now serves repeat lookups for <strong style="color:var(--text);">search_institutions,
+      get_bank_profile, get_asset_quality_detail, get_loan_mix, get_recent_charters, get_ma_activity,</strong> and
+      <strong style="color:var(--text);">get_lender_rankings</strong> in under 200ms — well inside that limit.
+      <strong style="color:var(--text);">get_industry_metrics</strong> scans 5,000+ records per call and will
+      still time out on Perplexity even when cached; we recommend Claude Desktop for industry-level queries.
+      For <strong style="color:var(--text);">get_lender_rankings</strong> on Perplexity, narrowing by state or
+      city keeps first-time (uncached) calls comfortably under the limit.
+    </p>
+  </div>
 
   <h2>Available Tools</h2>
 
