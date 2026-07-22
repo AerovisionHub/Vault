@@ -3,6 +3,9 @@
 // Spec: https://modelcontextprotocol.io/
 
 const FDIC_BASE = 'https://banks.data.fdic.gov/api';
+// Summary of Deposits — separate FDIC dataset (annual branch-level census, as of each June 30).
+// Same query syntax as FDIC_BASE (filters=field%3Avalue&fields=...&limit=...&sort_by=...&sort_order=...).
+const FDIC_SOD_BASE = 'https://banks.data.fdic.gov/api/sod';
 
 // FDIC fetch with rate-limit + bad-response detection.
 // FDIC returns plain text "You've exceeded the rate limit..." when throttling, which crashes
@@ -137,6 +140,31 @@ const TOOLS = [
       properties: {
         cert: { type: 'string', description: 'FDIC certificate number (required). Get from search_institutions.' },
         quarters: { type: 'number', description: 'Quarters of history (default 1 = latest only, max 8)' },
+      },
+      required: ['cert'],
+    },
+  },
+  {
+    name: 'get_brokered_deposits',
+    description: 'Get brokered deposit levels and funding-risk detail for a specific bank: dollar amount, percent of total deposits, and trend over up to 8 quarters. Brokered deposits (funds a bank buys from a broker rather than gathering from local depositors) are a widely-watched funding-risk indicator — high or fast-growing levels can signal liquidity stress or an aggressive growth strategy funded by less-stable "hot money." Typically responds in 3-6 seconds. Use to answer "how reliant is this bank on brokered funding?" or assess deposit funding quality.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        cert: { type: 'string', description: 'FDIC certificate number (required). Get from search_institutions.' },
+        quarters: { type: 'number', description: 'Quarters of history to return (default 4, max 8)' },
+      },
+      required: ['cert'],
+    },
+  },
+  {
+    name: 'get_branch_data',
+    description: 'Get branch-level location and deposit data for a specific bank from the FDIC Summary of Deposits (SOD) — the annual branch-level census FDIC-insured banks file every June. Returns branch count, total branch deposits, and a list of individual branches with address, city, state, deposits, and whether it\'s the main office. Typically responds in 3-6 seconds. Use to answer "how many branches does this bank have," "where does this bank operate," or "which branches hold the most deposits." Note: SOD data updates once a year (as of each June 30), so this reflects the most recent annual filing, not real-time branch counts.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        cert: { type: 'string', description: 'FDIC certificate number (required). Get from search_institutions.' },
+        state: { type: 'string', description: 'Optional 2-letter state code to filter branches to one state (e.g. "OK")' },
+        limit: { type: 'number', description: 'Max branches returned (default 50, max 200)' },
       },
       required: ['cert'],
     },
@@ -735,7 +763,153 @@ async function getLoanMix(args) {
   return result;
 }
 
-// ── MCP JSON-RPC Handler ─────────────────────────────────────────────────────
+async function getBrokeredDeposits(args) {
+  const { cert, quarters = 4 } = args || {};
+  if (!cert) throw new Error('Required parameter "cert" missing. Get a CERT from search_institutions.');
+  const max = Math.min(Math.max(Number(quarters) || 4, 1), 8);
+
+  const cacheKey = `brokered-deposits-${cert}-q${max}`;
+  const cached = await cacheGet(cacheKey);
+  if (cached) return { ...cached, _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) } };
+
+  // BRO = Brokered deposits (thousands), DEP = Total deposits (thousands)
+  const finFields = 'REPDTE,DEP,BRO,ASSET';
+  let history;
+  try {
+    const fR = await fetchFDIC(`${FDIC_BASE}/financials?filters=CERT%3A${cert}&fields=${finFields}&limit=${max}&sort_by=REPDTE&sort_order=DESC`);
+    history = (fR.data || []).map(d => d.data).filter(Boolean);
+  } catch (e) {
+    throw new Error(`Brokered deposits lookup for CERT ${cert}: ${e.message}`);
+  }
+  if (!history.length) throw new Error(`No financial data found for CERT ${cert}. The certificate may be inactive or not FDIC-insured. Verify with search_institutions or get_bank_profile first.`);
+
+  const iR = await fetchFDIC(`${FDIC_BASE}/institutions?filters=CERT%3A${cert}&fields=NAME,CITY,STALP&limit=1`).catch(() => ({ data: [] }));
+  const inst = iR.data?.[0]?.data;
+
+  const pct = (n, d) => d > 0 ? Number((n / d * 100).toFixed(2)) : null;
+
+  const quarterly = history.map(h => {
+    const dep = Number(h.DEP) || 0;
+    const bro = Number(h.BRO) || 0;
+    const broPct = pct(bro, dep);
+    let riskLevel = 'low';
+    if (broPct !== null) {
+      if (broPct >= 40) riskLevel = 'high';
+      else if (broPct >= 20) riskLevel = 'elevated';
+    }
+    return {
+      report_date: h.REPDTE,
+      total_deposits_thousands: dep,
+      brokered_deposits_thousands: bro,
+      brokered_deposits_percent_of_total: broPct,
+      funding_risk_level: riskLevel,
+    };
+  });
+
+  const result = {
+    cert,
+    name: inst?.NAME || `CERT ${cert}`,
+    city: inst?.CITY,
+    state: inst?.STALP,
+    quarters_returned: quarterly.length,
+    latest_quarter: quarterly[0] || null,
+    quarterly_history: quarterly,
+    interpretation_notes: {
+      brokered_deposits: 'Deposits a bank purchases through a broker rather than gathers directly from local customers. Not inherently bad, but a fast-growing or high level relative to total deposits can indicate reliance on less-stable, rate-sensitive "hot money" funding.',
+      funding_risk_level: 'Qualitative guidance, not a formal regulatory threshold: under 20% = low, 20-39% = elevated, 40%+ = high. Compare against peers and trend direction — a rising trend matters more than a single snapshot.',
+    },
+    profile_url: `https://vaultbot.ai/bank/${cert}`,
+    _cache: { hit: false, stored_at: new Date().toISOString() },
+  };
+  await cacheSet(cacheKey, result).catch(() => {});
+  return result;
+}
+
+async function getBranchData(args) {
+  const { cert, state, limit = 50 } = args || {};
+  if (!cert) throw new Error('Required parameter "cert" missing. Get a CERT from search_institutions.');
+  const max = Math.min(Math.max(Number(limit) || 50, 1), 200);
+
+  const cacheKey = `branch-data-${cert}-${state || 'all'}-l${max}`;
+  const cached = await cacheGet(cacheKey);
+  if (cached) return { ...cached, _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) } };
+
+  // Full field set first; SOD field names are less battle-tested in this codebase than
+  // the /financials fields, so fall back to a smaller safe subset if FDIC rejects the query.
+  const fieldsFull = 'CERT,NAMEFULL,ADDRESBR,CITYBR,STALPBR,ZIPBR,DEPSUMBR,BRSERTYP,ESTYMD,RUNDATE,MAINOFF,UNINUMBR';
+  const fieldsSafe = 'CERT,NAMEFULL,CITYBR,STALPBR,DEPSUMBR,MAINOFF,RUNDATE';
+
+  let branchFilters = `CERT%3A${cert}`;
+  if (state) branchFilters += `%20AND%20STALPBR%3A${state.toUpperCase()}`;
+
+  let rows;
+  let usedFullFields = true;
+  try {
+    // Pull a generous batch sorted by most recent RUNDATE first, since SOD is an annual
+    // snapshot and a given CERT will have one row per branch per year on file.
+    const r = await fetchFDIC(`${FDIC_SOD_BASE}?filters=${branchFilters}&fields=${fieldsFull}&limit=200&sort_by=RUNDATE&sort_order=DESC`);
+    rows = (r.data || []).map(d => d.data).filter(Boolean);
+  } catch (e) {
+    if (e.message.includes('400') || e.message.toLowerCase().includes('field')) {
+      usedFullFields = false;
+      const r = await fetchFDIC(`${FDIC_SOD_BASE}?filters=${branchFilters}&fields=${fieldsSafe}&limit=200&sort_by=RUNDATE&sort_order=DESC`);
+      rows = (r.data || []).map(d => d.data).filter(Boolean);
+    } else {
+      throw new Error(`Branch data lookup for CERT ${cert}: ${e.message}`);
+    }
+  }
+
+  if (!rows.length) throw new Error(`No branch data found for CERT ${cert}${state ? ` in ${state.toUpperCase()}` : ''}. The certificate may be inactive, not FDIC-insured, or have no branches in that state. Verify with search_institutions or get_bank_profile first.`);
+
+  // SOD returns one row per branch per filing year — keep only the most recent year present
+  const latestRunDate = rows.reduce((max, r) => (r.RUNDATE > max ? r.RUNDATE : max), rows[0].RUNDATE);
+  let latestRows = rows.filter(r => r.RUNDATE === latestRunDate);
+
+  // De-dupe by branch identifier if available, then cap to requested limit
+  if (usedFullFields) {
+    const seen = new Set();
+    latestRows = latestRows.filter(r => {
+      if (seen.has(r.UNINUMBR)) return false;
+      seen.add(r.UNINUMBR);
+      return true;
+    });
+  }
+  latestRows = latestRows
+    .sort((a, b) => (Number(b.DEPSUMBR) || 0) - (Number(a.DEPSUMBR) || 0))
+    .slice(0, max);
+
+  const totalBranchDeposits = latestRows.reduce((sum, r) => sum + (Number(r.DEPSUMBR) || 0), 0);
+
+  const branches = latestRows.map(r => ({
+    name: r.NAMEFULL || null,
+    address: usedFullFields ? (r.ADDRESBR || null) : null,
+    city: r.CITYBR || null,
+    state: r.STALPBR || null,
+    zip: usedFullFields ? (r.ZIPBR || null) : null,
+    deposits_thousands: Number(r.DEPSUMBR) || 0,
+    is_main_office: r.MAINOFF === '1' || r.MAINOFF === 1,
+    established: usedFullFields ? (r.ESTYMD || null) : null,
+  }));
+
+  const result = {
+    cert,
+    as_of: latestRunDate,
+    branch_count: branches.length,
+    total_branch_deposits_thousands: totalBranchDeposits,
+    state_filter: state ? state.toUpperCase() : null,
+    branches,
+    interpretation_notes: {
+      source: 'FDIC Summary of Deposits (SOD) — an annual census of branch locations and deposits, filed as of June 30 each year. Not real-time; reflects the most recent annual filing on record.',
+      branch_field_availability: usedFullFields ? 'Full field set returned (address, zip, establish date included).' : 'Reduced field set returned — some fields (address, zip, establish date) were not available for this query.',
+    },
+    profile_url: `https://vaultbot.ai/bank/${cert}`,
+    _cache: { hit: false, stored_at: new Date().toISOString() },
+  };
+  await cacheSet(cacheKey, result).catch(() => {});
+  return result;
+}
+
+
 const TOOL_HANDLERS = {
   search_institutions: searchInstitutions,
   get_bank_profile: getBankProfile,
@@ -745,6 +919,8 @@ const TOOL_HANDLERS = {
   get_lender_rankings: getLenderRankings,
   get_asset_quality_detail: getAssetQualityDetail,
   get_loan_mix: getLoanMix,
+  get_brokered_deposits: getBrokeredDeposits,
+  get_branch_data: getBranchData,
 };
 
 const CORS_HEADERS = {
@@ -761,7 +937,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.3.0',
+        name: 'vault-mcp', version: '1.4.0',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -808,7 +984,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.3.0' },
+          serverInfo: { name: 'vault-mcp', version: '1.4.0' },
           capabilities: { tools: {} },
         });
       }
