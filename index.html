@@ -243,6 +243,45 @@
   .badge-fdic { background: rgba(59,130,246,0.15); color: var(--blue); border: 1px solid rgba(59,130,246,0.3); }
   .badge-ncua { background: rgba(139,92,246,0.12); color: var(--accent2); border: 1px solid rgba(139,92,246,0.25); }
 
+  /* Consolidated header nav — dropdowns + pills */
+  .nav-pill { font-family: var(--mono); font-size: 11.5px; padding: 7px 14px; border-radius: 20px; letter-spacing: 0.05em; text-transform: uppercase; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; color: var(--text); text-decoration: none; border: 1px solid rgba(255,255,255,0.14); background: transparent; cursor: pointer; transition: border-color 0.15s, background 0.15s; white-space: nowrap; }
+  .nav-pill:hover { border-color: rgba(77,184,255,0.4); background: rgba(77,184,255,0.06); }
+  .nav-pill-mcp { border-color: rgba(74,222,128,0.35); background: linear-gradient(135deg,rgba(74,222,128,0.1),rgba(77,184,255,0.1)); color: #4ade80; }
+  .nav-pill-mcp:hover { border-color: rgba(74,222,128,0.55); background: linear-gradient(135deg,rgba(74,222,128,0.16),rgba(77,184,255,0.16)); }
+  .nav-pill .new-badge { font-size: 8px; background: #4ade80; color: #0f1240; padding: 1px 4px; border-radius: 3px; font-weight: 700; letter-spacing: 0; }
+
+  .nav-dropdown { position: relative; }
+  .nav-dropdown-trigger { font-family: var(--mono); font-size: 11.5px; padding: 7px 12px; border-radius: 20px; letter-spacing: 0.05em; text-transform: uppercase; font-weight: 500; display: inline-flex; align-items: center; gap: 5px; color: var(--text); background: transparent; border: 1px solid rgba(255,255,255,0.14); cursor: pointer; transition: border-color 0.15s, background 0.15s; white-space: nowrap; }
+  .nav-dropdown-trigger:hover, .nav-dropdown.open .nav-dropdown-trigger { border-color: rgba(77,184,255,0.4); background: rgba(77,184,255,0.06); }
+  .nav-dropdown-trigger .chev { width: 9px; height: 9px; transition: transform 0.18s ease; opacity: 0.7; }
+  .nav-dropdown.open .nav-dropdown-trigger .chev { transform: rotate(180deg); }
+
+  .nav-dropdown-menu { position: absolute; top: calc(100% + 10px); left: 50%; transform: translateX(-50%) translateY(-6px); min-width: 210px; background: rgba(22,20,72,0.98); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.14); border-radius: 12px; padding: 8px; box-shadow: 0 16px 40px rgba(0,0,0,0.45); opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 0.16s ease, transform 0.16s ease; z-index: 210; }
+  .nav-dropdown.open .nav-dropdown-menu { opacity: 1; visibility: visible; pointer-events: auto; transform: translateX(-50%) translateY(0); }
+  .nav-dropdown-menu a { display: flex; align-items: center; gap: 9px; padding: 10px 12px; border-radius: 8px; color: var(--text); text-decoration: none; font-family: var(--mono); font-size: 12.5px; letter-spacing: 0.03em; cursor: pointer; transition: background 0.15s; white-space: nowrap; }
+  .nav-dropdown-menu a:hover { background: rgba(255,255,255,0.07); }
+  .nav-dropdown-menu a .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .nav-dropdown-menu .nav-dropdown-divider { height: 1px; background: rgba(255,255,255,0.1); margin: 6px 4px; }
+  .nav-dropdown-menu .nav-dropdown-external { color: var(--muted); font-size: 11px; }
+
+  /* Persistent desktop header search */
+  .header-search { position: relative; display: flex; align-items: center; }
+  .header-search .search-icon { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); font-size: 13px; opacity: 0.5; pointer-events: none; }
+  .header-search input { width: 180px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.16); border-radius: 20px; padding: 8px 14px 8px 34px; font-family: var(--mono); font-size: 12.5px; color: var(--text); outline: none; transition: width 0.2s ease, border-color 0.2s ease, background 0.2s ease; }
+  .header-search input::placeholder { color: rgba(255,255,255,0.4); }
+  .header-search input:focus { width: 230px; border-color: var(--accent); background: rgba(255,255,255,0.09); }
+
+  /* Mobile search icon trigger — hidden on desktop, shown under nav breakpoint */
+  .header-search-mobile-btn { display: none; background: none; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; padding: 8px 10px; cursor: pointer; color: var(--text); font-size: 15px; align-items: center; justify-content: center; }
+
+  /* Full-screen mobile search overlay */
+  .mobile-search-overlay { display: none; position: fixed; inset: 0; z-index: 300; background: rgba(15,18,64,0.98); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); flex-direction: column; padding: 20px; }
+  .mobile-search-overlay.open { display: flex; }
+  .mobile-search-overlay-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; }
+  .mobile-search-overlay-title { font-family: var(--serif); font-size: 20px; color: var(--text); }
+  .mobile-search-close { background: none; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; padding: 8px 12px; color: var(--text); font-size: 16px; cursor: pointer; }
+  .mobile-search-overlay .search-row { flex-direction: column; }
+
   .container { max-width: 1100px; margin: 0 auto; padding: 48px 40px; padding-top: calc(48px + 80px); }
   .search-section { margin-bottom: 48px; }
 
@@ -536,6 +575,13 @@
     .home-stats-row { grid-template-columns: 1fr 1fr; }
   }
 
+  /* Nav breakpoint — consolidated nav fits comfortably down to 860px; below that, hamburger + search icon take over */
+  @media (max-width: 860px) {
+    .nav-desktop { display: none !important; }
+    .nav-hamburger { display: flex !important; }
+    .header-search-mobile-btn { display: flex !important; }
+  }
+
   @media (max-width: 640px) {
     header { padding: 14px 20px; }
     .container { padding: 24px 16px; padding-top: calc(24px + 62px); }
@@ -545,8 +591,6 @@
     .kpi-grid { grid-template-columns: 1fr 1fr; }
     .inst-header { flex-direction: column; }
     .inst-name { font-size: 24px; }
-    .nav-desktop { display: none !important; }
-    .nav-hamburger { display: flex !important; }
     .nav-mobile { top: 62px; }
     .badge { font-size: 9px; padding: 3px 7px; }
     .logo { font-size: 24px; }
@@ -612,40 +656,52 @@
       <div class="tagline">Bank & Credit Union Intelligence</div>
     </a>
   </div>
-  <!-- Desktop nav -->
-  <div class="data-badge nav-desktop" style="display:flex;gap:8px;align-items:center;">
-    <a href="https://banks.data.fdic.gov/docs/" target="_blank" style="text-decoration:none;">
-      <span class="badge badge-fdic" style="cursor:pointer;" title="FDIC BankFind API">FDIC Data ↗</span>
-    </a>
-    <a href="https://mapping.ncua.gov/ResearchCreditUnion" target="_blank" style="text-decoration:none;">
-      <span class="badge badge-ncua" style="cursor:pointer;" title="NCUA Credit Union Research">NCUA Data ↗</span>
-    </a>
-    <a onclick="showIndustry()" style="text-decoration:none;cursor:pointer;">
-      <span class="badge" style="background:rgba(77,184,255,0.12);color:#4db8ff;border:1px solid rgba(77,184,255,0.25);">Industry</span>
-    </a>
-    <a onclick="showLenders()" style="text-decoration:none;cursor:pointer;">
-      <span class="badge" style="background:rgba(74,222,128,0.12);color:#4ade80;border:1px solid rgba(74,222,128,0.25);">Find a Lender</span>
-    </a>
-    <a onclick="showCharters()" style="text-decoration:none;cursor:pointer;">
-      <span class="badge" style="background:rgba(251,191,36,0.12);color:#fbbf24;border:1px solid rgba(251,191,36,0.25);">New Charters</span>
-    </a>
-    <a onclick="showCompare()" style="text-decoration:none;cursor:pointer;">
-      <span class="badge" style="background:rgba(176,110,243,0.12);color:#b06ef3;border:1px solid rgba(176,110,243,0.25);">Compare</span>
-    </a>
-    <a href="/mcp" style="text-decoration:none;">
-      <span class="badge" style="background:linear-gradient(135deg,rgba(74,222,128,0.15),rgba(77,184,255,0.15));color:#4ade80;border:1px solid rgba(74,222,128,0.35);">MCP <span style="font-size:8px;vertical-align:middle;background:#4ade80;color:#0f1240;padding:1px 4px;border-radius:3px;margin-left:3px;font-weight:700;">NEW</span></span>
-    </a>
-    <a onclick="showMA()" style="text-decoration:none;cursor:pointer;">
-      <span class="badge" style="background:rgba(248,113,113,0.12);color:#f87171;border:1px solid rgba(248,113,113,0.25);">M&amp;A</span>
-    </a>
-    <a onclick="showAbout()" style="text-decoration:none;cursor:pointer;">
-      <span class="badge" style="background:rgba(139,92,246,0.12);color:#c4b5fd;border:1px solid rgba(139,92,246,0.25);">About</span>
-    </a>
+
+  <!-- Desktop nav: persistent search + consolidated dropdowns -->
+  <div class="nav-desktop" style="display:flex;gap:10px;align-items:center;">
+    <div class="header-search">
+      <span class="search-icon">🔍</span>
+      <input id="headerSearchInput" type="text" placeholder="Search banks & CUs…"
+             onkeydown="if(event.key==='Enter') headerSearch('headerSearchInput')" />
+    </div>
+
+    <div class="nav-dropdown" data-dropdown="explore">
+      <button class="nav-dropdown-trigger" onclick="toggleNavDropdown('explore')" aria-expanded="false" aria-haspopup="true">
+        Explore
+        <svg class="chev" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div class="nav-dropdown-menu">
+        <a onclick="showIndustry();closeAllNavDropdowns()"><span class="dot" style="background:#4db8ff;"></span>Industry Analytics</a>
+        <a onclick="showLenders();closeAllNavDropdowns()"><span class="dot" style="background:#4ade80;"></span>Find a Lender</a>
+        <a onclick="showCompare();closeAllNavDropdowns()"><span class="dot" style="background:#b06ef3;"></span>Compare Banks</a>
+        <div class="nav-dropdown-divider"></div>
+        <a href="https://banks.data.fdic.gov/docs/" target="_blank" class="nav-dropdown-external">FDIC Data ↗</a>
+        <a href="https://mapping.ncua.gov/ResearchCreditUnion" target="_blank" class="nav-dropdown-external">NCUA Data ↗</a>
+      </div>
+    </div>
+
+    <div class="nav-dropdown" data-dropdown="activity">
+      <button class="nav-dropdown-trigger" onclick="toggleNavDropdown('activity')" aria-expanded="false" aria-haspopup="true">
+        Activity
+        <svg class="chev" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div class="nav-dropdown-menu">
+        <a onclick="showCharters();closeAllNavDropdowns()"><span class="dot" style="background:#fbbf24;"></span>New Charters</a>
+        <a onclick="showMA();closeAllNavDropdowns()"><span class="dot" style="background:#f87171;"></span>M&amp;A Activity</a>
+      </div>
+    </div>
+
+    <a href="/mcp" class="nav-pill nav-pill-mcp">MCP <span class="new-badge">NEW</span></a>
+    <a onclick="showAbout()" class="nav-pill">About</a>
   </div>
-  <!-- Hamburger button — mobile only -->
-  <button class="nav-hamburger" onclick="toggleMobileNav()" aria-label="Menu">
-    <span></span><span></span><span></span>
-  </button>
+
+  <!-- Mobile: search icon + hamburger -->
+  <div style="display:flex;gap:8px;align-items:center;">
+    <button class="header-search-mobile-btn" onclick="openMobileSearch()" aria-label="Search">🔍</button>
+    <button class="nav-hamburger" onclick="toggleMobileNav()" aria-label="Menu">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
 </header>
 
 <!-- Mobile nav menu -->
@@ -663,6 +719,22 @@
   <a href="https://banks.data.fdic.gov/docs/" target="_blank" class="nav-mobile-external">FDIC Data ↗</a>
   <a href="https://mapping.ncua.gov/ResearchCreditUnion" target="_blank" class="nav-mobile-external">NCUA Data ↗</a>
 </nav>
+
+<!-- Full-screen mobile search overlay -->
+<div class="mobile-search-overlay" id="mobileSearchOverlay">
+  <div class="mobile-search-overlay-header">
+    <span class="mobile-search-overlay-title">Search Vault</span>
+    <button class="mobile-search-close" onclick="closeMobileSearch()" aria-label="Close search">✕</button>
+  </div>
+  <div class="search-row">
+    <div class="search-input-wrap">
+      <input class="search-input" id="mobileSearchInput" type="text" placeholder="Search any bank or credit union…"
+             onkeydown="if(event.key==='Enter') headerSearch('mobileSearchInput')" />
+    </div>
+    <button class="search-btn" onclick="headerSearch('mobileSearchInput')">Search →</button>
+  </div>
+</div>
+
 
 <div class="container">
   
@@ -1575,6 +1647,47 @@ document.addEventListener('click', function(e) {
   }
 });
 
+// Desktop nav dropdowns (Explore / Activity)
+function toggleNavDropdown(name) {
+  const el = document.querySelector('.nav-dropdown[data-dropdown="' + name + '"]');
+  if (!el) return;
+  const isOpen = el.classList.contains('open');
+  closeAllNavDropdowns();
+  if (!isOpen) {
+    el.classList.add('open');
+    el.querySelector('.nav-dropdown-trigger')?.setAttribute('aria-expanded', 'true');
+  }
+}
+function closeAllNavDropdowns() {
+  document.querySelectorAll('.nav-dropdown.open').forEach(function(el) {
+    el.classList.remove('open');
+    el.querySelector('.nav-dropdown-trigger')?.setAttribute('aria-expanded', 'false');
+  });
+}
+// Close dropdown on outside click
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.nav-dropdown')) closeAllNavDropdowns();
+});
+// Close dropdowns + mobile search on Escape
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    closeAllNavDropdowns();
+    closeMobileSearch();
+  }
+});
+
+// Mobile full-screen search overlay
+function openMobileSearch() {
+  closeMobileNav();
+  const overlay = document.getElementById('mobileSearchOverlay');
+  if (!overlay) return;
+  overlay.classList.add('open');
+  setTimeout(function() { document.getElementById('mobileSearchInput')?.focus(); }, 50);
+}
+function closeMobileSearch() {
+  document.getElementById('mobileSearchOverlay')?.classList.remove('open');
+}
+
 function showHome() { state = { view: 'search', query: '', resultFilter: 'all', results: [], loading: false, error: null, detail: null }; render(); }
 // ── URL routing ──────────────────────────────────────────────────────────────
 const PAGE_META = {
@@ -1709,6 +1822,12 @@ function render() {
   else if (state.view === 'compare') { app.innerHTML = renderCompare(); setTimeout(initCompare, 50); }
   else if (state.view === 'industry') { app.innerHTML = renderIndustry(); setTimeout(drawIndustryCharts, 50); }
   bindEvents();
+  // Keep the persistent header search (and mobile overlay) in sync with the active
+  // query, but never overwrite what the user is actively typing into them.
+  ['headerSearchInput', 'mobileSearchInput'].forEach(function(id) {
+    const el = document.getElementById(id);
+    if (el && document.activeElement !== el) el.value = state.query || '';
+  });
   // Draw chart after DOM is updated
   if (state.view === 'detail' && state.detail?.type === 'bank' && state.detail.history) {
     setTimeout(() => {
@@ -2331,8 +2450,7 @@ function bindEvents() {
   });
 }
 
-async function doSearch() {
-  const q = document.getElementById('searchInput')?.value?.trim();
+async function performSearch(q) {
   if (!q) return;
   if (window.plausible) plausible('Search', { props: { query: q, type: 'all' } });
   if (window.gtag) gtag('event', 'search', { search_term: q, institution_type: 'all' });
@@ -2361,6 +2479,22 @@ async function doSearch() {
     state.loading = false;
     render();
   }
+}
+
+async function doSearch() {
+  const q = document.getElementById('searchInput')?.value?.trim();
+  await performSearch(q);
+}
+
+// Used by the persistent desktop header search input and the mobile full-screen
+// search overlay — both call this with their own input element's id.
+async function headerSearch(inputId) {
+  const input = document.getElementById(inputId);
+  const q = input?.value?.trim();
+  if (!q) return;
+  closeMobileSearch();
+  closeAllNavDropdowns();
+  await performSearch(q);
 }
 
 async function loadCUDetail(id, name, cached) {
