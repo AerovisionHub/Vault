@@ -647,6 +647,23 @@
     /* Container max-width fixes for very small phones */
     .inst-meta { font-size: 13px !important; flex-wrap: wrap !important; }
   }
+
+  /* Print — used by Export PDF (window.print()) on the comparison page.
+     Dark glassmorphism doesn't print well and wastes ink, so this flips to a
+     clean light layout showing only the comparison table itself. */
+  @media print {
+    body { background: #fff !important; color: #111 !important; }
+    body::before, body::after { display: none !important; }
+    header, .nav-mobile, .mobile-search-overlay, #siteFooter, .back-btn,
+    .compare-actions, .print-hide { display: none !important; }
+    .container { padding-top: 20px !important; max-width: 100% !important; }
+    .print-header { display: block !important; margin-bottom: 20px; }
+    table { border-collapse: collapse !important; width: 100% !important; }
+    table th, table td { border: 1px solid #ccc !important; color: #111 !important; background: #fff !important; }
+    table thead th { background: #f3f3f3 !important; }
+    a { color: #111 !important; text-decoration: none !important; }
+  }
+  .print-header { display: none; }
 </style>
 
 <header>
@@ -3133,8 +3150,13 @@ async function initAboutMCPStats() {
 // ── Compare page ─────────────────────────────────────────────────────────────
 function renderCompare() {
   const list = state.compareList || [];
+  const printedDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   return `
   <div style="max-width:1100px;margin:0 auto;padding:32px 16px 80px;">
+    <div class="print-header">
+      <div style="font-family:var(--serif,serif);font-size:22px;font-weight:700;margin-bottom:4px;">Vault — Institution Comparison</div>
+      <div style="font-size:11px;color:#666;">Generated ${printedDate} · Data via FDIC BankFind &amp; NCUA public data · vaultbot.ai</div>
+    </div>
     <button class="back-btn" onclick="history.back()">← Back</button>
     <div style="margin-bottom:24px;">
       <h1 style="font-family:var(--serif);font-size:clamp(22px,4vw,32px);letter-spacing:-0.5px;margin-bottom:8px;">Institution Comparison</h1>
@@ -3264,15 +3286,69 @@ async function initCompare() {
     </tr>`;
   });
 
+  // Stash the computed comparison so exportCompareCSV/exportComparePDF can reuse it
+  // without re-fetching — export buttons just read this snapshot.
+  state.compareExport = { data, metrics };
+
   html += `</tbody></table></div>
-    <div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap;align-items:center;">
+    <div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap;align-items:center;" class="compare-actions">
+      <button onclick="exportCompareCSV()" style="padding:7px 16px;background:rgba(77,184,255,0.1);border:1px solid rgba(77,184,255,0.3);border-radius:8px;color:#4db8ff;font-family:var(--mono);font-size:12px;cursor:pointer;">⬇ Export CSV</button>
+      <button onclick="exportComparePDF()" style="padding:7px 16px;background:rgba(176,110,243,0.1);border:1px solid rgba(176,110,243,0.3);border-radius:8px;color:#b06ef3;font-family:var(--mono);font-size:12px;cursor:pointer;">🖨 Export PDF</button>
       <button onclick="state.compareList=[];render()" style="padding:7px 16px;background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.3);border-radius:8px;color:#f87171;font-family:var(--mono);font-size:12px;cursor:pointer;">Clear all</button>
-      <span style="font-family:var(--mono);font-size:11px;color:var(--muted);">Green ▲ = best in category · Click institution name to view full profile</span>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--muted);width:100%;">Green ▲ = best in category · Click institution name to view full profile · PDF export opens your browser's print dialog — choose "Save as PDF"</span>
     </div>`;
   el.innerHTML = html;
 }
 
-// ── Find a Lender page ────────────────────────────────────────────────────────
+// ── Comparison export (CSV + print-to-PDF) ──────────────────────────────────
+function compareEntityName(d) {
+  return d.type === 'bank' ? (d.inst?.NAME || 'Unknown') : (d.raw?.name || 'Unknown');
+}
+
+function csvEscape(val) {
+  const s = String(val ?? '');
+  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+function exportCompareCSV() {
+  const snap = state.compareExport;
+  if (!snap || !snap.data?.length) return;
+  const { data, metrics } = snap;
+
+  const rows = [];
+  rows.push(['Metric', ...data.map(compareEntityName)].map(csvEscape).join(','));
+  metrics.forEach(m => {
+    const vals = data.map(d => m.fmt(m.fn(d)));
+    rows.push([m.label, ...vals].map(csvEscape).join(','));
+  });
+  const csv = rows.join('\r\n');
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `vault-comparison-${stamp}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+
+  if (window.plausible) plausible('Export Comparison', { props: { format: 'csv', count: data.length } });
+  if (window.gtag) gtag('event', 'export_comparison', { format: 'csv', institution_count: data.length });
+}
+
+function exportComparePDF() {
+  const snap = state.compareExport;
+  if (snap?.data?.length) {
+    if (window.plausible) plausible('Export Comparison', { props: { format: 'pdf', count: snap.data.length } });
+    if (window.gtag) gtag('event', 'export_comparison', { format: 'pdf', institution_count: snap.data.length });
+  }
+  window.print();
+}
+
+
 function renderLenders() {
   return `
   <div style="max-width:900px;margin:0 auto;padding:32px 16px 80px;">
@@ -4506,7 +4582,7 @@ function drawIndustryCharts() {
 function renderContactSection() {
   const submitted = sessionStorage.getItem('vaultbot_submitted');
   return `
-    <div style="max-width:900px;margin:0 auto;padding:0 16px;">
+    <div class="print-hide" style="max-width:900px;margin:0 auto;padding:0 16px;">
       <hr class="about-divider">
       <div class="about-lead">
         <h2>Stay in the loop — and tell us what to build.</h2>
