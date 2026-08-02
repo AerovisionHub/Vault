@@ -76,3 +76,6 @@
 
 [functions."mcp"]
   timeout = 26
+
+[functions."leadership"]
+  timeout = 26
