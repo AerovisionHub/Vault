@@ -116,7 +116,7 @@ Include CEO, President, CFO, COO if known. Max 5 people. Only include people you
   const textBlocks = (data.content || []).filter(b => b.type === 'text');
   const text = textBlocks.length ? textBlocks[textBlocks.length - 1].text : '';
   const clean = text.replace(/```json|```/g, '').trim();
-  const debug = { stop_reason: data.stop_reason, block_types: blockTypes, text_block_count: textBlocks.length, last_text_preview: clean.slice(0, 300) };
+  const debug = { stop_reason: data.stop_reason, block_types: blockTypes, text_block_count: textBlocks.length, last_text_preview: clean.slice(0, 2000) };
   if (!clean || clean === '[]') {
     console.log('[vault-leadership] model returned genuinely empty result (', textBlocks.length, 'text block(s) total )');
     return { people: [], debug };
