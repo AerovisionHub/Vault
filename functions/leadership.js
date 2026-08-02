@@ -73,7 +73,7 @@ Return ONLY a JSON array (no markdown, no explanation):
 Include CEO, President, CFO, COO if known. Max 5 people. Only include people you are highly confident about. If uncertain, return [].`;
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 24000);
+  const timer = setTimeout(() => controller.abort(), 25500);
   let resp;
   try {
     resp = await fetch('https://api.anthropic.com/v1/messages', {
@@ -84,7 +84,7 @@ Include CEO, President, CFO, COO if known. Max 5 people. Only include people you
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 600,
         tools: [{ type: 'web_search_20250305', name: 'web_search' }],
         messages: [{ role: 'user', content: prompt }],
@@ -93,7 +93,7 @@ Include CEO, President, CFO, COO if known. Max 5 people. Only include people you
     });
   } catch (e) {
     clearTimeout(timer);
-    if (e.name === 'AbortError') throw new Error('Claude API timeout (>24s).');
+    if (e.name === 'AbortError') throw new Error('Claude API timeout (>25s).');
     throw new Error(`Claude API network error: ${e.message}`);
   }
   clearTimeout(timer);
