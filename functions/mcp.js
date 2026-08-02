@@ -169,6 +169,17 @@ const TOOLS = [
       required: ['cert'],
     },
   },
+  {
+    name: 'get_bank_leadership',
+    description: 'Get executive leadership (CEO, President, CFO, COO) for a specific bank — name, title, and source URL, found via web search of the bank\'s own site and public records. Useful for building sales target lists and prospect research: call search_institutions or get_lender_rankings first to find candidate banks matching your criteria, then call this for each one to build out contacts. Typically responds in 5-15 seconds on first lookup, ~150ms on repeat lookups (cached 30 days — leadership changes far less often than financials). Returns an empty list when no confident public leadership data can be found, which happens more often for very small or thinly-documented institutions.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        cert: { type: 'string', description: 'FDIC certificate number (required). Get from search_institutions.' },
+      },
+      required: ['cert'],
+    },
+  },
 ];
 
 // ── Analytics Layer ──────────────────────────────────────────────────────────
@@ -228,6 +239,141 @@ async function cacheSet(key, data) {
   } catch(e) {
     console.log('[vault-cache] cacheSet error:', e.message);
   }
+}
+
+// ── Leadership cache (separate store, shared with functions/leadership.js) ──
+// Same "vault-leadership-cache" store name as the website's leadership section,
+// so a lookup done via either surface (MCP tool call or website page view) warms
+// the cache for the other — no duplicate paid Claude calls for the same bank.
+const LEADERSHIP_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+async function getLeadershipBlobStore() {
+  try {
+    const { getStore } = await import('@netlify/blobs');
+    return getStore({
+      name: 'vault-leadership-cache',
+      siteID: process.env.NETLIFY_SITE_ID || process.env.SITE_ID,
+      token: process.env.NETLIFY_BLOBS_TOKEN || process.env.NETLIFY_API_TOKEN,
+    });
+  } catch(e) {
+    console.log('[vault-leadership-cache] getBlobStore unavailable:', e.message);
+    return null;
+  }
+}
+
+async function cacheGetLeadership(key) {
+  try {
+    const store = await getLeadershipBlobStore();
+    if (!store) return null;
+    const raw = await store.get(key, { type: 'json' });
+    if (!raw) return null;
+    if (raw._cached_at && (Date.now() - raw._cached_at) > LEADERSHIP_CACHE_TTL_MS) {
+      await store.delete(key).catch(() => {});
+      return null;
+    }
+    return raw;
+  } catch(e) {
+    console.log('[vault-leadership-cache] cacheGetLeadership error:', e.message);
+    return null;
+  }
+}
+
+async function cacheSetLeadership(key, data) {
+  try {
+    const store = await getLeadershipBlobStore();
+    if (!store) return;
+    await store.setJSON(key, { ...data, _cached_at: Date.now() });
+  } catch(e) {
+    console.log('[vault-leadership-cache] cacheSetLeadership error:', e.message);
+  }
+}
+
+async function getBankLeadership(args) {
+  const { cert } = args || {};
+  if (!cert) throw new Error('Required parameter "cert" missing. Get a CERT from search_institutions.');
+
+  const cacheKey = `leadership-${cert}`;
+  const cached = await cacheGetLeadership(cacheKey);
+  if (cached) {
+    return {
+      cert,
+      people: cached.people || [],
+      _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) },
+    };
+  }
+
+  // Need institution name/city/state/website to search for — same fields other tools use
+  const iR = await fetchFDIC(`${FDIC_BASE}/institutions?filters=CERT%3A${cert}&fields=NAME,CITY,STALP,WEBADDR&limit=1`);
+  const inst = iR.data?.[0]?.data;
+  if (!inst) throw new Error(`No institution found for CERT ${cert}.`);
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY not configured on the server.');
+
+  const webAddr = inst.WEBADDR || null;
+  const domainHint = webAddr
+    ? `Focus your search on the bank's own website: ${webAddr.replace(/^https?:\/\//i, '').split('/')[0]}. `
+    : '';
+  const prompt = `You are a financial research assistant. ${domainHint}Find the current executive leadership for the US bank "${inst.NAME}" (FDIC-chartered, headquartered near ${inst.CITY}, ${inst.STALP}).
+
+Important: banks often have a registered/charter address that differs from where their executive team actually operates — company-wide executive leadership (CEO, President, CFO, COO) is exactly what's wanted here, regardless of which specific office or branch address is on file with regulators. Do not discard a bank's real, published leadership team just because it's described as "company-wide" rather than tied to one specific address — company-wide IS the correct scope.
+
+Return ONLY a JSON array (no markdown, no explanation):
+[{"name":"Full Name","title":"Title","source":"URL or public record"}]
+
+Include CEO, President, CFO, COO if known. Max 5 people. Only include people you are highly confident about based on search results. If you found no relevant information at all, return [].`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25500);
+  let resp;
+  try {
+    resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 600,
+        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+        messages: [{ role: 'user', content: prompt }],
+      }),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    clearTimeout(timer);
+    if (e.name === 'AbortError') throw new Error('Claude API timeout (>25s) looking up leadership.');
+    throw new Error(`Claude API network error: ${e.message}`);
+  }
+  clearTimeout(timer);
+
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '');
+    throw new Error(`Claude API returned HTTP ${resp.status}. ${text.slice(0, 200)}`);
+  }
+
+  const data = await resp.json();
+  const textBlocks = (data.content || []).filter(b => b.type === 'text');
+  const text = textBlocks.length ? textBlocks[textBlocks.length - 1].text : '';
+  const clean = text.replace(/```json|```/g, '').trim();
+
+  let people = [];
+  if (clean) {
+    const jsonMatch = clean.match(/\[[\s\S]*\]/);
+    const jsonStr = jsonMatch ? jsonMatch[0] : clean;
+    if (jsonStr !== '[]') {
+      try { people = JSON.parse(jsonStr); } catch (e) { people = []; }
+    }
+  }
+
+  await cacheSetLeadership(cacheKey, { people });
+
+  return {
+    cert,
+    name: inst.NAME,
+    city: inst.CITY,
+    state: inst.STALP,
+    people,
+    _cache: { hit: false, stored_at: new Date().toISOString() },
+  };
 }
 
 function hashIP(ip) {
@@ -921,6 +1067,7 @@ const TOOL_HANDLERS = {
   get_loan_mix: getLoanMix,
   get_brokered_deposits: getBrokeredDeposits,
   get_branch_data: getBranchData,
+  get_bank_leadership: getBankLeadership,
 };
 
 const CORS_HEADERS = {
@@ -937,7 +1084,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.4.0',
+        name: 'vault-mcp', version: '1.5.0',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -984,7 +1131,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.4.0' },
+          serverInfo: { name: 'vault-mcp', version: '1.5.0' },
           capabilities: { tools: {} },
         });
       }
