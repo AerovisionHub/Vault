@@ -2636,33 +2636,19 @@ async function fetchOfficers(cert) {
   } catch(e) { return null; }
 }
 
-async function fetchLeadershipFromClaude(bankName, city, state, webAddr) {
+async function fetchLeadershipFromClaude(cert, bankName, city, state, webAddr) {
   try {
-    const domainHint = webAddr
-      ? `Focus your search on the bank's own website: ${webAddr.replace(/^https?:\/\//i,'').split('/')[0]}. `
-      : '';
-    const prompt = `You are a financial research assistant. ${domainHint}Find the current executive leadership for "${bankName}" in ${city}, ${state} — a US bank.
-
-Return ONLY a JSON array (no markdown, no explanation):
-[{"name":"Full Name","title":"Title","source":"URL or public record"}]
-
-Include CEO, President, CFO, COO if known. Max 5 people. Only include people you are highly confident about. If uncertain, return [].`;
-
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514', max_tokens: 600,
-        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-        messages: [{ role: 'user', content: prompt }]
-      })
+    const params = new URLSearchParams({
+      cert: String(cert || ''),
+      name: bankName || '',
+      city: city || '',
+      state: state || '',
+      webAddr: webAddr || '',
     });
+    const resp = await fetch(`/.netlify/functions/leadership?${params.toString()}`);
     if (!resp.ok) return [];
     const data = await resp.json();
-    const text = data.content?.find(b => b.type === 'text')?.text || '';
-    const clean = text.replace(/```json|```/g, '').trim();
-    if (!clean || clean === '[]') return [];
-    return JSON.parse(clean);
+    return data.people || [];
   } catch(e) { return []; }
 }
 
@@ -2826,6 +2812,7 @@ function renderLeadershipSection(inst, officers, stock) {
   }, 0);
 
   // Leadership section — async Claude AI lookup, setTimeout pattern (safe for innerHTML injection)
+  const bankCert  = inst.CERT;
   const bankName = inst.NAME;
   const bankCity = inst.CITY;
   const bankState = inst.STALP;
@@ -2835,7 +2822,7 @@ function renderLeadershipSection(inst, officers, stock) {
     if (!el) return;
     let people = [];
     try {
-      people = await fetchLeadershipFromClaude(bankName, bankCity, bankState, bankWeb);
+      people = await fetchLeadershipFromClaude(bankCert, bankName, bankCity, bankState, bankWeb);
     } catch(e) {}
 
     // Build website link — always shown
