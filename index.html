@@ -2646,10 +2646,17 @@ async function fetchLeadershipFromClaude(cert, bankName, city, state, webAddr) {
       webAddr: webAddr || '',
     });
     const resp = await fetch(`/.netlify/functions/leadership?${params.toString()}`);
-    if (!resp.ok) return [];
+    if (!resp.ok) {
+      console.warn('[vault-leadership] function returned HTTP', resp.status);
+      return [];
+    }
     const data = await resp.json();
+    if (data.error) console.warn('[vault-leadership] server error:', data.error);
     return data.people || [];
-  } catch(e) { return []; }
+  } catch(e) {
+    console.warn('[vault-leadership] client error:', e.message);
+    return [];
+  }
 }
 
 // ── SEC EDGAR EIN Lookup ──────────────────────────────────────────────────────
