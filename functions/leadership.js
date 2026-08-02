@@ -116,17 +116,28 @@ Include CEO, President, CFO, COO if known. Max 5 people. Only include people you
   const textBlocks = (data.content || []).filter(b => b.type === 'text');
   const text = textBlocks.length ? textBlocks[textBlocks.length - 1].text : '';
   const clean = text.replace(/```json|```/g, '').trim();
-  const debug = { stop_reason: data.stop_reason, block_types: blockTypes, text_block_count: textBlocks.length, last_text_preview: clean.slice(0, 2000) };
-  if (!clean || clean === '[]') {
-    console.log('[vault-leadership] model returned genuinely empty result (', textBlocks.length, 'text block(s) total )');
+  const debug = { stop_reason: data.stop_reason, block_types: blockTypes, text_block_count: textBlocks.length, last_text_preview: clean.slice(0, 400) };
+  if (!clean) {
+    console.log('[vault-leadership] model returned no text content at all');
+    return { people: [], debug };
+  }
+  // The model sometimes adds a preamble sentence before the JSON array despite being
+  // told "no explanation" — extract just the [...] substring rather than requiring the
+  // ENTIRE response to be pure JSON. Confirmed via debug logging: Haiku found real,
+  // correct leadership data (e.g. Wells Fargo's actual CEO/CFO/COO) but wrapped it in
+  // "Based on my search... I found the following:" prose, which failed a strict parse.
+  const jsonMatch = clean.match(/\[[\s\S]*\]/);
+  const jsonStr = jsonMatch ? jsonMatch[0] : clean;
+  if (jsonStr === '[]') {
+    console.log('[vault-leadership] model returned genuinely empty result');
     return { people: [], debug };
   }
   try {
-    const parsed = JSON.parse(clean);
+    const parsed = JSON.parse(jsonStr);
     console.log('[vault-leadership] found', parsed.length, 'people');
     return { people: parsed, debug };
   } catch (e) {
-    console.log('[vault-leadership] failed to parse Claude response as JSON. Block types:', blockTypes.join(','), '| text:', clean.slice(0, 150));
+    console.log('[vault-leadership] failed to parse extracted JSON. Block types:', blockTypes.join(','), '| text:', clean.slice(0, 150));
     return { people: [], debug };
   }
 }
