@@ -104,6 +104,7 @@ Include CEO, President, CFO, COO if known. Max 5 people. Only include people you
   }
 
   const data = await resp.json();
+  const blockTypes = (data.content || []).map(b => b.type);
   // Use the LAST text block, not the first — when the model uses the web_search tool,
   // the response can contain multiple text blocks: preliminary "I'll look into this"
   // text BEFORE the tool runs, then the actual synthesized answer AFTER search results
@@ -113,18 +114,18 @@ Include CEO, President, CFO, COO if known. Max 5 people. Only include people you
   const textBlocks = (data.content || []).filter(b => b.type === 'text');
   const text = textBlocks.length ? textBlocks[textBlocks.length - 1].text : '';
   const clean = text.replace(/```json|```/g, '').trim();
+  const debug = { stop_reason: data.stop_reason, block_types: blockTypes, text_block_count: textBlocks.length, last_text_preview: clean.slice(0, 300) };
   if (!clean || clean === '[]') {
     console.log('[vault-leadership] model returned genuinely empty result (', textBlocks.length, 'text block(s) total )');
-    return [];
+    return { people: [], debug };
   }
   try {
     const parsed = JSON.parse(clean);
     console.log('[vault-leadership] found', parsed.length, 'people');
-    return parsed;
+    return { people: parsed, debug };
   } catch (e) {
-    const blockTypes = (data.content || []).map(b => b.type).join(',');
-    console.log('[vault-leadership] failed to parse Claude response as JSON. Block types:', blockTypes, '| text:', clean.slice(0, 150));
-    return [];
+    console.log('[vault-leadership] failed to parse Claude response as JSON. Block types:', blockTypes.join(','), '| text:', clean.slice(0, 150));
+    return { people: [], debug };
   }
 }
 
@@ -146,6 +147,8 @@ exports.handler = async function (event) {
   const city = (params.city || '').trim();
   const state = (params.state || '').trim();
   const webAddr = (params.webAddr || '').trim() || null;
+  const wantDebug = params.debug === '1';
+  const bypassCache = params.nocache === '1';
 
   if (!cert || !name) {
     return {
@@ -158,25 +161,31 @@ exports.handler = async function (event) {
   const cacheKey = `leadership-${cert}`;
 
   try {
-    const cached = await cacheGet(cacheKey);
-    if (cached) {
-      return {
-        statusCode: 200,
-        headers: corsHeaders,
-        body: JSON.stringify({
-          people: cached.people || [],
-          _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) },
-        }),
-      };
+    if (!bypassCache) {
+      const cached = await cacheGet(cacheKey);
+      if (cached) {
+        return {
+          statusCode: 200,
+          headers: corsHeaders,
+          body: JSON.stringify({
+            people: cached.people || [],
+            _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) },
+          }),
+        };
+      }
     }
 
-    const people = await fetchLeadershipFromClaude(name, city, state, webAddr);
+    const { people, debug } = await fetchLeadershipFromClaude(name, city, state, webAddr);
     await cacheSet(cacheKey, { people });
 
     return {
       statusCode: 200,
       headers: corsHeaders,
-      body: JSON.stringify({ people, _cache: { hit: false, stored_at: new Date().toISOString() } }),
+      body: JSON.stringify({
+        people,
+        _cache: { hit: false, stored_at: new Date().toISOString() },
+        ...(wantDebug ? { _debug: debug } : {}),
+      }),
     };
   } catch (e) {
     console.log('[vault-leadership] error:', e.message);
