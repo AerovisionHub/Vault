@@ -65,12 +65,14 @@ async function fetchLeadershipFromClaude(bankName, city, state, webAddr) {
   const domainHint = webAddr
     ? `Focus your search on the bank's own website: ${webAddr.replace(/^https?:\/\//i, '').split('/')[0]}. `
     : '';
-  const prompt = `You are a financial research assistant. ${domainHint}Find the current executive leadership for "${bankName}" in ${city}, ${state} — a US bank.
+  const prompt = `You are a financial research assistant. ${domainHint}Find the current executive leadership for the US bank "${bankName}" (FDIC-chartered, headquartered near ${city}, ${state}).
+
+Important: banks often have a registered/charter address that differs from where their executive team actually operates — company-wide executive leadership (CEO, President, CFO, COO) is exactly what's wanted here, regardless of which specific office or branch address is on file with regulators. Do not discard a bank's real, published leadership team just because it's described as "company-wide" rather than tied to one specific address — company-wide IS the correct scope.
 
 Return ONLY a JSON array (no markdown, no explanation):
 [{"name":"Full Name","title":"Title","source":"URL or public record"}]
 
-Include CEO, President, CFO, COO if known. Max 5 people. Only include people you are highly confident about. If uncertain, return [].`;
+Include CEO, President, CFO, COO if known. Max 5 people. Only include people you are highly confident about based on search results. If you found no relevant information at all, return [].`;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 25500);
