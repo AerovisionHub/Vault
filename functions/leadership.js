@@ -104,13 +104,26 @@ Include CEO, President, CFO, COO if known. Max 5 people. Only include people you
   }
 
   const data = await resp.json();
-  const text = data.content?.find(b => b.type === 'text')?.text || '';
+  // Use the LAST text block, not the first — when the model uses the web_search tool,
+  // the response can contain multiple text blocks: preliminary "I'll look into this"
+  // text BEFORE the tool runs, then the actual synthesized answer AFTER search results
+  // come back. Grabbing the first block risks parsing pre-search preamble as if it were
+  // the final JSON answer, which fails to parse and silently returns [] — indistinguishable
+  // from a genuine "no confident answer" unless you know to look for this.
+  const textBlocks = (data.content || []).filter(b => b.type === 'text');
+  const text = textBlocks.length ? textBlocks[textBlocks.length - 1].text : '';
   const clean = text.replace(/```json|```/g, '').trim();
-  if (!clean || clean === '[]') return [];
+  if (!clean || clean === '[]') {
+    console.log('[vault-leadership] model returned genuinely empty result (', textBlocks.length, 'text block(s) total )');
+    return [];
+  }
   try {
-    return JSON.parse(clean);
+    const parsed = JSON.parse(clean);
+    console.log('[vault-leadership] found', parsed.length, 'people');
+    return parsed;
   } catch (e) {
-    console.log('[vault-leadership] failed to parse Claude response as JSON:', clean.slice(0, 150));
+    const blockTypes = (data.content || []).map(b => b.type).join(',');
+    console.log('[vault-leadership] failed to parse Claude response as JSON. Block types:', blockTypes, '| text:', clean.slice(0, 150));
     return [];
   }
 }
