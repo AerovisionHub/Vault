@@ -171,7 +171,7 @@ const TOOLS = [
   },
   {
     name: 'get_bank_leadership',
-    description: 'Get executive leadership (CEO, President, CFO, COO) for a specific bank — name, title, source URL, and (when found) a LinkedIn profile URL for each person. Useful for building sales target lists and prospect research: call search_institutions or get_lender_rankings first to find candidate banks matching your criteria, then call this for each one to build out contacts ready for outreach. Typically responds in 8-20 seconds on first lookup, ~150ms on repeat lookups (cached 30 days — leadership changes far less often than financials). LinkedIn URLs are best-effort (found via a company-page search + name match) and may be null even when name/title are found. Returns an empty list when no confident public leadership data can be found, which happens more often for very small or thinly-documented institutions.',
+    description: 'Get key decision-makers for a specific bank, prioritized for B2B sales targeting: CEO/President, CIO/CTO (or closest functional equivalent at smaller banks), and COO — each with name, title, role_category, source URL, and (when found) a LinkedIn profile URL. Useful for building sales target lists: call search_institutions or get_lender_rankings first to find candidate banks matching your criteria, then call this for each one to build out contacts ready for outreach. Typically responds in 8-20 seconds on first lookup, ~150ms on repeat lookups (cached 30 days — leadership changes far less often than financials). LinkedIn URLs are best-effort (found via a company-page search + name match, only attempted for the priority roles above to control cost) and may be null even when name/title are found. Returns an empty list when no confident public leadership data can be found, which happens more often for very small or thinly-documented institutions.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -329,33 +329,60 @@ async function findCompanyLinkedInUrl(bankName, city, state) {
   }
 }
 
-async function lookupLinkedInProfile(companyUrl, fullName) {
+// Real root cause of the earlier 0-for-4 LinkedIn match failures: the /scrape
+// endpoint we were calling is documented as "if the request takes too long
+// [internally, before its own ~1min patience runs out], receive a snapshot_id
+// to poll instead" — meaning slow matches return {snapshot_id, status} rather
+// than actual data. The old code did `Array.isArray(arr) ? arr[0] : null`,
+// which silently returned null for that object shape every single time,
+// indistinguishable from a genuine "no match found." This is the proper
+// trigger + poll + download pattern instead, bounded by whatever time budget
+// the caller has left (deadlineMs), so a still-running job degrades to null
+// rather than either hanging or being misread as "no match."
+async function lookupLinkedInProfile(companyUrl, fullName, deadlineMs) {
   const apiKey = process.env.BRIGHTDATA_API_KEY;
   if (!apiKey || !fullName) return null;
   const parts = fullName.trim().split(/\s+/);
   const first_name = parts[0];
   const last_name = parts.slice(1).join(' ') || parts[0];
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 8000);
+
   try {
-    const resp = await fetch(`https://api.brightdata.com/datasets/v3/scrape?dataset_id=${BRIGHTDATA_LINKEDIN_DATASET_ID}&include_errors=true`, {
+    const triggerResp = await fetch(`https://api.brightdata.com/datasets/v3/trigger?dataset_id=${BRIGHTDATA_LINKEDIN_DATASET_ID}&include_errors=true`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
       body: JSON.stringify({ input: [{ url: companyUrl, first_name, last_name }] }),
-      signal: controller.signal,
     });
-    clearTimeout(timer);
-    if (!resp.ok) return null;
-    const arr = await resp.json();
-    const match = Array.isArray(arr) ? arr[0] : null;
-    return match?.url || null;
+    if (!triggerResp.ok) return null;
+    const { snapshot_id } = await triggerResp.json();
+    if (!snapshot_id) return null;
+
+    // Poll /progress until status is "ready" (or "failed"), checking every
+    // 1.5s, never past the caller's deadline.
+    while (Date.now() < deadlineMs) {
+      await new Promise(r => setTimeout(r, 1500));
+      const progResp = await fetch(`https://api.brightdata.com/datasets/v3/progress/${snapshot_id}`, {
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+      });
+      if (!progResp.ok) return null;
+      const prog = await progResp.json();
+      if (prog.status === 'failed') return null;
+      if (prog.status !== 'ready') continue; // starting or running — keep polling
+
+      const dlResp = await fetch(`https://api.brightdata.com/datasets/v3/snapshot/${snapshot_id}?format=json`, {
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+      });
+      if (!dlResp.ok) return null;
+      const arr = await dlResp.json();
+      const match = Array.isArray(arr) ? arr[0] : null;
+      return match?.url || null;
+    }
+    console.log('[vault-linkedin] ran out of time budget polling for', fullName);
+    return null; // out of time — job may still complete on Bright Data's side, just not in time for us
   } catch (e) {
-    clearTimeout(timer);
     console.log('[vault-linkedin] person lookup failed for', fullName, ':', e.message);
     return null;
   }
 }
-
 
 async function getBankLeadership(args) {
   // Measured from true entry — cache check and FDIC fetch below both consume
@@ -387,14 +414,18 @@ async function getBankLeadership(args) {
   const domainHint = webAddr
     ? `Focus your search on the bank's own website: ${webAddr.replace(/^https?:\/\//i, '').split('/')[0]}. `
     : '';
-  const prompt = `You are a financial research assistant. ${domainHint}Find the current executive leadership for the US bank "${inst.NAME}" (FDIC-chartered, headquartered near ${inst.CITY}, ${inst.STALP}).
+  const prompt = `You are a financial research assistant. ${domainHint}Find the following specific decision-makers at the US bank "${inst.NAME}" (FDIC-chartered, headquartered near ${inst.CITY}, ${inst.STALP}) — in priority order:
 
-Important: banks often have a registered/charter address that differs from where their executive team actually operates — company-wide executive leadership (CEO, President, CFO, COO) is exactly what's wanted here, regardless of which specific office or branch address is on file with regulators. Do not discard a bank's real, published leadership team just because it's described as "company-wide" rather than tied to one specific address — company-wide IS the correct scope.
+1. CEO or President (top executive — may hold either or both titles)
+2. CIO or CTO — the technology/information leader (HIGH priority; this is who evaluates data infrastructure vendors). Community banks often don't use these exact titles — look for the closest functional equivalent, e.g. "SVP of Information Technology," "Chief Digital Officer," "VP of IT," "EVP of Technology," or similar. Use judgment on title wording, not an exact string match.
+3. COO (lower priority — include only if clearly identified, skip if uncertain)
+
+Important: banks often have a registered/charter address that differs from where their executive team actually operates — company-wide executive leadership is exactly what's wanted here, regardless of which specific office is on file with regulators. Do not discard a bank's real, published leadership team just because it's described as "company-wide" rather than tied to one specific address.
 
 Return ONLY a JSON array (no markdown, no explanation):
-[{"name":"Full Name","title":"Title","source":"URL or public record"}]
+[{"name":"Full Name","title":"Their actual title as published","role_category":"ceo|president|cio_cto|coo","source":"URL or public record"}]
 
-Include CEO, President, CFO, COO if known. Max 5 people. Only include people you are highly confident about based on search results. If you found no relevant information at all, return [].`;
+Max 4 people, one per role above. Only include people you are highly confident about based on search results. If you found no relevant information at all, return [].`;
 
   // Track wall-clock time against the ~26s function ceiling. History here:
   // 18s Claude budget caused a real production timeout on "Bank of DeSoto"
@@ -450,34 +481,39 @@ Include CEO, President, CFO, COO if known. Max 5 people. Only include people you
     }
   }
 
-  // Enrich each person with a LinkedIn profile URL, best-effort. Whatever
-  // wall-clock time is left (floor 2s, so it's not worth even trying below
-  // that) gets raced against the per-person lookups as a GROUP — if the
-  // group doesn't finish in time, we return with whatever completed and
-  // null for the rest, rather than extending total time further. This is
-  // deliberately a hard external race, not just each lookup's own internal
-  // timeout, because Claude's own duration is unpredictable and this phase
-  // must never be the reason the whole call fails.
+  // Enrich with a LinkedIn profile URL — but ONLY for people in the priority
+  // role categories (ceo, president, cio_cto, coo). This directly targets
+  // spend: if Claude's prompt slips in an extra person outside those roles,
+  // we don't pay a Bright Data credit (or spend time budget) looking them up.
+  // Non-priority people still get returned with linkedin_url: null rather
+  // than being dropped from the response entirely — Lee still sees who they
+  // are, we just don't spend enrichment budget on them.
+  const PRIORITY_ROLES = new Set(['ceo', 'president', 'cio_cto', 'coo']);
   const elapsedMs = Date.now() - overallStart;
   const remainingBudgetMs = Math.max(1500, 23000 - elapsedMs);
+  const linkedinDeadline = Date.now() + remainingBudgetMs;
 
   if (companyLinkedInUrl && people.length) {
+    const priorityIdx = people
+      .map((p, i) => ({ p, i }))
+      .filter(({ p }) => PRIORITY_ROLES.has(p.role_category));
+
     const lookupPromise = Promise.allSettled(
-      people.map(p => lookupLinkedInProfile(companyLinkedInUrl, p.name))
+      priorityIdx.map(({ p }) => lookupLinkedInProfile(companyLinkedInUrl, p.name, linkedinDeadline))
     );
     const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), remainingBudgetMs));
     const linkedinResults = await Promise.race([lookupPromise, timeoutPromise]);
 
-    if (linkedinResults === null) {
-      // Ran out of budget — return names/titles with no LinkedIn enrichment
-      // rather than waiting further or failing the whole call.
-      console.log('[vault-linkedin] enrichment phase skipped — out of time budget (', remainingBudgetMs, 'ms remaining)');
-      people = people.map(p => ({ ...p, linkedin_url: null }));
+    // Start everyone at null, then fill in results for the priority subset
+    // that was actually looked up (whether the race finished or not — if it
+    // timed out, linkedinResults is null and everyone correctly stays null).
+    people = people.map(p => ({ ...p, linkedin_url: null }));
+    if (linkedinResults !== null) {
+      priorityIdx.forEach(({ i }, j) => {
+        people[i].linkedin_url = linkedinResults[j].status === 'fulfilled' ? linkedinResults[j].value : null;
+      });
     } else {
-      people = people.map((p, i) => ({
-        ...p,
-        linkedin_url: linkedinResults[i].status === 'fulfilled' ? linkedinResults[i].value : null,
-      }));
+      console.log('[vault-linkedin] enrichment phase skipped — out of time budget (', remainingBudgetMs, 'ms remaining)');
     }
   } else {
     people = people.map(p => ({ ...p, linkedin_url: null }));
@@ -1205,7 +1241,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.6.2',
+        name: 'vault-mcp', version: '1.7.0',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -1252,7 +1288,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.6.2' },
+          serverInfo: { name: 'vault-mcp', version: '1.7.0' },
           capabilities: { tools: {} },
         });
       }

@@ -2854,11 +2854,12 @@ function renderLeadershipSection(inst, officers, stock) {
         <div style="padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
           <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px;">${p.name}</div>
           <div style="font-family:var(--mono);font-size:11px;color:var(--accent);margin-bottom:4px;">${p.title}</div>
+          ${p.linkedin_url ? `<a href="${p.linkedin_url}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:10px;color:#0a66c2;text-decoration:none;margin-bottom:4px;">🔗 LinkedIn ↗</a><br/>` : ''}
           ${p.source && p.source !== 'public record' ? `<div style="font-family:var(--mono);font-size:9px;color:var(--muted);word-break:break-all;">source: ${p.source.replace(/^https?:\/\//,'').split('/')[0]}</div>` : ''}
         </div>`).join('')}
       </div>
       <div style="margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--muted);line-height:1.6;">
-        ⚠ Sourced by Claude AI via web search${bankWeb ? ` (scoped to ${bankWeb.replace(/^https?:\/\//i,'').split('/')[0]})` : ''}. May be incomplete — verify below.
+        ⚠ Sourced by Claude AI via web search${bankWeb ? ` (scoped to ${bankWeb.replace(/^https?:\/\//i,'').split('/')[0]})` : ''}. LinkedIn matches via Bright Data, best-effort. May be incomplete — verify below.
       </div>
       ${webLinkHtml}`;
   }, 0);
