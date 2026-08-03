@@ -171,7 +171,7 @@ const TOOLS = [
   },
   {
     name: 'get_bank_leadership',
-    description: 'Get executive leadership (CEO, President, CFO, COO) for a specific bank — name, title, and source URL, found via web search of the bank\'s own site and public records. Useful for building sales target lists and prospect research: call search_institutions or get_lender_rankings first to find candidate banks matching your criteria, then call this for each one to build out contacts. Typically responds in 5-15 seconds on first lookup, ~150ms on repeat lookups (cached 30 days — leadership changes far less often than financials). Returns an empty list when no confident public leadership data can be found, which happens more often for very small or thinly-documented institutions.',
+    description: 'Get executive leadership (CEO, President, CFO, COO) for a specific bank — name, title, source URL, and (when found) a LinkedIn profile URL for each person. Useful for building sales target lists and prospect research: call search_institutions or get_lender_rankings first to find candidate banks matching your criteria, then call this for each one to build out contacts ready for outreach. Typically responds in 8-20 seconds on first lookup, ~150ms on repeat lookups (cached 30 days — leadership changes far less often than financials). LinkedIn URLs are best-effort (found via a company-page search + name match) and may be null even when name/title are found. Returns an empty list when no confident public leadership data can be found, which happens more often for very small or thinly-documented institutions.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -288,6 +288,75 @@ async function cacheSetLeadership(key, data) {
   }
 }
 
+// ── LinkedIn enrichment (Bright Data) ────────────────────────────────────────
+// Two-step: (1) SERP search finds the bank's own LinkedIn company page (bank
+// LinkedIn URLs don't follow a guessable pattern), (2) Bright Data's people-
+// discovery dataset matches a specific exec by name, scoped to that company.
+// Both steps are best-effort — if either fails, get_bank_leadership still
+// returns names/titles without linkedin_url rather than failing the whole call.
+const BRIGHTDATA_SERP_ZONE = 'serp_api1vault_serp';
+const BRIGHTDATA_LINKEDIN_DATASET_ID = 'gd_m8d03he47z8nwb5xc';
+
+async function findCompanyLinkedInUrl(bankName, city, state) {
+  const apiKey = process.env.BRIGHTDATA_API_KEY;
+  if (!apiKey) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const q = `"${bankName}" ${city} ${state} site:linkedin.com/company`;
+    const resp = await fetch('https://api.brightdata.com/request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        zone: BRIGHTDATA_SERP_ZONE,
+        url: `https://www.google.com/search?q=${encodeURIComponent(q)}`,
+        format: 'json',
+        data_format: 'parsed_light',
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (!resp.ok) return null;
+    const j = await resp.json();
+    const parsed = typeof j.body === 'string' ? JSON.parse(j.body) : j;
+    const organic = parsed.organic || parsed.organic_results || [];
+    const hit = organic.find(o => (o.link || '').includes('linkedin.com/company/'));
+    return hit ? hit.link : null;
+  } catch (e) {
+    clearTimeout(timer);
+    console.log('[vault-linkedin] company URL search failed:', e.message);
+    return null;
+  }
+}
+
+async function lookupLinkedInProfile(companyUrl, fullName) {
+  const apiKey = process.env.BRIGHTDATA_API_KEY;
+  if (!apiKey || !fullName) return null;
+  const parts = fullName.trim().split(/\s+/);
+  const first_name = parts[0];
+  const last_name = parts.slice(1).join(' ') || parts[0];
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const resp = await fetch(`https://api.brightdata.com/datasets/v3/scrape?dataset_id=${BRIGHTDATA_LINKEDIN_DATASET_ID}&include_errors=true`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({ input: [{ url: companyUrl, first_name, last_name }] }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (!resp.ok) return null;
+    const arr = await resp.json();
+    const match = Array.isArray(arr) ? arr[0] : null;
+    return match?.url || null;
+  } catch (e) {
+    clearTimeout(timer);
+    console.log('[vault-linkedin] person lookup failed for', fullName, ':', e.message);
+    return null;
+  }
+}
+
+
 async function getBankLeadership(args) {
   const { cert } = args || {};
   if (!cert) throw new Error('Required parameter "cert" missing. Get a CERT from search_institutions.');
@@ -323,28 +392,38 @@ Return ONLY a JSON array (no markdown, no explanation):
 
 Include CEO, President, CFO, COO if known. Max 5 people. Only include people you are highly confident about based on search results. If you found no relevant information at all, return [].`;
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 25500);
-  let resp;
-  try {
-    resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 600,
-        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-        messages: [{ role: 'user', content: prompt }],
-      }),
-      signal: controller.signal,
-    });
-  } catch (e) {
-    clearTimeout(timer);
-    if (e.name === 'AbortError') throw new Error('Claude API timeout (>25s) looking up leadership.');
+  // Run the Claude name/title lookup and the Bright Data company-LinkedIn-URL
+  // search in PARALLEL — they're independent (the company search only needs
+  // name/city/state, not Claude's output), and stacking them sequentially would
+  // risk exceeding the 26s function timeout ceiling. Claude gets an 18s budget
+  // (tightened from a standalone 25.5s) so there's still room left for the
+  // per-person LinkedIn lookups that depend on Claude's result.
+  const claudeController = new AbortController();
+  const claudeTimer = setTimeout(() => claudeController.abort(), 18000);
+
+  const claudePromise = fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 600,
+      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+      messages: [{ role: 'user', content: prompt }],
+    }),
+    signal: claudeController.signal,
+  }).finally(() => clearTimeout(claudeTimer));
+
+  const [claudeSettled, companyLinkedInUrl] = await Promise.all([
+    claudePromise.then(r => ({ ok: true, resp: r })).catch(e => ({ ok: false, error: e })),
+    findCompanyLinkedInUrl(inst.NAME, inst.CITY, inst.STALP),
+  ]);
+
+  if (!claudeSettled.ok) {
+    const e = claudeSettled.error;
+    if (e.name === 'AbortError') throw new Error('Claude API timeout (>18s) looking up leadership.');
     throw new Error(`Claude API network error: ${e.message}`);
   }
-  clearTimeout(timer);
-
+  const resp = claudeSettled.resp;
   if (!resp.ok) {
     const text = await resp.text().catch(() => '');
     throw new Error(`Claude API returned HTTP ${resp.status}. ${text.slice(0, 200)}`);
@@ -364,6 +443,21 @@ Include CEO, President, CFO, COO if known. Max 5 people. Only include people you
     }
   }
 
+  // Enrich each person with a LinkedIn profile URL, best-effort. Runs in
+  // parallel across people; a failure on any one person doesn't affect the
+  // others or block returning the core name/title data.
+  if (companyLinkedInUrl && people.length) {
+    const linkedinResults = await Promise.allSettled(
+      people.map(p => lookupLinkedInProfile(companyLinkedInUrl, p.name))
+    );
+    people = people.map((p, i) => ({
+      ...p,
+      linkedin_url: linkedinResults[i].status === 'fulfilled' ? linkedinResults[i].value : null,
+    }));
+  } else {
+    people = people.map(p => ({ ...p, linkedin_url: null }));
+  }
+
   await cacheSetLeadership(cacheKey, { people });
 
   return {
@@ -371,9 +465,11 @@ Include CEO, President, CFO, COO if known. Max 5 people. Only include people you
     name: inst.NAME,
     city: inst.CITY,
     state: inst.STALP,
+    company_linkedin_url: companyLinkedInUrl,
     people,
     _cache: { hit: false, stored_at: new Date().toISOString() },
   };
+
 }
 
 function hashIP(ip) {
@@ -1084,7 +1180,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.5.0',
+        name: 'vault-mcp', version: '1.6.0',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -1131,7 +1227,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.5.0' },
+          serverInfo: { name: 'vault-mcp', version: '1.6.0' },
           capabilities: { tools: {} },
         });
       }
