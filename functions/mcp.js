@@ -396,16 +396,17 @@ Return ONLY a JSON array (no markdown, no explanation):
 
 Include CEO, President, CFO, COO if known. Max 5 people. Only include people you are highly confident about based on search results. If you found no relevant information at all, return [].`;
 
-  // Run the Claude name/title lookup and the Bright Data company-LinkedIn-URL
-  // Track wall-clock time against the ~26s function ceiling. Claude gets a
-  // reliable 22s budget (bumped back up from 18s after a real timeout on
-  // "Bank of DeSoto" showed 18s wasn't enough — the same class of variability
-  // we saw on the standalone leadership lookup before). The LinkedIn phase
-  // then gets whatever's left, hard-capped by an overall race rather than a
-  // per-call timeout, so a slow LinkedIn lookup degrades to nulls instead of
-  // ever risking the names/titles Claude already found.
+  // Track wall-clock time against the ~26s function ceiling. History here:
+  // 18s Claude budget caused a real production timeout on "Bank of DeSoto"
+  // (18s wasn't enough). Bumped to 22s — that fixed the timeout, but the
+  // same bank then completed at 26.3s internally, dangerously close to
+  // Netlify's actual platform ceiling (not just our own accounting). Settled
+  // on 19s for Claude as the safer middle ground, with the LinkedIn phase
+  // hard-capped by an overall time-budget race (not a per-call timeout) so a
+  // slow LinkedIn lookup degrades to nulls instead of ever risking the
+  // names/titles Claude already found, or the 26s ceiling itself.
   const claudeController = new AbortController();
-  const claudeTimer = setTimeout(() => claudeController.abort(), 22000);
+  const claudeTimer = setTimeout(() => claudeController.abort(), 19000);
 
   const claudePromise = fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -426,7 +427,7 @@ Include CEO, President, CFO, COO if known. Max 5 people. Only include people you
 
   if (!claudeSettled.ok) {
     const e = claudeSettled.error;
-    if (e.name === 'AbortError') throw new Error('Claude API timeout (>22s) looking up leadership.');
+    if (e.name === 'AbortError') throw new Error('Claude API timeout (>19s) looking up leadership.');
     throw new Error(`Claude API network error: ${e.message}`);
   }
   const resp = claudeSettled.resp;
@@ -458,7 +459,7 @@ Include CEO, President, CFO, COO if known. Max 5 people. Only include people you
   // timeout, because Claude's own duration is unpredictable and this phase
   // must never be the reason the whole call fails.
   const elapsedMs = Date.now() - overallStart;
-  const remainingBudgetMs = Math.max(2000, 24500 - elapsedMs);
+  const remainingBudgetMs = Math.max(1500, 23000 - elapsedMs);
 
   if (companyLinkedInUrl && people.length) {
     const lookupPromise = Promise.allSettled(
@@ -1204,7 +1205,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.6.1',
+        name: 'vault-mcp', version: '1.6.2',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -1251,7 +1252,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.6.1' },
+          serverInfo: { name: 'vault-mcp', version: '1.6.2' },
           capabilities: { tools: {} },
         });
       }
