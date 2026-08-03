@@ -358,6 +358,10 @@ async function lookupLinkedInProfile(companyUrl, fullName) {
 
 
 async function getBankLeadership(args) {
+  // Measured from true entry — cache check and FDIC fetch below both consume
+  // real wall-clock time against the ~26s function ceiling, and the LinkedIn
+  // enrichment budget later needs to account for that, not just its own slice.
+  const overallStart = Date.now();
   const { cert } = args || {};
   if (!cert) throw new Error('Required parameter "cert" missing. Get a CERT from search_institutions.');
 
@@ -393,13 +397,15 @@ Return ONLY a JSON array (no markdown, no explanation):
 Include CEO, President, CFO, COO if known. Max 5 people. Only include people you are highly confident about based on search results. If you found no relevant information at all, return [].`;
 
   // Run the Claude name/title lookup and the Bright Data company-LinkedIn-URL
-  // search in PARALLEL — they're independent (the company search only needs
-  // name/city/state, not Claude's output), and stacking them sequentially would
-  // risk exceeding the 26s function timeout ceiling. Claude gets an 18s budget
-  // (tightened from a standalone 25.5s) so there's still room left for the
-  // per-person LinkedIn lookups that depend on Claude's result.
+  // Track wall-clock time against the ~26s function ceiling. Claude gets a
+  // reliable 22s budget (bumped back up from 18s after a real timeout on
+  // "Bank of DeSoto" showed 18s wasn't enough — the same class of variability
+  // we saw on the standalone leadership lookup before). The LinkedIn phase
+  // then gets whatever's left, hard-capped by an overall race rather than a
+  // per-call timeout, so a slow LinkedIn lookup degrades to nulls instead of
+  // ever risking the names/titles Claude already found.
   const claudeController = new AbortController();
-  const claudeTimer = setTimeout(() => claudeController.abort(), 18000);
+  const claudeTimer = setTimeout(() => claudeController.abort(), 22000);
 
   const claudePromise = fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -420,7 +426,7 @@ Include CEO, President, CFO, COO if known. Max 5 people. Only include people you
 
   if (!claudeSettled.ok) {
     const e = claudeSettled.error;
-    if (e.name === 'AbortError') throw new Error('Claude API timeout (>18s) looking up leadership.');
+    if (e.name === 'AbortError') throw new Error('Claude API timeout (>22s) looking up leadership.');
     throw new Error(`Claude API network error: ${e.message}`);
   }
   const resp = claudeSettled.resp;
@@ -443,17 +449,35 @@ Include CEO, President, CFO, COO if known. Max 5 people. Only include people you
     }
   }
 
-  // Enrich each person with a LinkedIn profile URL, best-effort. Runs in
-  // parallel across people; a failure on any one person doesn't affect the
-  // others or block returning the core name/title data.
+  // Enrich each person with a LinkedIn profile URL, best-effort. Whatever
+  // wall-clock time is left (floor 2s, so it's not worth even trying below
+  // that) gets raced against the per-person lookups as a GROUP — if the
+  // group doesn't finish in time, we return with whatever completed and
+  // null for the rest, rather than extending total time further. This is
+  // deliberately a hard external race, not just each lookup's own internal
+  // timeout, because Claude's own duration is unpredictable and this phase
+  // must never be the reason the whole call fails.
+  const elapsedMs = Date.now() - overallStart;
+  const remainingBudgetMs = Math.max(2000, 24500 - elapsedMs);
+
   if (companyLinkedInUrl && people.length) {
-    const linkedinResults = await Promise.allSettled(
+    const lookupPromise = Promise.allSettled(
       people.map(p => lookupLinkedInProfile(companyLinkedInUrl, p.name))
     );
-    people = people.map((p, i) => ({
-      ...p,
-      linkedin_url: linkedinResults[i].status === 'fulfilled' ? linkedinResults[i].value : null,
-    }));
+    const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), remainingBudgetMs));
+    const linkedinResults = await Promise.race([lookupPromise, timeoutPromise]);
+
+    if (linkedinResults === null) {
+      // Ran out of budget — return names/titles with no LinkedIn enrichment
+      // rather than waiting further or failing the whole call.
+      console.log('[vault-linkedin] enrichment phase skipped — out of time budget (', remainingBudgetMs, 'ms remaining)');
+      people = people.map(p => ({ ...p, linkedin_url: null }));
+    } else {
+      people = people.map((p, i) => ({
+        ...p,
+        linkedin_url: linkedinResults[i].status === 'fulfilled' ? linkedinResults[i].value : null,
+      }));
+    }
   } else {
     people = people.map(p => ({ ...p, linkedin_url: null }));
   }
@@ -1180,7 +1204,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.6.0',
+        name: 'vault-mcp', version: '1.6.1',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -1227,7 +1251,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.6.0' },
+          serverInfo: { name: 'vault-mcp', version: '1.6.1' },
           capabilities: { tools: {} },
         });
       }
