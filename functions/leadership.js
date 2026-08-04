@@ -439,7 +439,7 @@ exports.handler = async function (event) {
         const verified = experienceMatchesCompany(match.experience, pending?.company_linkedin_url);
         if (!verified) {
           console.log('[vault-linkedin] REJECTED likely false match:', match.name, '| experience:', match.experience, '| expected company:', pending?.company_linkedin_url);
-          return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: 'not_found', rejected_reason: 'experience did not mention target company', _debug_rejected_match: match }) };
+          return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: 'not_found', rejected_reason: 'experience did not mention target company' }) };
         }
         // Write back into the shared leadership cache — same mechanism as the
         // MCP side, so this bank's cache entry is permanently updated for
