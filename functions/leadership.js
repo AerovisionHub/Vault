@@ -415,7 +415,7 @@ exports.handler = async function (event) {
             }
           }
         } catch (e) { /* non-fatal */ }
-        return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: 'ready', linkedin_url: match.url }) };
+        return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: 'ready', linkedin_url: match.url, _debug_raw_match: params.debug === '1' ? match : undefined }) };
       }
       return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: 'not_found' }) };
     } catch (e) {
