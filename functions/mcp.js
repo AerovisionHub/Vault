@@ -324,11 +324,19 @@ const BRIGHTDATA_LINKEDIN_DATASET_ID = 'gd_m8d03he47z8nwb5xc';
 async function findCompanyLinkedInUrl(bankName, city, state) {
   const apiKey = process.env.BRIGHTDATA_API_KEY;
   if (!apiKey) return null;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 8000);
-  try {
-    const q = `"${bankName}" ${city} ${state} site:linkedin.com/company`;
-    const doSerpCall = async () => {
+  const q = `"${bankName}" ${city} ${state} site:linkedin.com/company`;
+
+  // Each attempt gets its OWN fresh AbortController + timeout. A single
+  // shared 8s timer covering two sequential calls + a delay between them
+  // was a real bug: it aborted the retry attempt mid-flight whenever the
+  // first call plus the delay already ate into most of the 8s, which is
+  // easy to hit with real network latency. Found by direct comparison —
+  // a manual call to Bright Data succeeded cleanly while this function
+  // still returned null for the identical query.
+  const doSerpCall = async () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
       const resp = await fetch('https://api.brightdata.com/request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
@@ -340,6 +348,7 @@ async function findCompanyLinkedInUrl(bankName, city, state) {
         }),
         signal: controller.signal,
       });
+      clearTimeout(timer);
       if (!resp.ok) return { ok: false, reason: `HTTP ${resp.status}` };
       const j = await resp.json();
       // Bright Data returns a structured error even on 200 (e.g. Google served a
@@ -356,25 +365,23 @@ async function findCompanyLinkedInUrl(bankName, city, state) {
       const organic = parsed.organic || parsed.organic_results || [];
       const hit = organic.find(o => (o.link || '').includes('linkedin.com/company/'));
       return { ok: true, url: hit ? hit.link : null };
-    };
+    } catch (e) {
+      clearTimeout(timer);
+      return { ok: false, reason: e.name === 'AbortError' ? 'timeout (>10s)' : e.message };
+    }
+  };
 
-    let result = await doSerpCall();
-    if (!result.ok) {
-      console.log('[vault-linkedin] SERP attempt 1 failed:', result.reason, '- retrying once');
-      await new Promise(r => setTimeout(r, 1500));
-      result = await doSerpCall();
-    }
-    clearTimeout(timer);
-    if (!result.ok) {
-      console.log('[vault-linkedin] SERP attempt 2 also failed:', result.reason, '- giving up for this lookup');
-      return null;
-    }
-    return result.url;
-  } catch (e) {
-    clearTimeout(timer);
-    console.log('[vault-linkedin] company URL search failed:', e.message);
+  let result = await doSerpCall();
+  if (!result.ok) {
+    console.log('[vault-linkedin] SERP attempt 1 failed:', result.reason, '- retrying once');
+    await new Promise(r => setTimeout(r, 1500));
+    result = await doSerpCall();
+  }
+  if (!result.ok) {
+    console.log('[vault-linkedin] SERP attempt 2 also failed:', result.reason, '- giving up for this lookup');
     return null;
   }
+  return result.url;
 }
 
 // Real root cause of the earlier 0-for-4 LinkedIn match failures: the /scrape
@@ -1389,7 +1396,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.9.1',
+        name: 'vault-mcp', version: '1.9.2',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -1436,7 +1443,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.9.1' },
+          serverInfo: { name: 'vault-mcp', version: '1.9.2' },
           capabilities: { tools: {} },
         });
       }
