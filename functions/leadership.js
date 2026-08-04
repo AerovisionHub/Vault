@@ -84,7 +84,7 @@ async function findCompanyLinkedInUrl(bankName, city, state, debugSink) {
   // still returned null for the identical query.
   const doSerpCall = async () => {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 14000);
+    const timer = setTimeout(() => controller.abort(), 22000);
     try {
       const resp = await fetch('https://api.brightdata.com/request', {
         method: 'POST',
@@ -116,7 +116,7 @@ async function findCompanyLinkedInUrl(bankName, city, state, debugSink) {
       return { ok: true, url: hit ? hit.link : null };
     } catch (e) {
       clearTimeout(timer);
-      return { ok: false, reason: e.name === 'AbortError' ? 'timeout (>14s)' : e.message };
+      return { ok: false, reason: e.name === 'AbortError' ? 'timeout (>22s)' : e.message };
     }
   };
 
