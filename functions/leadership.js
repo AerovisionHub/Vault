@@ -70,7 +70,7 @@ async function cacheSet(key, data) {
 // URLs don't follow a guessable pattern, so this has to be a search, not a
 // direct lookup. Best-effort: returns null on any failure rather than
 // throwing, since the core name/title data shouldn't depend on this succeeding.
-async function findCompanyLinkedInUrl(bankName, city, state) {
+async function findCompanyLinkedInUrl(bankName, city, state, debugSink) {
   const apiKey = process.env.BRIGHTDATA_API_KEY;
   if (!apiKey) return null;
   const q = `"${bankName}" ${city} ${state} site:linkedin.com/company`;
@@ -123,13 +123,16 @@ async function findCompanyLinkedInUrl(bankName, city, state) {
   let result = await doSerpCall();
   if (!result.ok) {
     console.log('[vault-linkedin] SERP attempt 1 failed:', result.reason, '- retrying once');
+    if (debugSink) debugSink.attempt1 = result.reason;
     await new Promise(r => setTimeout(r, 1500));
     result = await doSerpCall();
   }
   if (!result.ok) {
     console.log('[vault-linkedin] SERP attempt 2 also failed:', result.reason, '- giving up for this lookup');
+    if (debugSink) debugSink.attempt2 = result.reason;
     return null;
   }
+  if (debugSink) debugSink.success = true;
   return result.url;
 }
 
@@ -226,9 +229,10 @@ Max 4 people, one per role above. Only include people you are highly confident a
     signal: claudeController.signal,
   }).finally(() => clearTimeout(claudeTimer));
 
+  const serpDebug = {};
   const [claudeSettled, companyLinkedInUrl] = await Promise.all([
     claudePromise.then(r => ({ ok: true, resp: r })).catch(e => ({ ok: false, error: e })),
-    findCompanyLinkedInUrl(bankName, city, state),
+    findCompanyLinkedInUrl(bankName, city, state, serpDebug),
   ]);
 
   if (!claudeSettled.ok) {
@@ -253,7 +257,7 @@ Max 4 people, one per role above. Only include people you are highly confident a
   const textBlocks = (data.content || []).filter(b => b.type === 'text');
   const text = textBlocks.length ? textBlocks[textBlocks.length - 1].text : '';
   const clean = text.replace(/```json|```/g, '').trim();
-  const debug = { stop_reason: data.stop_reason, block_types: blockTypes, text_block_count: textBlocks.length, last_text_preview: clean.slice(0, 400) };
+  const debug = { stop_reason: data.stop_reason, block_types: blockTypes, text_block_count: textBlocks.length, last_text_preview: clean.slice(0, 400), serp_debug: serpDebug };
 
   let people = [];
   if (clean) {
