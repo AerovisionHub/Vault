@@ -483,11 +483,28 @@ function experienceMatchesCompany(experience, companyLinkedInUrl) {
   if (!companyLinkedInUrl) return true; // nothing to verify against — allow through
   const slug = companyLinkedInUrl.split('/company/')[1]?.split('/')[0] || '';
   const stopWords = new Set(['the','bank','of','na','national','association','inc','corp','corporation','company','llc','group','financial','trust','and','co','bancorp','bankshares']);
-  const distinctiveWords = slug.replace(/-/g, ' ').toLowerCase().split(/\s+/).filter(w => w.length > 2 && !stopWords.has(w));
-  if (!distinctiveWords.length) return true; // nothing distinctive to check — allow through rather than always-reject
+
+  // Two representations of the slug, since LinkedIn company slugs are
+  // inconsistent about hyphenation — some are "the-bank-of-oak-ridge" (real
+  // word boundaries), others are "sonatabank" (no hyphen at all, words run
+  // together). Splitting only on hyphens misses the second case entirely:
+  // "sonatabank" never matches "Sonata Bank" (with a space) in the experience
+  // field. Found via a real false-negative — Wendell Bontrager's actual
+  // experience said "Sonata Bank, +6 more" and was wrongly rejected because
+  // the un-hyphenated slug produced one token, "sonatabank", that doesn't
+  // literally appear in text that has a space in it.
+  const hyphenWords = slug.replace(/-/g, ' ').toLowerCase().split(/\s+/).filter(w => w.length > 2 && !stopWords.has(w));
+  const concatenatedSlug = slug.replace(/-/g, '').toLowerCase();
+
+  if (!hyphenWords.length && concatenatedSlug.length <= 3) return true; // nothing distinctive to check — allow through
   if (!experience) return false; // Bright Data gave us nothing to verify with — conservative reject
+
   const expLower = experience.toLowerCase();
-  return distinctiveWords.some(w => expLower.includes(w));
+  const expNoSpaces = expLower.replace(/[\s,]+/g, ''); // strip spaces/commas so "Sonata Bank" -> "sonatabank"
+
+  const hyphenMatch = hyphenWords.some(w => expLower.includes(w));
+  const concatMatch = concatenatedSlug.length > 3 && expNoSpaces.includes(concatenatedSlug);
+  return hyphenMatch || concatMatch;
 }
 
 async function triggerLinkedinMatch(args) {
@@ -1440,7 +1457,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.10.1',
+        name: 'vault-mcp', version: '1.10.2',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -1487,7 +1504,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.10.1' },
+          serverInfo: { name: 'vault-mcp', version: '1.10.2' },
           capabilities: { tools: {} },
         });
       }

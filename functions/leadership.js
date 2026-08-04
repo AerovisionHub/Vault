@@ -177,11 +177,21 @@ function experienceMatchesCompany(experience, companyLinkedInUrl) {
   if (!companyLinkedInUrl) return true;
   const slug = companyLinkedInUrl.split('/company/')[1]?.split('/')[0] || '';
   const stopWords = new Set(['the','bank','of','na','national','association','inc','corp','corporation','company','llc','group','financial','trust','and','co','bancorp','bankshares']);
-  const distinctiveWords = slug.replace(/-/g, ' ').toLowerCase().split(/\s+/).filter(w => w.length > 2 && !stopWords.has(w));
-  if (!distinctiveWords.length) return true;
+  // Two representations of the slug — LinkedIn slugs are inconsistent about
+  // hyphenation ("the-bank-of-oak-ridge" vs "sonatabank" with no hyphen at
+  // all). Splitting only on hyphens misses the second case: "sonatabank"
+  // never matches "Sonata Bank" (with a space) in the experience field. Found
+  // via a real false-negative — Wendell Bontrager's real experience said
+  // "Sonata Bank, +6 more" and was wrongly rejected before this fix.
+  const hyphenWords = slug.replace(/-/g, ' ').toLowerCase().split(/\s+/).filter(w => w.length > 2 && !stopWords.has(w));
+  const concatenatedSlug = slug.replace(/-/g, '').toLowerCase();
+  if (!hyphenWords.length && concatenatedSlug.length <= 3) return true;
   if (!experience) return false;
   const expLower = experience.toLowerCase();
-  return distinctiveWords.some(w => expLower.includes(w));
+  const expNoSpaces = expLower.replace(/[\s,]+/g, '');
+  const hyphenMatch = hyphenWords.some(w => expLower.includes(w));
+  const concatMatch = concatenatedSlug.length > 3 && expNoSpaces.includes(concatenatedSlug);
+  return hyphenMatch || concatMatch;
 }
 
 async function lookupLinkedInProfile(companyUrl, fullName, deadlineMs) {
