@@ -84,7 +84,7 @@ async function findCompanyLinkedInUrl(bankName, city, state, debugSink) {
   // still returned null for the identical query.
   const doSerpCall = async () => {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10000);
+    const timer = setTimeout(() => controller.abort(), 14000);
     try {
       const resp = await fetch('https://api.brightdata.com/request', {
         method: 'POST',
@@ -116,20 +116,28 @@ async function findCompanyLinkedInUrl(bankName, city, state, debugSink) {
       return { ok: true, url: hit ? hit.link : null };
     } catch (e) {
       clearTimeout(timer);
-      return { ok: false, reason: e.name === 'AbortError' ? 'timeout (>10s)' : e.message };
+      return { ok: false, reason: e.name === 'AbortError' ? 'timeout (>14s)' : e.message };
     }
   };
 
   let result = await doSerpCall();
   if (!result.ok) {
-    console.log('[vault-linkedin] SERP attempt 1 failed:', result.reason, '- retrying once');
     if (debugSink) debugSink.attempt1 = result.reason;
-    await new Promise(r => setTimeout(r, 1500));
-    result = await doSerpCall();
+    // Only retry on a genuine error (CAPTCHA, malformed response) — NOT on a
+    // plain timeout. A timeout means the request was just slow; retrying
+    // immediately costs more time without meaningfully improving the odds,
+    // and this whole call is already racing Claude's own budget in parallel.
+    if (result.reason.includes('timeout')) {
+      console.log('[vault-linkedin] SERP attempt 1 timed out — not retrying (retrying a timeout rarely helps and costs more time)');
+    } else {
+      console.log('[vault-linkedin] SERP attempt 1 failed:', result.reason, '- retrying once');
+      await new Promise(r => setTimeout(r, 1500));
+      result = await doSerpCall();
+      if (debugSink) debugSink.attempt2 = result.ok ? 'succeeded' : result.reason;
+    }
   }
   if (!result.ok) {
-    console.log('[vault-linkedin] SERP attempt 2 also failed:', result.reason, '- giving up for this lookup');
-    if (debugSink) debugSink.attempt2 = result.reason;
+    console.log('[vault-linkedin] SERP giving up for this lookup:', result.reason);
     return null;
   }
   if (debugSink) debugSink.success = true;

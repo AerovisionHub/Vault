@@ -335,7 +335,7 @@ async function findCompanyLinkedInUrl(bankName, city, state) {
   // still returned null for the identical query.
   const doSerpCall = async () => {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10000);
+    const timer = setTimeout(() => controller.abort(), 14000);
     try {
       const resp = await fetch('https://api.brightdata.com/request', {
         method: 'POST',
@@ -367,18 +367,25 @@ async function findCompanyLinkedInUrl(bankName, city, state) {
       return { ok: true, url: hit ? hit.link : null };
     } catch (e) {
       clearTimeout(timer);
-      return { ok: false, reason: e.name === 'AbortError' ? 'timeout (>10s)' : e.message };
+      return { ok: false, reason: e.name === 'AbortError' ? 'timeout (>14s)' : e.message };
     }
   };
 
   let result = await doSerpCall();
   if (!result.ok) {
-    console.log('[vault-linkedin] SERP attempt 1 failed:', result.reason, '- retrying once');
-    await new Promise(r => setTimeout(r, 1500));
-    result = await doSerpCall();
+    // Only retry on a genuine error (CAPTCHA, malformed response) — NOT on a
+    // plain timeout. A timeout means the request was just slow; retrying
+    // immediately costs more time without meaningfully improving the odds.
+    if (result.reason.includes('timeout')) {
+      console.log('[vault-linkedin] SERP attempt 1 timed out — not retrying');
+    } else {
+      console.log('[vault-linkedin] SERP attempt 1 failed:', result.reason, '- retrying once');
+      await new Promise(r => setTimeout(r, 1500));
+      result = await doSerpCall();
+    }
   }
   if (!result.ok) {
-    console.log('[vault-linkedin] SERP attempt 2 also failed:', result.reason, '- giving up for this lookup');
+    console.log('[vault-linkedin] SERP giving up for this lookup:', result.reason);
     return null;
   }
   return result.url;
@@ -1396,7 +1403,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.9.2',
+        name: 'vault-mcp', version: '1.9.3',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -1443,7 +1450,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.9.2' },
+          serverInfo: { name: 'vault-mcp', version: '1.9.3' },
           capabilities: { tools: {} },
         });
       }
