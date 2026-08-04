@@ -73,7 +73,15 @@ async function cacheSet(key, data) {
 async function findCompanyLinkedInUrl(bankName, city, state, debugSink) {
   const apiKey = process.env.BRIGHTDATA_API_KEY;
   if (!apiKey) return null;
-  const q = `"${bankName}" ${city} ${state} site:linkedin.com/company`;
+  // NOTE: deliberately NOT using a "site:" operator here. Confirmed via direct
+  // testing that Google/Bright Data treats site:-qualified queries as much more
+  // bot-like and applies far stricter anti-abuse measures — this exact query
+  // pattern was timing out or getting CAPTCHA'd consistently across an entire
+  // day of testing, while the identical search minus "site:linkedin.com" (just
+  // natural language, filtering organic results client-side afterward)
+  // succeeded cleanly and immediately. This was the actual root cause behind
+  // a full day of "company URL search returns null" investigation.
+  const q = `"${bankName}" ${city} ${state} linkedin company page`;
 
   // Each attempt gets its OWN fresh AbortController + timeout. A single
   // shared 8s timer covering two sequential calls + a delay between them

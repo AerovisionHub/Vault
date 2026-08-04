@@ -324,7 +324,15 @@ const BRIGHTDATA_LINKEDIN_DATASET_ID = 'gd_m8d03he47z8nwb5xc';
 async function findCompanyLinkedInUrl(bankName, city, state) {
   const apiKey = process.env.BRIGHTDATA_API_KEY;
   if (!apiKey) return null;
-  const q = `"${bankName}" ${city} ${state} site:linkedin.com/company`;
+  // NOTE: deliberately NOT using a "site:" operator here. Confirmed via direct
+  // testing that Google/Bright Data treats site:-qualified queries as much more
+  // bot-like and applies far stricter anti-abuse measures — this exact query
+  // pattern was timing out or getting CAPTCHA'd consistently across an entire
+  // day of testing, while the identical search minus "site:linkedin.com" (just
+  // natural language, filtering organic results client-side afterward)
+  // succeeded cleanly and immediately. This was the actual root cause behind
+  // a full day of "company URL search returns null" investigation.
+  const q = `"${bankName}" ${city} ${state} linkedin company page`;
 
   // Each attempt gets its OWN fresh AbortController + timeout. A single
   // shared 8s timer covering two sequential calls + a delay between them
@@ -1403,7 +1411,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.9.3',
+        name: 'vault-mcp', version: '1.9.4',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -1450,7 +1458,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.9.3' },
+          serverInfo: { name: 'vault-mcp', version: '1.9.4' },
           capabilities: { tools: {} },
         });
       }
