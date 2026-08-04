@@ -171,13 +171,36 @@ const TOOLS = [
   },
   {
     name: 'get_bank_leadership',
-    description: 'Get key decision-makers for a specific bank, prioritized for B2B sales targeting: CEO/President, CIO/CTO (or closest functional equivalent at smaller banks), and COO — each with name, title, role_category, source URL, and (when found) a LinkedIn profile URL. Useful for building sales target lists: call search_institutions or get_lender_rankings first to find candidate banks matching your criteria, then call this for each one to build out contacts ready for outreach. Typically responds in 8-20 seconds on first lookup, ~150ms on repeat lookups (cached 30 days — leadership changes far less often than financials). LinkedIn URLs are best-effort (found via a company-page search + name match, only attempted for the priority roles above to control cost) and may be null even when name/title are found. Returns an empty list when no confident public leadership data can be found, which happens more often for very small or thinly-documented institutions.',
+    description: 'Get key decision-makers for a specific bank, prioritized for B2B sales targeting: CEO/President, CIO/CTO (or closest functional equivalent at smaller banks), and COO — each with name, title, role_category, source URL, and (when found) a LinkedIn profile URL. Useful for building sales target lists: call search_institutions or get_lender_rankings first to find candidate banks matching your criteria, then call this for each one to build out contacts ready for outreach. Typically responds in 8-20 seconds on first lookup, ~150ms on repeat lookups (cached 30 days — leadership changes far less often than financials). LinkedIn URLs come back null more often than not on a live call — the underlying match frequently takes longer than this tool can wait synchronously. For a bulk workflow processing many banks (e.g. from a spreadsheet), use trigger_linkedin_match + check_linkedin_match instead of relying on the linkedin_url field here, and be patient between checks — see those tools\' descriptions. Returns an empty people list when no confident public leadership data can be found, which happens more often for very small or thinly-documented institutions.',
     inputSchema: {
       type: 'object',
       properties: {
         cert: { type: 'string', description: 'FDIC certificate number (required). Get from search_institutions.' },
       },
       required: ['cert'],
+    },
+  },
+  {
+    name: 'trigger_linkedin_match',
+    description: 'Kick off a LinkedIn profile match for one named person at a company — fast (a few seconds), does NOT wait for the match to complete. Returns a snapshot_id. This is step 1 of 2 for building LinkedIn-enriched target lists in bulk (e.g. from a spreadsheet of many banks): for each bank, call get_bank_leadership first to get company_linkedin_url + people (with role_category), then call this tool once per priority-role person to start their match, collecting all the snapshot_ids. THEN wait at least 20-30 seconds before checking any of them with check_linkedin_match — calling this and then immediately checking wastes calls, since matches are essentially never ready within a few seconds. Batching many trigger calls up front, waiting, then checking them all is far more efficient than one-at-a-time trigger-then-wait-then-check per person.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        company_linkedin_url: { type: 'string', description: 'The bank\'s LinkedIn company page URL (from get_bank_leadership\'s company_linkedin_url field).' },
+        full_name: { type: 'string', description: 'The person\'s full name, e.g. "Sean Kouplen".' },
+      },
+      required: ['company_linkedin_url', 'full_name'],
+    },
+  },
+  {
+    name: 'check_linkedin_match',
+    description: 'Check whether a LinkedIn match started with trigger_linkedin_match is ready, and return the profile URL if so. Fast (a couple seconds) — does NOT wait/poll internally, just checks current status once and returns immediately. Returns {status:"running"} if not ready yet (wait ~15-20 seconds before checking again — checking too frequently wastes calls without helping), {status:"ready", linkedin_url:"..."} once found, or {status:"not_found"} if the search completed but found no match. Most matches complete within 1-3 minutes of being triggered; a few take longer. For a bulk spreadsheet workflow, trigger all people across all banks first, then loop checking the pending ones every 15-20 seconds until all are resolved (ready, not_found, or a reasonable give-up point like 5 minutes) rather than checking one at a time.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        snapshot_id: { type: 'string', description: 'The snapshot_id returned by trigger_linkedin_match.' },
+      },
+      required: ['snapshot_id'],
     },
   },
 ];
@@ -382,6 +405,71 @@ async function lookupLinkedInProfile(companyUrl, fullName, deadlineMs) {
     console.log('[vault-linkedin] person lookup failed for', fullName, ':', e.message);
     return null;
   }
+}
+
+// ── Bulk-friendly LinkedIn matching: trigger + check, no internal waiting ──
+// Split out of lookupLinkedInProfile specifically so a bulk/spreadsheet workflow
+// (Claude orchestrating across many banks in one conversation, not a single
+// live synchronous tool call) can do its own waiting BETWEEN fast calls,
+// rather than any one Netlify function call racing the ~26s ceiling. Neither
+// of these two functions loops or sleeps — each does one or two quick HTTP
+// calls and returns, so they're safe to call as often as needed without
+// timeout risk.
+
+async function triggerLinkedinMatch(args) {
+  const { company_linkedin_url, full_name } = args || {};
+  if (!company_linkedin_url || !full_name) {
+    throw new Error('Required parameters "company_linkedin_url" and "full_name" missing.');
+  }
+  const apiKey = process.env.BRIGHTDATA_API_KEY;
+  if (!apiKey) throw new Error('BRIGHTDATA_API_KEY not configured on the server.');
+
+  const parts = full_name.trim().split(/\s+/);
+  const first_name = parts[0];
+  const last_name = parts.slice(1).join(' ') || parts[0];
+
+  const resp = await fetch(`https://api.brightdata.com/datasets/v3/trigger?dataset_id=${BRIGHTDATA_LINKEDIN_DATASET_ID}&include_errors=true`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({ input: [{ url: company_linkedin_url, first_name, last_name }] }),
+  });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '');
+    throw new Error(`Bright Data trigger returned HTTP ${resp.status}. ${text.slice(0, 200)}`);
+  }
+  const { snapshot_id } = await resp.json();
+  if (!snapshot_id) throw new Error('Bright Data trigger did not return a snapshot_id.');
+  return { snapshot_id, full_name, status: 'triggered' };
+}
+
+async function checkLinkedinMatch(args) {
+  const { snapshot_id } = args || {};
+  if (!snapshot_id) throw new Error('Required parameter "snapshot_id" missing.');
+  const apiKey = process.env.BRIGHTDATA_API_KEY;
+  if (!apiKey) throw new Error('BRIGHTDATA_API_KEY not configured on the server.');
+
+  const progResp = await fetch(`https://api.brightdata.com/datasets/v3/progress/${snapshot_id}`, {
+    headers: { 'Authorization': `Bearer ${apiKey}` },
+  });
+  if (!progResp.ok) {
+    const text = await progResp.text().catch(() => '');
+    throw new Error(`Bright Data progress check returned HTTP ${progResp.status}. ${text.slice(0, 200)}`);
+  }
+  const prog = await progResp.json();
+  if (prog.status === 'failed') return { snapshot_id, status: 'failed' };
+  if (prog.status !== 'ready') return { snapshot_id, status: 'running' };
+
+  const dlResp = await fetch(`https://api.brightdata.com/datasets/v3/snapshot/${snapshot_id}?format=json`, {
+    headers: { 'Authorization': `Bearer ${apiKey}` },
+  });
+  if (!dlResp.ok) {
+    const text = await dlResp.text().catch(() => '');
+    throw new Error(`Bright Data snapshot download returned HTTP ${dlResp.status}. ${text.slice(0, 200)}`);
+  }
+  const arr = await dlResp.json();
+  const match = Array.isArray(arr) ? arr[0] : null;
+  if (match?.url) return { snapshot_id, status: 'ready', linkedin_url: match.url };
+  return { snapshot_id, status: 'not_found' };
 }
 
 async function getBankLeadership(args) {
@@ -1225,6 +1313,8 @@ const TOOL_HANDLERS = {
   get_brokered_deposits: getBrokeredDeposits,
   get_branch_data: getBranchData,
   get_bank_leadership: getBankLeadership,
+  trigger_linkedin_match: triggerLinkedinMatch,
+  check_linkedin_match: checkLinkedinMatch,
 };
 
 const CORS_HEADERS = {
@@ -1241,7 +1331,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.7.0',
+        name: 'vault-mcp', version: '1.8.0',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -1288,7 +1378,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.7.0' },
+          serverInfo: { name: 'vault-mcp', version: '1.8.0' },
           capabilities: { tools: {} },
         });
       }
