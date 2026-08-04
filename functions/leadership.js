@@ -160,6 +160,30 @@ async function findCompanyLinkedInUrl(bankName, city, state, debugSink) {
 // returning {snapshot_id, status} when the match takes too long internally —
 // that shape was silently misread as "no match," which is why every lookup
 // came back null even when the company URL was correct. This is the real fix.
+// Verifies a matched LinkedIn profile actually has some connection to the
+// target company, using the 'experience' field Bright Data returns (e.g.
+// "Meta, +4 more"). Found via a real false-positive: matching "Tom Wayne" at
+// The Bank of Oak Ridge returned Tom (Thomas WAYNE Busey) Busey, a Meta
+// employee — his middle name is Wayne. The company_linkedin_url we pass in
+// is evidently used as a soft ranking hint by Bright Data's matcher, NOT a
+// hard filter, so it can confidently return someone with zero connection to
+// the target company. This check extracts distinctive words from the
+// company's LinkedIn slug (e.g. "the-bank-of-oak-ridge" -> "oak", "ridge")
+// and requires at least one to appear in the experience string before a
+// match is trusted. Conservative on purpose: a missed real match (false
+// negative) is far less costly than confidently contacting the wrong person.
+// Kept in sync with the identical function in functions/mcp.js.
+function experienceMatchesCompany(experience, companyLinkedInUrl) {
+  if (!companyLinkedInUrl) return true;
+  const slug = companyLinkedInUrl.split('/company/')[1]?.split('/')[0] || '';
+  const stopWords = new Set(['the','bank','of','na','national','association','inc','corp','corporation','company','llc','group','financial','trust','and','co','bancorp','bankshares']);
+  const distinctiveWords = slug.replace(/-/g, ' ').toLowerCase().split(/\s+/).filter(w => w.length > 2 && !stopWords.has(w));
+  if (!distinctiveWords.length) return true;
+  if (!experience) return false;
+  const expLower = experience.toLowerCase();
+  return distinctiveWords.some(w => expLower.includes(w));
+}
+
 async function lookupLinkedInProfile(companyUrl, fullName, deadlineMs) {
   const apiKey = process.env.BRIGHTDATA_API_KEY;
   if (!apiKey || !fullName) return null;
@@ -193,6 +217,10 @@ async function lookupLinkedInProfile(companyUrl, fullName, deadlineMs) {
       if (!dlResp.ok) return null;
       const arr = await dlResp.json();
       const match = Array.isArray(arr) ? arr[0] : null;
+      if (match?.url && !experienceMatchesCompany(match.experience, companyUrl)) {
+        console.log('[vault-linkedin] REJECTED likely false match for', fullName, ':', match.name, '| experience:', match.experience);
+        return null;
+      }
       return match?.url || null;
     }
     console.log('[vault-linkedin] ran out of time budget polling for', fullName);
@@ -371,7 +399,9 @@ exports.handler = async function (event) {
       if (!resp.ok) throw new Error(`Bright Data trigger returned HTTP ${resp.status}`);
       const { snapshot_id } = await resp.json();
       if (!snapshot_id) throw new Error('No snapshot_id returned.');
-      if (triggerCert) await cacheSet(`linkedin-pending-${snapshot_id}`, { cert: triggerCert, full_name: fullName });
+      // Always remember company_linkedin_url so the check step can verify
+      // the eventual match — not just when a cert is provided.
+      await cacheSet(`linkedin-pending-${snapshot_id}`, { cert: triggerCert || null, full_name: fullName, company_linkedin_url: companyUrl });
       return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ snapshot_id, status: 'triggered' }) };
     } catch (e) {
       return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: 'failed', error: e.message }) };
@@ -398,11 +428,23 @@ exports.handler = async function (event) {
       const match = Array.isArray(arr) ? arr[0] : null;
 
       if (match?.url) {
+        const pending = await cacheGet(`linkedin-pending-${snapshotId}`);
+        // Verify the match actually has some connection to the target company
+        // before trusting it — Bright Data's matcher treats company_linkedin_url
+        // as a soft ranking hint, not a hard filter, and can confidently return
+        // someone with zero real connection to the company (confirmed: matching
+        // "Tom Wayne" at The Bank of Oak Ridge returned a Meta employee whose
+        // middle name happens to be Wayne). See experienceMatchesCompany in
+        // functions/mcp.js for the same check (kept in sync between both files).
+        const verified = experienceMatchesCompany(match.experience, pending?.company_linkedin_url);
+        if (!verified) {
+          console.log('[vault-linkedin] REJECTED likely false match:', match.name, '| experience:', match.experience, '| expected company:', pending?.company_linkedin_url);
+          return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: 'not_found', rejected_reason: 'experience did not mention target company' }) };
+        }
         // Write back into the shared leadership cache — same mechanism as the
         // MCP side, so this bank's cache entry is permanently updated for
         // every future visitor/user regardless of which surface resolved it.
         try {
-          const pending = await cacheGet(`linkedin-pending-${snapshotId}`);
           if (pending?.cert) {
             const leadershipKey = `leadership-${pending.cert}`;
             const existing = await cacheGet(leadershipKey);
@@ -415,7 +457,7 @@ exports.handler = async function (event) {
             }
           }
         } catch (e) { /* non-fatal */ }
-        return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: 'ready', linkedin_url: match.url, _debug_raw_match: params.debug === '1' ? match : undefined }) };
+        return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: 'ready', linkedin_url: match.url }) };
       }
       return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: 'not_found' }) };
     } catch (e) {

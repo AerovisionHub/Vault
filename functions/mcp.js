@@ -444,6 +444,10 @@ async function lookupLinkedInProfile(companyUrl, fullName, deadlineMs) {
       if (!dlResp.ok) return null;
       const arr = await dlResp.json();
       const match = Array.isArray(arr) ? arr[0] : null;
+      if (match?.url && !experienceMatchesCompany(match.experience, companyUrl)) {
+        console.log('[vault-linkedin] REJECTED likely false match for', fullName, ':', match.name, '| experience:', match.experience);
+        return null;
+      }
       return match?.url || null;
     }
     console.log('[vault-linkedin] ran out of time budget polling for', fullName);
@@ -462,6 +466,29 @@ async function lookupLinkedInProfile(companyUrl, fullName, deadlineMs) {
 // of these two functions loops or sleeps — each does one or two quick HTTP
 // calls and returns, so they're safe to call as often as needed without
 // timeout risk.
+
+// Verifies a matched LinkedIn profile actually has some connection to the
+// target company, using the 'experience' field Bright Data returns (e.g.
+// "Meta, +4 more"). Found via a real false-positive: matching "Tom Wayne" at
+// The Bank of Oak Ridge returned Tom (Thomas WAYNE Busey) Busey, a Meta
+// employee — his middle name is Wayne. The company_linkedin_url we pass in
+// is evidently used as a soft ranking hint by Bright Data's matcher, NOT a
+// hard filter, so it can confidently return someone with zero connection to
+// the target company. This check extracts distinctive words from the
+// company's LinkedIn slug (e.g. "the-bank-of-oak-ridge" -> "oak", "ridge")
+// and requires at least one to appear in the experience string before a
+// match is trusted. Conservative on purpose: a missed real match (false
+// negative) is far less costly than confidently contacting the wrong person.
+function experienceMatchesCompany(experience, companyLinkedInUrl) {
+  if (!companyLinkedInUrl) return true; // nothing to verify against — allow through
+  const slug = companyLinkedInUrl.split('/company/')[1]?.split('/')[0] || '';
+  const stopWords = new Set(['the','bank','of','na','national','association','inc','corp','corporation','company','llc','group','financial','trust','and','co','bancorp','bankshares']);
+  const distinctiveWords = slug.replace(/-/g, ' ').toLowerCase().split(/\s+/).filter(w => w.length > 2 && !stopWords.has(w));
+  if (!distinctiveWords.length) return true; // nothing distinctive to check — allow through rather than always-reject
+  if (!experience) return false; // Bright Data gave us nothing to verify with — conservative reject
+  const expLower = experience.toLowerCase();
+  return distinctiveWords.some(w => expLower.includes(w));
+}
 
 async function triggerLinkedinMatch(args) {
   const { company_linkedin_url, full_name, cert } = args || {};
@@ -487,14 +514,10 @@ async function triggerLinkedinMatch(args) {
   const { snapshot_id } = await resp.json();
   if (!snapshot_id) throw new Error('Bright Data trigger did not return a snapshot_id.');
 
-  // If a cert was provided, remember which bank/person this snapshot belongs to.
-  // Once check_linkedin_match sees this resolve, it writes the result back into
-  // the shared leadership cache — so this match becomes permanent for EVERY
-  // future lookup of this bank, by any user, on either surface (website or
-  // MCP), not just a one-off answer for whoever happened to trigger it.
-  if (cert) {
-    await cacheSetLeadership(`linkedin-pending-${snapshot_id}`, { cert, full_name });
-  }
+  // Always remember company_linkedin_url so check_linkedin_match can verify
+  // the eventual match — not just when a cert is provided. Verification
+  // matters for every lookup, not only ones that get cached.
+  await cacheSetLeadership(`linkedin-pending-${snapshot_id}`, { cert: cert || null, full_name, company_linkedin_url });
   return { snapshot_id, full_name, status: 'triggered' };
 }
 
@@ -524,14 +547,20 @@ async function checkLinkedinMatch(args) {
   }
   const arr = await dlResp.json();
   const match = Array.isArray(arr) ? arr[0] : null;
+
   if (match?.url) {
+    const pending = await cacheGetLeadership(`linkedin-pending-${snapshot_id}`);
+    const verified = experienceMatchesCompany(match.experience, pending?.company_linkedin_url);
+    if (!verified) {
+      console.log('[vault-linkedin] REJECTED likely false match:', match.name, '| experience:', match.experience, '| expected company:', pending?.company_linkedin_url);
+      return { snapshot_id, status: 'not_found', rejected_reason: 'experience did not mention target company — likely false match, not a real profile' };
+    }
     // Write this result back into the shared leadership cache if we know
     // which cert/person it belongs to (i.e. trigger_linkedin_match was called
     // with a cert). This is what makes a match PERMANENT — the next lookup of
     // this bank, by anyone, on either the website or MCP, gets the LinkedIn
     // URL immediately from cache instead of needing to trigger/wait/check again.
     try {
-      const pending = await cacheGetLeadership(`linkedin-pending-${snapshot_id}`);
       if (pending?.cert) {
         const cacheKey = `leadership-${pending.cert}`;
         const existing = await cacheGetLeadership(cacheKey);
@@ -1411,7 +1440,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.9.4',
+        name: 'vault-mcp', version: '1.10.0',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -1458,7 +1487,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.9.4' },
+          serverInfo: { name: 'vault-mcp', version: '1.10.0' },
           capabilities: { tools: {} },
         });
       }
