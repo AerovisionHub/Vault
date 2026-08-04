@@ -289,6 +289,89 @@ exports.handler = async function (event) {
   }
 
   const params = event.queryStringParameters || {};
+  const action = params.action || '';
+
+  // ── action=trigger / action=check ────────────────────────────────────────
+  // Lets the BROWSER itself trigger and poll a LinkedIn match client-side,
+  // with no per-call timeout risk — a live page visit isn't bound by any
+  // single Netlify function's ~26s ceiling the way get_bank_leadership is,
+  // because the waiting happens in the browser's own JS (index.html), not
+  // inside one function invocation. This is what makes "click the name,
+  // land on LinkedIn" work automatically for any website visitor, not just
+  // via the MCP bulk workflow.
+  if (action === 'trigger') {
+    const companyUrl = (params.company_linkedin_url || '').trim();
+    const fullName = (params.full_name || '').trim();
+    const triggerCert = (params.cert || '').trim();
+    if (!companyUrl || !fullName) {
+      return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Required params "company_linkedin_url" and "full_name" missing.' }) };
+    }
+    try {
+      const apiKey = process.env.BRIGHTDATA_API_KEY;
+      if (!apiKey) throw new Error('BRIGHTDATA_API_KEY not configured on the server.');
+      const parts = fullName.split(/\s+/);
+      const first_name = parts[0];
+      const last_name = parts.slice(1).join(' ') || parts[0];
+      const resp = await fetch(`https://api.brightdata.com/datasets/v3/trigger?dataset_id=${BRIGHTDATA_LINKEDIN_DATASET_ID}&include_errors=true`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({ input: [{ url: companyUrl, first_name, last_name }] }),
+      });
+      if (!resp.ok) throw new Error(`Bright Data trigger returned HTTP ${resp.status}`);
+      const { snapshot_id } = await resp.json();
+      if (!snapshot_id) throw new Error('No snapshot_id returned.');
+      if (triggerCert) await cacheSet(`linkedin-pending-${snapshot_id}`, { cert: triggerCert, full_name: fullName });
+      return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ snapshot_id, status: 'triggered' }) };
+    } catch (e) {
+      return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: 'failed', error: e.message }) };
+    }
+  }
+
+  if (action === 'check') {
+    const snapshotId = (params.snapshot_id || '').trim();
+    if (!snapshotId) {
+      return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Required param "snapshot_id" missing.' }) };
+    }
+    try {
+      const apiKey = process.env.BRIGHTDATA_API_KEY;
+      if (!apiKey) throw new Error('BRIGHTDATA_API_KEY not configured on the server.');
+      const progResp = await fetch(`https://api.brightdata.com/datasets/v3/progress/${snapshotId}`, { headers: { 'Authorization': `Bearer ${apiKey}` } });
+      if (!progResp.ok) throw new Error(`Progress check HTTP ${progResp.status}`);
+      const prog = await progResp.json();
+      if (prog.status === 'failed') return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: 'failed' }) };
+      if (prog.status !== 'ready') return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: 'running' }) };
+
+      const dlResp = await fetch(`https://api.brightdata.com/datasets/v3/snapshot/${snapshotId}?format=json`, { headers: { 'Authorization': `Bearer ${apiKey}` } });
+      if (!dlResp.ok) throw new Error(`Snapshot download HTTP ${dlResp.status}`);
+      const arr = await dlResp.json();
+      const match = Array.isArray(arr) ? arr[0] : null;
+
+      if (match?.url) {
+        // Write back into the shared leadership cache — same mechanism as the
+        // MCP side, so this bank's cache entry is permanently updated for
+        // every future visitor/user regardless of which surface resolved it.
+        try {
+          const pending = await cacheGet(`linkedin-pending-${snapshotId}`);
+          if (pending?.cert) {
+            const leadershipKey = `leadership-${pending.cert}`;
+            const existing = await cacheGet(leadershipKey);
+            if (existing?.people?.length) {
+              const idx = existing.people.findIndex(p => p.name === pending.full_name);
+              if (idx !== -1) {
+                existing.people[idx].linkedin_url = match.url;
+                await cacheSet(leadershipKey, { people: existing.people, company_linkedin_url: existing.company_linkedin_url });
+              }
+            }
+          }
+        } catch (e) { /* non-fatal */ }
+        return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: 'ready', linkedin_url: match.url }) };
+      }
+      return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: 'not_found' }) };
+    } catch (e) {
+      return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: 'failed', error: e.message }) };
+    }
+  }
+
   const cert = (params.cert || '').trim();
   const name = (params.name || '').trim();
   const city = (params.city || '').trim();

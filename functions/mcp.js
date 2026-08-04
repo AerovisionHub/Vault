@@ -171,7 +171,7 @@ const TOOLS = [
   },
   {
     name: 'get_bank_leadership',
-    description: 'Get key decision-makers for a specific bank, prioritized for B2B sales targeting: CEO/President, CIO/CTO (or closest functional equivalent at smaller banks), and COO — each with name, title, role_category, source URL, and (when found) a LinkedIn profile URL. Useful for building sales target lists: call search_institutions or get_lender_rankings first to find candidate banks matching your criteria, then call this for each one to build out contacts ready for outreach. Typically responds in 8-20 seconds on first lookup, ~150ms on repeat lookups (cached 30 days — leadership changes far less often than financials). LinkedIn URLs come back null more often than not on a live call — the underlying match frequently takes longer than this tool can wait synchronously. For a bulk workflow processing many banks (e.g. from a spreadsheet), use trigger_linkedin_match + check_linkedin_match instead of relying on the linkedin_url field here, and be patient between checks — see those tools\' descriptions. Returns an empty people list when no confident public leadership data can be found, which happens more often for very small or thinly-documented institutions.',
+    description: 'Get key decision-makers for a specific bank, prioritized for B2B sales targeting: CEO/President, CIO/CTO (or closest functional equivalent at smaller banks), and COO — each with name, title, role_category, source URL, and (when found) a LinkedIn profile URL. Useful for building sales target lists: call search_institutions or get_lender_rankings first to find candidate banks matching your criteria, then call this for each one to build out contacts ready for outreach. Typically responds in 8-20 seconds on first lookup, ~150ms on repeat lookups (cached 30 days). LinkedIn URLs come back null on a first-ever lookup of a bank more often than not -- the underlying match takes 1-2 minutes, longer than this tool waits. If a LinkedIn URL is null and you want it: call trigger_linkedin_match (pass this cert so the result gets saved permanently), wait about a minute, then check_linkedin_match. This works the same way for any user, not just bulk workflows -- once someone resolves a match for a bank, it is cached and every future call to this tool for that bank returns the LinkedIn URL immediately. Returns an empty people list when no confident public leadership data can be found.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -182,19 +182,20 @@ const TOOLS = [
   },
   {
     name: 'trigger_linkedin_match',
-    description: 'Kick off a LinkedIn profile match for one named person at a company — fast (a few seconds), does NOT wait for the match to complete. Returns a snapshot_id. This is step 1 of 2 for building LinkedIn-enriched target lists in bulk (e.g. from a spreadsheet of many banks): for each bank, call get_bank_leadership first to get company_linkedin_url + people (with role_category), then call this tool once per priority-role person to start their match, collecting all the snapshot_ids. THEN wait at least 20-30 seconds before checking any of them with check_linkedin_match — calling this and then immediately checking wastes calls, since matches are essentially never ready within a few seconds. Batching many trigger calls up front, waiting, then checking them all is far more efficient than one-at-a-time trigger-then-wait-then-check per person.',
+    description: 'Kick off a LinkedIn profile match for one named person at a company -- fast (a few seconds), does NOT wait for the match to complete. Returns a snapshot_id. Available to any user, for a single person or many. Pass the bank cert too (strongly recommended) -- doing so saves the result permanently once found, so this exact person never needs to be looked up again by anyone. After calling this, wait about a minute, then call check_linkedin_match. For bulk workflows processing many banks: call this once per priority-role person across ALL banks first, collecting every snapshot_id, THEN wait 30-60 seconds before checking any -- checking immediately wastes calls, and batching triggers before waiting lets them all process in parallel.',
     inputSchema: {
       type: 'object',
       properties: {
-        company_linkedin_url: { type: 'string', description: 'The bank\'s LinkedIn company page URL (from get_bank_leadership\'s company_linkedin_url field).' },
-        full_name: { type: 'string', description: 'The person\'s full name, e.g. "Sean Kouplen".' },
+        company_linkedin_url: { type: 'string', description: 'The bank company LinkedIn page URL, from get_bank_leadership company_linkedin_url field.' },
+        full_name: { type: 'string', description: 'The person full name, e.g. "Sean Kouplen".' },
+        cert: { type: 'string', description: 'FDIC certificate number for this bank. Strongly recommended: when provided, a resolved match is written back into the shared cache, so every future get_bank_leadership call for this bank (by anyone) returns the LinkedIn URL instantly.' },
       },
       required: ['company_linkedin_url', 'full_name'],
     },
   },
   {
     name: 'check_linkedin_match',
-    description: 'Check whether a LinkedIn match started with trigger_linkedin_match is ready, and return the profile URL if so. Fast (a couple seconds) — does NOT wait/poll internally, just checks current status once and returns immediately. Returns {status:"running"} if not ready yet (wait ~15-20 seconds before checking again — checking too frequently wastes calls without helping), {status:"ready", linkedin_url:"..."} once found, or {status:"not_found"} if the search completed but found no match. Most matches complete within 1-3 minutes of being triggered; a few take longer. For a bulk spreadsheet workflow, trigger all people across all banks first, then loop checking the pending ones every 15-20 seconds until all are resolved (ready, not_found, or a reasonable give-up point like 5 minutes) rather than checking one at a time.',
+    description: 'Check whether a LinkedIn match started with trigger_linkedin_match is ready, and return the profile URL if so. Fast (a couple seconds) — does NOT wait/poll internally, just checks current status once and returns immediately. Returns {status:"running"} if not ready yet (wait ~15-20 seconds before checking again — checking too frequently wastes calls without helping), {status:"ready", linkedin_url:"..."} once found, or {status:"not_found"} if the search completed but found no match. Most matches complete within 1-3 minutes of being triggered; a few take longer. If trigger_linkedin_match was called with a cert, a ready result here also saves the match into the shared cache automatically — nothing further needed to make it permanent. For a bulk spreadsheet workflow, trigger all people across all banks first, then loop checking the pending ones every 15-20 seconds until all are resolved (ready, not_found, or a reasonable give-up point like 5 minutes) rather than checking one at a time.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -417,7 +418,7 @@ async function lookupLinkedInProfile(companyUrl, fullName, deadlineMs) {
 // timeout risk.
 
 async function triggerLinkedinMatch(args) {
-  const { company_linkedin_url, full_name } = args || {};
+  const { company_linkedin_url, full_name, cert } = args || {};
   if (!company_linkedin_url || !full_name) {
     throw new Error('Required parameters "company_linkedin_url" and "full_name" missing.');
   }
@@ -439,6 +440,15 @@ async function triggerLinkedinMatch(args) {
   }
   const { snapshot_id } = await resp.json();
   if (!snapshot_id) throw new Error('Bright Data trigger did not return a snapshot_id.');
+
+  // If a cert was provided, remember which bank/person this snapshot belongs to.
+  // Once check_linkedin_match sees this resolve, it writes the result back into
+  // the shared leadership cache — so this match becomes permanent for EVERY
+  // future lookup of this bank, by any user, on either surface (website or
+  // MCP), not just a one-off answer for whoever happened to trigger it.
+  if (cert) {
+    await cacheSetLeadership(`linkedin-pending-${snapshot_id}`, { cert, full_name });
+  }
   return { snapshot_id, full_name, status: 'triggered' };
 }
 
@@ -468,7 +478,31 @@ async function checkLinkedinMatch(args) {
   }
   const arr = await dlResp.json();
   const match = Array.isArray(arr) ? arr[0] : null;
-  if (match?.url) return { snapshot_id, status: 'ready', linkedin_url: match.url };
+  if (match?.url) {
+    // Write this result back into the shared leadership cache if we know
+    // which cert/person it belongs to (i.e. trigger_linkedin_match was called
+    // with a cert). This is what makes a match PERMANENT — the next lookup of
+    // this bank, by anyone, on either the website or MCP, gets the LinkedIn
+    // URL immediately from cache instead of needing to trigger/wait/check again.
+    try {
+      const pending = await cacheGetLeadership(`linkedin-pending-${snapshot_id}`);
+      if (pending?.cert) {
+        const cacheKey = `leadership-${pending.cert}`;
+        const existing = await cacheGetLeadership(cacheKey);
+        if (existing?.people?.length) {
+          const idx = existing.people.findIndex(p => p.name === pending.full_name);
+          if (idx !== -1) {
+            existing.people[idx].linkedin_url = match.url;
+            await cacheSetLeadership(cacheKey, { people: existing.people, company_linkedin_url: existing.company_linkedin_url });
+            console.log('[vault-linkedin] wrote resolved match back into leadership cache for', pending.cert, pending.full_name);
+          }
+        }
+      }
+    } catch (e) {
+      console.log('[vault-linkedin] cache write-back failed (non-fatal):', e.message);
+    }
+    return { snapshot_id, status: 'ready', linkedin_url: match.url };
+  }
   return { snapshot_id, status: 'not_found' };
 }
 
@@ -1331,7 +1365,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.8.0',
+        name: 'vault-mcp', version: '1.9.0',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -1378,7 +1412,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.8.0' },
+          serverInfo: { name: 'vault-mcp', version: '1.9.0' },
           capabilities: { tools: {} },
         });
       }

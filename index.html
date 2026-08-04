@@ -2648,15 +2648,79 @@ async function fetchLeadershipFromClaude(cert, bankName, city, state, webAddr) {
     const resp = await fetch(`/.netlify/functions/leadership?${params.toString()}`);
     if (!resp.ok) {
       console.warn('[vault-leadership] function returned HTTP', resp.status);
-      return [];
+      return { people: [], company_linkedin_url: null };
     }
     const data = await resp.json();
     if (data.error) console.warn('[vault-leadership] server error:', data.error);
-    return data.people || [];
+    return { people: data.people || [], company_linkedin_url: data.company_linkedin_url || null };
   } catch(e) {
     console.warn('[vault-leadership] client error:', e.message);
-    return [];
+    return { people: [], company_linkedin_url: null };
   }
+}
+
+// Trigger + check helpers for client-side, background LinkedIn matching.
+// Neither of these blocks — the browser does its own waiting BETWEEN calls
+// (see pollLinkedinMatches below), so there's no Netlify function timeout
+// risk here the way there was inside get_bank_leadership's own synchronous
+// attempt. This is what makes names light up automatically for any visitor,
+// without them needing to know matching is even happening.
+async function triggerLinkedinMatchClient(companyUrl, fullName, cert) {
+  try {
+    const params = new URLSearchParams({ action: 'trigger', company_linkedin_url: companyUrl, full_name: fullName, cert: String(cert || '') });
+    const resp = await fetch(`/.netlify/functions/leadership?${params.toString()}`);
+    const data = await resp.json();
+    return data.snapshot_id || null;
+  } catch(e) { return null; }
+}
+
+async function checkLinkedinMatchClient(snapshotId) {
+  try {
+    const params = new URLSearchParams({ action: 'check', snapshot_id: snapshotId });
+    const resp = await fetch(`/.netlify/functions/leadership?${params.toString()}`);
+    return await resp.json();
+  } catch(e) { return { status: 'failed' }; }
+}
+
+// Orchestrates background matching for however many priority-role people are
+// missing a linkedin_url after the initial (fast) leadership render. Triggers
+// all of them up front, then polls every ~18s, updating each person's card
+// in place the moment their match resolves — capped at ~8 checks (~2.5 min)
+// so an abandoned tab doesn't poll forever.
+async function pollLinkedinMatches(cert, companyLinkedInUrl, pendingPeople) {
+  if (!companyLinkedInUrl || !pendingPeople.length) return;
+  const jobs = [];
+  for (const { index, name } of pendingPeople) {
+    const snapshotId = await triggerLinkedinMatchClient(companyLinkedInUrl, name, cert);
+    if (snapshotId) jobs.push({ index, name, snapshotId, done: false });
+  }
+  if (!jobs.length) return;
+
+  const maxChecks = 8;
+  for (let attempt = 0; attempt < maxChecks; attempt++) {
+    await new Promise(r => setTimeout(r, 18000));
+    const stillPending = jobs.filter(j => !j.done);
+    if (!stillPending.length) break;
+    for (const job of stillPending) {
+      const result = await checkLinkedinMatchClient(job.snapshotId);
+      if (result.status === 'ready' && result.linkedin_url) {
+        job.done = true;
+        updatePersonCardLinkedIn(job.index, result.linkedin_url);
+      } else if (result.status === 'not_found' || result.status === 'failed') {
+        job.done = true; // stop checking this one, nothing more will come
+      }
+    }
+  }
+}
+
+// Updates a single person's card in place once their LinkedIn match resolves
+// — makes their name itself a clickable link, matching how it would render
+// if the match had already been cached from a prior visitor.
+function updatePersonCardLinkedIn(index, linkedinUrl) {
+  const nameEl = document.getElementById(`leadership-name-${index}`);
+  if (!nameEl) return;
+  const name = nameEl.textContent;
+  nameEl.outerHTML = `<a id="leadership-name-${index}" href="${linkedinUrl}" target="_blank" rel="noopener" style="font-size:14px;font-weight:600;color:#0a66c2;margin-bottom:4px;text-decoration:none;display:inline-flex;align-items:center;gap:5px;">${name} <span style="font-size:11px;">↗</span></a>`;
 }
 
 // ── SEC EDGAR EIN Lookup ──────────────────────────────────────────────────────
@@ -2828,8 +2892,11 @@ function renderLeadershipSection(inst, officers, stock) {
     const el = document.getElementById('leadershipContainer');
     if (!el) return;
     let people = [];
+    let companyLinkedInUrl = null;
     try {
-      people = await fetchLeadershipFromClaude(bankCert, bankName, bankCity, bankState, bankWeb);
+      const result = await fetchLeadershipFromClaude(bankCert, bankName, bankCity, bankState, bankWeb);
+      people = result.people;
+      companyLinkedInUrl = result.company_linkedin_url;
     } catch(e) {}
 
     // Build website link — always shown
@@ -2850,18 +2917,30 @@ function renderLeadershipSection(inst, officers, stock) {
     }
 
     el.innerHTML = `
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">${people.map(p => `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">${people.map((p, i) => `
         <div style="padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
-          <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px;">${p.name}</div>
+          ${p.linkedin_url
+            ? `<a id="leadership-name-${i}" href="${p.linkedin_url}" target="_blank" rel="noopener" style="font-size:14px;font-weight:600;color:#0a66c2;margin-bottom:4px;text-decoration:none;display:inline-flex;align-items:center;gap:5px;">${p.name} <span style="font-size:11px;">↗</span></a>`
+            : `<div id="leadership-name-${i}" style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px;">${p.name}</div>`}
           <div style="font-family:var(--mono);font-size:11px;color:var(--accent);margin-bottom:4px;">${p.title}</div>
-          ${p.linkedin_url ? `<a href="${p.linkedin_url}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:10px;color:#0a66c2;text-decoration:none;margin-bottom:4px;">🔗 LinkedIn ↗</a><br/>` : ''}
           ${p.source && p.source !== 'public record' ? `<div style="font-family:var(--mono);font-size:9px;color:var(--muted);word-break:break-all;">source: ${p.source.replace(/^https?:\/\//,'').split('/')[0]}</div>` : ''}
         </div>`).join('')}
       </div>
       <div style="margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--muted);line-height:1.6;">
-        ⚠ Sourced by Claude AI via web search${bankWeb ? ` (scoped to ${bankWeb.replace(/^https?:\/\//i,'').split('/')[0]})` : ''}. LinkedIn matches via Bright Data, best-effort. May be incomplete — verify below.
+        ⚠ Sourced by Claude AI via web search${bankWeb ? ` (scoped to ${bankWeb.replace(/^https?:\/\//i,'').split('/')[0]})` : ''}. Names link to LinkedIn once matched (usually within ~1-2 min) — best-effort via Bright Data. May be incomplete — verify below.
       </div>
       ${webLinkHtml}`;
+
+    // Background: for anyone still missing a LinkedIn match, trigger + poll
+    // quietly. No loading spinner, no blocking — their name just becomes
+    // clickable in place once found, same as if a prior visitor had already
+    // resolved it. Doesn't run at all if there's no company page to search.
+    const pending = people
+      .map((p, index) => ({ index, name: p.name, hasMatch: !!p.linkedin_url }))
+      .filter(p => !p.hasMatch);
+    if (companyLinkedInUrl && pending.length) {
+      pollLinkedinMatches(bankCert, companyLinkedInUrl, pending);
+    }
   }, 0);
 
   return `<div class="section">
