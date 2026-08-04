@@ -77,24 +77,48 @@ async function findCompanyLinkedInUrl(bankName, city, state) {
   const timer = setTimeout(() => controller.abort(), 8000);
   try {
     const q = `"${bankName}" ${city} ${state} site:linkedin.com/company`;
-    const resp = await fetch('https://api.brightdata.com/request', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        zone: BRIGHTDATA_SERP_ZONE,
-        url: `https://www.google.com/search?q=${encodeURIComponent(q)}`,
-        format: 'json',
-        data_format: 'parsed_light',
-      }),
-      signal: controller.signal,
-    });
+    const doSerpCall = async () => {
+      const resp = await fetch('https://api.brightdata.com/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          zone: BRIGHTDATA_SERP_ZONE,
+          url: `https://www.google.com/search?q=${encodeURIComponent(q)}`,
+          format: 'json',
+          data_format: 'parsed_light',
+        }),
+        signal: controller.signal,
+      });
+      if (!resp.ok) return { ok: false, reason: `HTTP ${resp.status}` };
+      const j = await resp.json();
+      // Bright Data returns a structured error even on 200 (e.g. Google served a
+      // CAPTCHA) rather than throwing — check for it explicitly instead of
+      // blindly attempting JSON.parse(j.body), which throws on an empty body
+      // and gets silently swallowed as "no match found" otherwise. CAPTCHAs
+      // are a known, expected, intermittent failure mode of any Google-SERP
+      // based search, not specific to any one bank name — worth one retry.
+      const errCode = j.headers?.['x-brd-error-code'];
+      if (errCode || !j.body) {
+        return { ok: false, reason: `Bright Data SERP error: ${errCode || 'empty body'} (status_code ${j.status_code})` };
+      }
+      const parsed = typeof j.body === 'string' ? JSON.parse(j.body) : j;
+      const organic = parsed.organic || parsed.organic_results || [];
+      const hit = organic.find(o => (o.link || '').includes('linkedin.com/company/'));
+      return { ok: true, url: hit ? hit.link : null };
+    };
+
+    let result = await doSerpCall();
+    if (!result.ok) {
+      console.log('[vault-linkedin] SERP attempt 1 failed:', result.reason, '- retrying once');
+      await new Promise(r => setTimeout(r, 1500));
+      result = await doSerpCall();
+    }
     clearTimeout(timer);
-    if (!resp.ok) return null;
-    const j = await resp.json();
-    const parsed = typeof j.body === 'string' ? JSON.parse(j.body) : j;
-    const organic = parsed.organic || parsed.organic_results || [];
-    const hit = organic.find(o => (o.link || '').includes('linkedin.com/company/'));
-    return hit ? hit.link : null;
+    if (!result.ok) {
+      console.log('[vault-linkedin] SERP attempt 2 also failed:', result.reason, '- giving up for this lookup');
+      return null;
+    }
+    return result.url;
   } catch (e) {
     clearTimeout(timer);
     console.log('[vault-linkedin] company URL search failed:', e.message);
