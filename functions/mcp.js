@@ -181,6 +181,17 @@ const TOOLS = [
     },
   },
   {
+    name: 'get_bank_leadership_bulk',
+    description: 'Cache-only batch read of leadership data for many banks at once — instant (typically well under 2 seconds for dozens of certs), because it never runs the live Claude+Bright Data pipeline, only reads whatever is already cached. Built for bulk workflows: e.g. call search_institutions or get_lender_rankings to build a list of banks matching criteria (state, asset size, etc.), then call this once with all their CERTs to see what leadership data already exists. Returns per-cert results plus a top-level `cache_misses` array of CERTs with nothing cached yet — for those, call get_bank_leadership individually (which DOES run the live pipeline) to populate them, then re-call this to get the fresh data. This is the fast first pass for building a report or spreadsheet across many banks; it does not itself trigger any new lookups or incur any Bright Data / Claude cost.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        certs: { type: 'array', items: { type: 'string' }, description: 'FDIC certificate numbers to look up (max 100 per call).' },
+      },
+      required: ['certs'],
+    },
+  },
+  {
     name: 'trigger_linkedin_match',
     description: 'Kick off a LinkedIn profile match for one named person at a company -- fast (a few seconds), does NOT wait for the match to complete. Returns a snapshot_id. Available to any user, for a single person or many. Pass the bank cert too (strongly recommended) -- doing so saves the result permanently once found, so this exact person never needs to be looked up again by anyone. After calling this, wait about a minute, then call check_linkedin_match. For bulk workflows processing many banks: call this once per priority-role person across ALL banks first, collecting every snapshot_id, THEN wait 30-60 seconds before checking any -- checking immediately wastes calls, and batching triggers before waiting lets them all process in parallel.',
     inputSchema: {
@@ -745,6 +756,41 @@ Max 4 people, one per role above. Only include people you are highly confident a
     _cache: { hit: false, stored_at: new Date().toISOString() },
   };
 
+}
+
+// Cache-only batch read across many banks at once. Deliberately never calls
+// fetchLeadershipFromClaude or Bright Data — this is a fast first pass over
+// whatever's already been resolved (by anyone, on either surface, since the
+// site and MCP share the same vault-leadership-cache store). Real enrichment
+// for cache_misses still has to go through getBankLeadership one cert at a
+// time, same as always; this tool just makes it cheap to see, across a whole
+// list of banks, which ones need that follow-up and which are already done.
+async function getBankLeadershipBulk(args) {
+  const { certs } = args || {};
+  if (!Array.isArray(certs) || !certs.length) throw new Error('Required parameter "certs" missing or empty — pass an array of FDIC certificate numbers.');
+  const capped = certs.slice(0, 100).map(String);
+
+  const results = await Promise.all(capped.map(async cert => {
+    const cacheKey = `leadership-${cert}`;
+    const cached = await cacheGetLeadership(cacheKey);
+    if (cached) {
+      return {
+        cert,
+        cached: true,
+        people: cached.people || [],
+        company_linkedin_url: cached.company_linkedin_url || null,
+        age_hours: Math.round((Date.now() - cached._cached_at) / 3600000),
+      };
+    }
+    return { cert, cached: false, people: [] };
+  }));
+
+  return {
+    results,
+    cache_misses: results.filter(r => !r.cached).map(r => r.cert),
+    checked: capped.length,
+    hit_count: results.filter(r => r.cached).length,
+  };
 }
 
 function hashIP(ip) {
@@ -1439,6 +1485,7 @@ const TOOL_HANDLERS = {
   get_brokered_deposits: getBrokeredDeposits,
   get_branch_data: getBranchData,
   get_bank_leadership: getBankLeadership,
+  get_bank_leadership_bulk: getBankLeadershipBulk,
   trigger_linkedin_match: triggerLinkedinMatch,
   check_linkedin_match: checkLinkedinMatch,
 };
@@ -1457,7 +1504,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.10.3',
+        name: 'vault-mcp', version: '1.11.0',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -1504,7 +1551,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.10.3' },
+          serverInfo: { name: 'vault-mcp', version: '1.11.0' },
           capabilities: { tools: {} },
         });
       }

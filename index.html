@@ -990,6 +990,7 @@ async function searchFDIC(query) {
       assets: thousands(d.data.ASSET),
       reportDate: d.data.REPDTE,
       cert: d.data.CERT,
+      webAddr: d.data.WEBADDR || null,
     }));
 }
 
@@ -1830,7 +1831,7 @@ function pathToView(path) {
 function render() {
   const app = document.getElementById('app');
   if (state.view === 'home' || state.view === 'search') app.innerHTML = renderSearch();
-  else if (state.view === 'results') app.innerHTML = renderResults();
+  else if (state.view === 'results') { app.innerHTML = renderResults(); if (!state.loading) setTimeout(() => warmLeadershipForResults(state.results), 50); }
   else if (state.view === 'detail') app.innerHTML = renderDetail();
   else if (state.view === 'about') { app.innerHTML = renderAbout(); setTimeout(initAboutMCPStats, 50); }
   else if (state.view === 'lenders') { app.innerHTML = renderLenders(); setTimeout(initLenders, 50); }
@@ -2086,6 +2087,7 @@ function renderResults() {
           <div>
             <div class="result-name">${r.name}</div>
             <div class="result-meta">${r.city || '—'}, ${r.state || '—'} · ${r.type === 'bank' ? 'CERT #' + r.id : 'CU #' + r.id}</div>
+            ${r.type === 'bank' ? `<div id="leadership-peek-${escAttr(r.id)}" class="result-leadership" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:4px;min-height:14px;"></div>` : ''}
           </div>
           <div class="result-assets">
             <div>${r.assets ? fmt$(r.assets) : '—'}</div>
@@ -2710,6 +2712,57 @@ async function pollLinkedinMatches(cert, companyLinkedInUrl, pendingPeople) {
         job.done = true; // stop checking this one, nothing more will come
       }
     }
+  }
+}
+
+// Populates the leadership line on a single search-result card, once we have
+// a person to show for it (from either the cache peek or a freshly-enriched
+// background lookup).
+function renderLeadershipPeek(certId, person) {
+  const el = document.getElementById(`leadership-peek-${certId}`);
+  if (!el || !person || !person.name) return;
+  el.textContent = ''; // clear before rebuilding with structured markup
+  el.innerHTML = `👤 ${person.name} <span style="color:var(--accent);">· ${person.title || ''}</span>`;
+}
+
+// Two-phase leadership warm for the search-results list:
+//   Phase 1 — cache-only "peek" for every bank result, in parallel. Cheap
+//   (Blobs reads, ~150-200ms) and never triggers the Claude+Bright Data
+//   pipeline, so this is safe to fire for the full result set every search.
+//   Phase 2 — for whatever came back uncached, auto-enrich in the background
+//   (Lee's call: fill the cache over time as people search, not just on
+//   detail-page visits). Capped at 20 misses per search and run 5-at-a-time
+//   so one broad query can't fan out into dozens of simultaneous paid API
+//   calls — results are already asset-sorted, so the cap naturally favors
+//   the largest/most sales-relevant institutions first. Anything beyond the
+//   cap still gets enriched normally the moment someone opens its detail page.
+async function warmLeadershipForResults(results) {
+  const bankResults = (results || []).filter(r => r.type === 'bank' && !r.ncuaFallback);
+  if (!bankResults.length) return;
+
+  const peeked = await Promise.all(bankResults.map(async r => {
+    try {
+      const params = new URLSearchParams({ cert: String(r.id), name: r.name || '', city: r.city || '', state: r.state || '', peek: '1' });
+      const resp = await fetch(`/.netlify/functions/leadership?${params.toString()}`);
+      const data = await resp.json();
+      return { r, people: data.people || [], hit: !!(data._cache && data._cache.hit) };
+    } catch (e) { return { r, people: [], hit: false }; }
+  }));
+
+  peeked.forEach(({ r, people, hit }) => {
+    if (hit && people.length) renderLeadershipPeek(r.id, people[0]);
+  });
+
+  const misses = peeked.filter(p => !p.hit).map(p => p.r).slice(0, 20);
+  const CONCURRENCY = 5;
+  for (let i = 0; i < misses.length; i += CONCURRENCY) {
+    const batch = misses.slice(i, i + CONCURRENCY);
+    await Promise.all(batch.map(async r => {
+      try {
+        const result = await fetchLeadershipFromClaude(r.id, r.name, r.city, r.state, r.webAddr || null);
+        if (result.people && result.people.length) renderLeadershipPeek(r.id, result.people[0]);
+      } catch (e) { /* best-effort background enrichment, ignore failures */ }
+    }));
   }
 }
 

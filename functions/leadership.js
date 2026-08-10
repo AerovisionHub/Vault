@@ -482,6 +482,13 @@ exports.handler = async function (event) {
   const webAddr = (params.webAddr || '').trim() || null;
   const wantDebug = params.debug === '1';
   const bypassCache = params.nocache === '1';
+  // peek=1: cache-only read, used by the search-results list to show whatever's
+  // already cached instantly (~150-200ms) without ever running the 8-25s
+  // Claude+Bright Data pipeline synchronously. On a miss it returns empty
+  // immediately rather than falling through — the caller (index.html) is
+  // expected to separately kick off a normal (non-peek) background call for
+  // any misses it wants auto-enriched. Never writes to cache itself.
+  const peekOnly = params.peek === '1';
 
   if (!cert || !name) {
     return {
@@ -507,6 +514,14 @@ exports.handler = async function (event) {
           }),
         };
       }
+    }
+
+    if (peekOnly) {
+      return {
+        statusCode: 200,
+        headers: corsHeaders,
+        body: JSON.stringify({ people: [], company_linkedin_url: null, _cache: { hit: false, peek: true } }),
+      };
     }
 
     const { people, company_linkedin_url, debug } = await fetchLeadershipFromClaude(name, city, state, webAddr);
