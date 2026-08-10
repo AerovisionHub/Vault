@@ -2648,14 +2648,14 @@ async function fetchLeadershipFromClaude(cert, bankName, city, state, webAddr) {
     const resp = await fetch(`/.netlify/functions/leadership?${params.toString()}`);
     if (!resp.ok) {
       console.warn('[vault-leadership] function returned HTTP', resp.status);
-      return { people: [], company_linkedin_url: null };
+      return { people: [], company_linkedin_url: null, error: `HTTP ${resp.status}` };
     }
     const data = await resp.json();
     if (data.error) console.warn('[vault-leadership] server error:', data.error);
-    return { people: data.people || [], company_linkedin_url: data.company_linkedin_url || null };
+    return { people: data.people || [], company_linkedin_url: data.company_linkedin_url || null, error: data.error || null };
   } catch(e) {
     console.warn('[vault-leadership] client error:', e.message);
-    return { people: [], company_linkedin_url: null };
+    return { people: [], company_linkedin_url: null, error: e.message };
   }
 }
 
@@ -2893,11 +2893,13 @@ function renderLeadershipSection(inst, officers, stock) {
     if (!el) return;
     let people = [];
     let companyLinkedInUrl = null;
+    let lookupError = null;
     try {
       const result = await fetchLeadershipFromClaude(bankCert, bankName, bankCity, bankState, bankWeb);
       people = result.people;
       companyLinkedInUrl = result.company_linkedin_url;
-    } catch(e) {}
+      lookupError = result.error;
+    } catch(e) { lookupError = e.message; }
 
     // Build website link — always shown
     const webUrl = bankWeb ? (bankWeb.startsWith('http') ? bankWeb : 'https://'+bankWeb) : null;
@@ -2910,6 +2912,27 @@ function renderLeadershipSection(inst, officers, stock) {
           Visit ${bankWeb.replace(/^https?:\/\//i,'').replace(/\/$/,'')} ↗
         </a>
       </div>` : '';
+
+    // Distinguish "the search genuinely errored/timed out" from "Claude searched
+    // successfully and found nobody" — these used to show the identical message,
+    // making it impossible to tell "try again" apart from "this bank truly has
+    // no findable public leadership info." Found via a real report: First Command
+    // Bank consistently hits Claude's timeout (likely due to an unusually large
+    // public web presence — multiple related entities/divisions to sift through),
+    // and the old message made that look identical to a small bank with no
+    // online presence at all.
+    if (lookupError && (!people || !people.length)) {
+      el.innerHTML = `
+        <p style="color:#fbbf24;font-size:13px;font-family:var(--mono);padding:8px 0;">
+          ⚠ Search timed out — this bank may have an unusually large public web presence to sift through. Try again.
+        </p>
+        <button onclick="location.reload()"
+          style="padding:7px 16px;background:rgba(77,184,255,0.1);border:1px solid rgba(77,184,255,0.3);border-radius:8px;color:#4db8ff;font-family:var(--mono);font-size:12px;cursor:pointer;">
+          ↻ Try again
+        </button>
+        ${webLinkHtml}`;
+      return;
+    }
 
     if (!people || !people.length) {
       el.innerHTML = `<p style="color:var(--muted);font-size:13px;font-family:var(--mono);padding:8px 0;">No leadership data found. Check the institution's website directly.</p>${webLinkHtml}`;
