@@ -1080,12 +1080,24 @@ async function getLenderRankings(args) {
   if (city)  instFilters += `%20AND%20CITY%3A${encodeURIComponent(city)}*`;
 
   const fields    = 'NAME,CERT,CITY,STALP,ASSET,WEBADDR';
-  const finFields = 'CERT,RBC1AAJ,ROA,NCLNLSR,LNLSNET,ASSET';
+  const finFields = 'CERT,RBC1AAJ,ROA,NCLNLSR,LNLSNET,ASSET,REPDTE';
 
   // 100 rows instead of 200 — still plenty for ranking, ~40% faster FDIC response
   const [instR, finR] = await Promise.all([
     fetchFDIC(`${FDIC_BASE}/institutions?filters=${instFilters}&fields=${fields}&limit=100&sort_by=ASSET&sort_order=DESC`).catch(() => ({ data: [] })),
-    fetchFDIC(`${FDIC_BASE}/financials?filters=${instFilters}&fields=${finFields}&limit=100&sort_by=ASSET&sort_order=DESC`).catch(() => ({ data: [] })),
+    // Sorted by REPDTE (most recent quarter first), NOT by ASSET. The FDIC
+    // financials dataset is one row PER INSTITUTION PER QUARTER going back
+    // years — sorting by ASSET DESC with no date constraint (the original
+    // bug here) let a handful of institutions' entire multi-year quarterly
+    // history dominate the top 100 rows, starving out every other
+    // institution's join and silently collapsing results to a tiny fraction
+    // of the real count (confirmed live: Oklahoma community banks returned
+    // only 5 of 9+ known-active institutions). Sorting by REPDTE DESC + a
+    // larger limit + de-dup-to-most-recent-per-CERT below fixes this: since
+    // most banks share standard quarter-end report dates, the most recent
+    // REPDTE alone typically covers every matching institution's current
+    // financials.
+    fetchFDIC(`${FDIC_BASE}/financials?filters=${instFilters}&fields=${finFields}&limit=500&sort_by=REPDTE&sort_order=DESC`).catch(() => ({ data: [] })),
   ]);
   const insts = (instR.data || []).map(d => d.data).filter(Boolean);
   if (!insts.length) {
@@ -1094,7 +1106,13 @@ async function getLenderRankings(args) {
     return empty;
   }
 
-  const fins = new Map((finR.data || []).map(d => [d.data?.CERT, d.data]).filter(([k]) => k));
+  // De-dupe to each CERT's most recent quarter — first occurrence wins since
+  // rows are sorted REPDTE DESC.
+  const fins = new Map();
+  for (const d of (finR.data || [])) {
+    const rec = d.data;
+    if (rec?.CERT && !fins.has(rec.CERT)) fins.set(rec.CERT, rec);
+  }
 
   const scored = insts.map(inst => {
     const fin = fins.get(inst.CERT);
@@ -1504,7 +1522,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.11.0',
+        name: 'vault-mcp', version: '1.11.1',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -1551,7 +1569,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.11.0' },
+          serverInfo: { name: 'vault-mcp', version: '1.11.1' },
           capabilities: { tools: {} },
         });
       }
