@@ -79,3 +79,10 @@
 
 [functions."leadership"]
   timeout = 26
+
+# leadership-background: no timeout config needed/settable here — the
+# "-background" filename suffix itself is what tells Netlify to run this as
+# a fire-and-forget background function (immediate 202 response, up to 15
+# min actual execution, no result read from its HTTP response). This is the
+# whole point of its existence: the ~26s ceiling above is a hard platform
+# limit for synchronous functions that no timeout config can raise further.

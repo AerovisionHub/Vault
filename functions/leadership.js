@@ -14,6 +14,7 @@
 //      or the MCP tool warms the cache for the other.
 
 const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const PENDING_TTL_MS = 10 * 60 * 1000; // 10 min — guards against a crashed background run leaving a stale pending marker that blocks retries forever
 const BRIGHTDATA_SERP_ZONE = 'serp_api1vault_serp';
 const BRIGHTDATA_LINKEDIN_DATASET_ID = 'gd_m8d03he47z8nwb5xc';
 const PRIORITY_ROLES = new Set(['ceo', 'president', 'cio_cto', 'coo']);
@@ -66,10 +67,29 @@ async function cacheSet(key, data) {
   }
 }
 
+async function cacheDelete(key) {
+  try {
+    const store = await getBlobStore();
+    if (!store) return;
+    await store.delete(key);
+  } catch (e) {
+    console.log('[vault-leadership-cache] cacheDelete error:', e.message);
+  }
+}
+
 // Find the bank's own LinkedIn company page via a SERP search — bank LinkedIn
 // URLs don't follow a guessable pattern, so this has to be a search, not a
 // direct lookup. Best-effort: returns null on any failure rather than
 // throwing, since the core name/title data shouldn't depend on this succeeding.
+// DEAD CODE as of the leadership-background.js architectural change: the
+// main GET handler below no longer calls this directly (it hands off to
+// leadership-background.js, which has its own copy with generous timeouts
+// instead of this one's tight deadline-racing version). Left in place only
+// because deleting unused code correctly, with full confidence nothing else
+// references it, needs more careful checking than this session had time for
+// — safer to mark clearly than to risk a silent breakage. Not called from
+// anywhere in this file anymore; if you're debugging a LinkedIn company-
+// search issue, you want functions/leadership-background.js, not this.
 async function findCompanyLinkedInUrl(bankName, city, state, debugSink, deadline) {
   const apiKey = process.env.BRIGHTDATA_API_KEY;
   if (!apiKey) return null;
@@ -200,6 +220,9 @@ function experienceMatchesCompany(experience, companyLinkedInUrl) {
   return hyphenMatch || concatMatch;
 }
 
+// DEAD CODE as of the leadership-background.js architectural change — same
+// situation as findCompanyLinkedInUrl above. Not called from anywhere in
+// this file anymore.
 async function lookupLinkedInProfile(companyUrl, fullName, deadlineMs) {
   const apiKey = process.env.BRIGHTDATA_API_KEY;
   if (!apiKey || !fullName) return null;
@@ -248,6 +271,10 @@ async function lookupLinkedInProfile(companyUrl, fullName, deadlineMs) {
   }
 }
 
+// DEAD CODE as of the leadership-background.js architectural change — same
+// situation as findCompanyLinkedInUrl above. Not called from anywhere in
+// this file anymore; the main GET handler hands off to
+// leadership-background.js instead.
 async function fetchLeadershipFromClaude(bankName, city, state, webAddr) {
   const overallStart = Date.now();
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -559,18 +586,42 @@ exports.handler = async function (event) {
       };
     }
 
-    const { people, company_linkedin_url, debug } = await fetchLeadershipFromClaude(name, city, state, webAddr);
-    await cacheSet(cacheKey, { people, company_linkedin_url });
+    // Not cached, not a peek. Rather than running the search inline and
+    // racing Netlify's real ~26s ceiling (confirmed live: "Security Bank,"
+    // Tulsa OK, failed 5/5 times synchronously because its generic name
+    // forces the search to wade through unrelated same-named banks
+    // elsewhere), hand off to a background function with a genuinely
+    // generous budget (~15 min) and return a pending status. The front end
+    // polls this same endpoint again a few seconds later.
+    const pendingKey = `leadership-pending-${cert}`;
+    const pending = await cacheGet(pendingKey);
+    if (pending && (Date.now() - pending._cached_at) < PENDING_TTL_MS) {
+      return {
+        statusCode: 200,
+        headers: corsHeaders,
+        body: JSON.stringify({ status: 'pending', started_at: new Date(pending._cached_at).toISOString() }),
+      };
+    }
+
+    await cacheSet(pendingKey, { started: true });
+
+    const siteUrl = process.env.URL || 'https://vaultbot.ai';
+    try {
+      await fetch(`${siteUrl}/.netlify/functions/leadership-background`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cert, name, city, state, webAddr }),
+      });
+    } catch (e) {
+      console.log('[vault-leadership] failed to trigger background enrichment for', cert, ':', e.message);
+      await cacheDelete(pendingKey);
+      return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ people: [], error: `Failed to start enrichment: ${e.message}` }) };
+    }
 
     return {
       statusCode: 200,
       headers: corsHeaders,
-      body: JSON.stringify({
-        people,
-        company_linkedin_url,
-        _cache: { hit: false, stored_at: new Date().toISOString() },
-        ...(wantDebug ? { _debug: debug } : {}),
-      }),
+      body: JSON.stringify({ status: 'pending' }),
     };
   } catch (e) {
     console.log('[vault-leadership] error:', e.message);

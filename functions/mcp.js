@@ -323,6 +323,16 @@ async function cacheSetLeadership(key, data) {
   }
 }
 
+async function cacheDeleteLeadership(key) {
+  try {
+    const store = await getLeadershipBlobStore();
+    if (!store) return;
+    await store.delete(key);
+  } catch(e) {
+    console.log('[vault-leadership-cache] cacheDeleteLeadership error:', e.message);
+  }
+}
+
 // ── LinkedIn enrichment (Bright Data) ────────────────────────────────────────
 // Two-step: (1) SERP search finds the bank's own LinkedIn company page (bank
 // LinkedIn URLs don't follow a guessable pattern), (2) Bright Data's people-
@@ -332,6 +342,11 @@ async function cacheSetLeadership(key, data) {
 const BRIGHTDATA_SERP_ZONE = 'serp_api1vault_serp';
 const BRIGHTDATA_LINKEDIN_DATASET_ID = 'gd_m8d03he47z8nwb5xc';
 
+// DEAD CODE as of the leadership-background.js architectural change:
+// getBankLeadership below no longer calls this directly (it hands off to
+// leadership-background.js, which has its own copy with generous timeouts).
+// Not called from anywhere in this file anymore; if you're debugging a
+// LinkedIn company-search issue, you want functions/leadership-background.js.
 async function findCompanyLinkedInUrl(bankName, city, state, deadline) {
   const apiKey = process.env.BRIGHTDATA_API_KEY;
   if (!apiKey) return null;
@@ -429,6 +444,9 @@ async function findCompanyLinkedInUrl(bankName, city, state, deadline) {
 // trigger + poll + download pattern instead, bounded by whatever time budget
 // the caller has left (deadlineMs), so a still-running job degrades to null
 // rather than either hanging or being misread as "no match."
+// DEAD CODE as of the leadership-background.js architectural change — same
+// situation as findCompanyLinkedInUrl above. Not called from anywhere in
+// this file anymore.
 async function lookupLinkedInProfile(companyUrl, fullName, deadlineMs) {
   const apiKey = process.env.BRIGHTDATA_API_KEY;
   if (!apiKey || !fullName) return null;
@@ -620,11 +638,9 @@ async function checkLinkedinMatch(args) {
   return { snapshot_id, status: 'not_found' };
 }
 
+const LEADERSHIP_PENDING_TTL_MS = 10 * 60 * 1000; // 10 min — guards against a crashed background run leaving a stale pending marker that blocks retries forever
+
 async function getBankLeadership(args) {
-  // Measured from true entry — cache check and FDIC fetch below both consume
-  // real wall-clock time against the ~26s function ceiling, and the LinkedIn
-  // enrichment budget later needs to account for that, not just its own slice.
-  const overallStart = Date.now();
   const { cert } = args || {};
   if (!cert) throw new Error('Required parameter "cert" missing. Get a CERT from search_institutions.');
 
@@ -634,172 +650,61 @@ async function getBankLeadership(args) {
     return {
       cert,
       people: cached.people || [],
+      company_linkedin_url: cached.company_linkedin_url || null,
       _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) },
     };
   }
 
-  // Need institution name/city/state/website to search for — same fields other tools use
+  // Not cached. Rather than running the search inline and racing Netlify's
+  // real ~26s ceiling (see leadership-background.js header comment for the
+  // full history — confirmed live: "Security Bank," Tulsa OK, failed 5/5
+  // times synchronously because its generic name forces Claude's search to
+  // wade through unrelated same-named banks elsewhere), hand this off to a
+  // background function with a genuinely generous budget (~15 min) and
+  // return immediately. The caller (this tool, called again) picks up the
+  // result once it's ready.
+  const pendingKey = `leadership-pending-${cert}`;
+  const pending = await cacheGetLeadership(pendingKey);
+  if (pending && (Date.now() - pending._cached_at) < LEADERSHIP_PENDING_TTL_MS) {
+    return {
+      cert,
+      status: 'pending',
+      message: 'Enrichment already running for this bank. Typically takes 30-90 seconds (longer for banks with generic/common names) -- call get_bank_leadership again with this same cert to check.',
+      started_at: new Date(pending._cached_at).toISOString(),
+    };
+  }
+
   const iR = await fetchFDIC(`${FDIC_BASE}/institutions?filters=CERT%3A${cert}&fields=NAME,CITY,STALP,WEBADDR&limit=1`);
   const inst = iR.data?.[0]?.data;
   if (!inst) throw new Error(`No institution found for CERT ${cert}.`);
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error('ANTHROPIC_API_KEY not configured on the server.');
+  await cacheSetLeadership(pendingKey, { started: true });
 
-  const webAddr = inst.WEBADDR || null;
-  const domainHint = webAddr
-    ? `Focus your search on the bank's own website: ${webAddr.replace(/^https?:\/\//i, '').split('/')[0]}. `
-    : '';
-  const prompt = `You are a financial research assistant. ${domainHint}Find the following specific decision-makers at the US bank "${inst.NAME}" (FDIC-chartered, headquartered near ${inst.CITY}, ${inst.STALP}) — in priority order:
-
-1. CEO or President (top executive — may hold either or both titles)
-2. CIO or CTO — the technology/information leader (HIGH priority; this is who evaluates data infrastructure vendors). Community banks often don't use these exact titles — look for the closest functional equivalent, e.g. "SVP of Information Technology," "Chief Digital Officer," "VP of IT," "EVP of Technology," or similar. Use judgment on title wording, not an exact string match.
-3. COO (lower priority — include only if clearly identified, skip if uncertain)
-
-Important: banks often have a registered/charter address that differs from where their executive team actually operates — company-wide executive leadership is exactly what's wanted here, regardless of which specific office is on file with regulators. Do not discard a bank's real, published leadership team just because it's described as "company-wide" rather than tied to one specific address.
-
-For each person, also try a quick web search for their personal LinkedIn profile (e.g. "{name} {bank name} linkedin"). Only include a linkedin_url if a real search result explicitly connects that exact person to this exact bank (e.g. the result text itself says something like "Experience: ${inst.NAME}" or an announcement names them in that role at this bank) — never guess, infer from a common name, or supply a URL you're not directly citing from a search result. Omit the field entirely if you don't have that level of confidence; a missing LinkedIn URL costs nothing, a wrong one could mean contacting the wrong person.
-
-Return ONLY a JSON array (no markdown, no explanation):
-[{"name":"Full Name","title":"Their actual title as published","role_category":"ceo|president|cio_cto|coo","source":"URL or public record","linkedin_url":"https://linkedin.com/in/... (omit if not confidently verified)"}]
-
-Max 4 people, one per role above. Only include people you are highly confident about based on search results. If you found no relevant information at all, return [].`;
-
-  // Track wall-clock time against the ~26s function ceiling. History here:
-  // 18s Claude budget caused a real production timeout on "Bank of DeSoto"
-  // (18s wasn't enough). Bumped to 22s — that fixed the timeout, but the
-  // same bank then completed at 26.3s internally, dangerously close to
-  // Netlify's actual platform ceiling (not just our own accounting). Settled
-  // on 19s for Claude as the safer middle ground, with the LinkedIn phase
-  // hard-capped by an overall time-budget race (not a per-call timeout) so a
-  // slow LinkedIn lookup degrades to nulls instead of ever risking the
-  // names/titles Claude already found, or the 26s ceiling itself.
-  const claudeController = new AbortController();
-  const claudeTimer = setTimeout(() => claudeController.abort(), 19000);
-
-  const claudePromise = fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 600,
-      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-      messages: [{ role: 'user', content: prompt }],
-    }),
-    signal: claudeController.signal,
-  }).finally(() => clearTimeout(claudeTimer));
-
-  const [claudeSettled, companyLinkedInUrl] = await Promise.all([
-    claudePromise.then(r => ({ ok: true, resp: r })).catch(e => ({ ok: false, error: e })),
-    findCompanyLinkedInUrl(inst.NAME, inst.CITY, inst.STALP, overallStart + 24000),
-  ]);
-
-  if (!claudeSettled.ok) {
-    const e = claudeSettled.error;
-    if (e.name === 'AbortError') throw new Error('Claude API timeout (>19s) looking up leadership.');
-    throw new Error(`Claude API network error: ${e.message}`);
-  }
-  const resp = claudeSettled.resp;
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => '');
-    throw new Error(`Claude API returned HTTP ${resp.status}. ${text.slice(0, 200)}`);
-  }
-
-  const data = await resp.json();
-  const textBlocks = (data.content || []).filter(b => b.type === 'text');
-  const text = textBlocks.length ? textBlocks[textBlocks.length - 1].text : '';
-  const clean = text.replace(/```json|```/g, '').trim();
-
-  let people = [];
-  if (clean) {
-    const jsonMatch = clean.match(/\[[\s\S]*\]/);
-    const jsonStr = jsonMatch ? jsonMatch[0] : clean;
-    if (jsonStr !== '[]') {
-      try { people = JSON.parse(jsonStr); } catch (e) { people = []; }
-    }
-  }
-  // Claude's self-reported linkedin_url (if any) is a second, independent
-  // candidate — kept separate from linkedin_url itself so it's never
-  // conflated with a Bright-Data-verified match. Bright Data's structured
-  // dataset can simply fail to surface the right candidate at all for a
-  // common name (confirmed live: Alicia Wade, COO at Sovereign Bank) — since
-  // Claude's web search is a different index with different blind spots,
-  // it's used below as a fallback ONLY when Bright Data comes back with
-  // nothing, and always tagged with its true (lower) confidence level.
-  const claudeCandidateUrls = people.map(p => p.linkedin_url || null);
-
-  // Enrich with a LinkedIn profile URL — but ONLY for people in the priority
-  // role categories (ceo, president, cio_cto, coo). This directly targets
-  // spend: if Claude's prompt slips in an extra person outside those roles,
-  // we don't pay a Bright Data credit (or spend time budget) looking them up.
-  // Non-priority people still get returned with linkedin_url: null rather
-  // than being dropped from the response entirely — Lee still sees who they
-  // are, we just don't spend enrichment budget on them.
-  const PRIORITY_ROLES = new Set(['ceo', 'president', 'cio_cto', 'coo']);
-  const elapsedMs = Date.now() - overallStart;
-  const remainingBudgetMs = Math.max(1500, 23000 - elapsedMs);
-  const linkedinDeadline = Date.now() + remainingBudgetMs;
-
-  if (companyLinkedInUrl && people.length) {
-    const priorityIdx = people
-      .map((p, i) => ({ p, i }))
-      .filter(({ p }) => PRIORITY_ROLES.has(p.role_category));
-
-    const lookupPromise = Promise.allSettled(
-      priorityIdx.map(({ p }) => lookupLinkedInProfile(companyLinkedInUrl, p.name, linkedinDeadline))
-    );
-    const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), remainingBudgetMs));
-    const linkedinResults = await Promise.race([lookupPromise, timeoutPromise]);
-
-    // Start everyone at null/no-source, then fill in results for the
-    // priority subset that was actually looked up (whether the race
-    // finished or not — if it timed out, linkedinResults is null and
-    // everyone correctly stays null).
-    people = people.map((p, i) => ({ ...p, linkedin_url: null, linkedin_source: null }));
-    if (linkedinResults !== null) {
-      priorityIdx.forEach(({ i }, j) => {
-        const verified = linkedinResults[j].status === 'fulfilled' ? linkedinResults[j].value : null;
-        if (verified) {
-          people[i].linkedin_url = verified;
-          people[i].linkedin_source = 'brightdata_verified';
-        } else if (claudeCandidateUrls[i]) {
-          people[i].linkedin_url = claudeCandidateUrls[i];
-          people[i].linkedin_source = 'ai_search_unverified';
-        }
-      });
-    } else {
-      console.log('[vault-linkedin] enrichment phase skipped — out of time budget (', remainingBudgetMs, 'ms remaining)');
-      // Still apply Claude's candidates even if the Bright Data phase never
-      // ran at all — better than nothing, and still honestly labeled.
-      priorityIdx.forEach(({ i }) => {
-        if (claudeCandidateUrls[i]) {
-          people[i].linkedin_url = claudeCandidateUrls[i];
-          people[i].linkedin_source = 'ai_search_unverified';
-        }
-      });
-    }
-  } else {
-    // No company LinkedIn page found at all — Bright Data verification was
-    // never possible, but Claude's candidates (if any) are still usable,
-    // honestly labeled as unverified.
-    people = people.map((p, i) => {
-      const claudeUrl = claudeCandidateUrls[i];
-      return { ...p, linkedin_url: claudeUrl || null, linkedin_source: claudeUrl ? 'ai_search_unverified' : null };
+  const siteUrl = process.env.URL || 'https://vaultbot.ai';
+  try {
+    // Deliberately not awaited beyond the initial connection -- Netlify
+    // returns 202 to this fetch almost immediately for a "-background"
+    // function without waiting for its actual handler logic to run, so this
+    // stays fast without needing any fire-and-forget tricks.
+    await fetch(`${siteUrl}/.netlify/functions/leadership-background`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cert, name: inst.NAME, city: inst.CITY, state: inst.STALP, webAddr: inst.WEBADDR || null }),
     });
+  } catch (e) {
+    console.log('[vault-leadership] failed to trigger background enrichment for', cert, ':', e.message);
+    await cacheDeleteLeadership(pendingKey).catch(() => {}); // clear the marker we just set -- the trigger itself failed, don't block future retries
+    throw new Error(`Failed to start leadership enrichment: ${e.message}`);
   }
-
-  await cacheSetLeadership(cacheKey, { people });
 
   return {
     cert,
     name: inst.NAME,
     city: inst.CITY,
     state: inst.STALP,
-    company_linkedin_url: companyLinkedInUrl,
-    people,
-    _cache: { hit: false, stored_at: new Date().toISOString() },
+    status: 'pending',
+    message: 'Enrichment started -- typically takes 30-90 seconds (longer for banks with generic/common names). Call get_bank_leadership again with this same cert to check.',
   };
-
 }
 
 // Cache-only batch read across many banks at once. Deliberately never calls
@@ -1566,7 +1471,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.11.4',
+        name: 'vault-mcp', version: '1.12.0',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -1613,7 +1518,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.11.4' },
+          serverInfo: { name: 'vault-mcp', version: '1.12.0' },
           capabilities: { tools: {} },
         });
       }

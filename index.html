@@ -2650,14 +2650,14 @@ async function fetchLeadershipFromClaude(cert, bankName, city, state, webAddr) {
     const resp = await fetch(`/.netlify/functions/leadership?${params.toString()}`);
     if (!resp.ok) {
       console.warn('[vault-leadership] function returned HTTP', resp.status);
-      return { people: [], company_linkedin_url: null, error: `HTTP ${resp.status}` };
+      return { people: [], company_linkedin_url: null, error: `HTTP ${resp.status}`, status: null };
     }
     const data = await resp.json();
     if (data.error) console.warn('[vault-leadership] server error:', data.error);
-    return { people: data.people || [], company_linkedin_url: data.company_linkedin_url || null, error: data.error || null };
+    return { people: data.people || [], company_linkedin_url: data.company_linkedin_url || null, error: data.error || null, status: data.status || null };
   } catch(e) {
     console.warn('[vault-leadership] client error:', e.message);
-    return { people: [], company_linkedin_url: null, error: e.message };
+    return { people: [], company_linkedin_url: null, error: e.message, status: null };
   }
 }
 
@@ -2935,28 +2935,24 @@ function renderLeadershipSection(inst, officers, stock) {
     }
   }, 0);
 
-  // Leadership section — async Claude AI lookup, setTimeout pattern (safe for innerHTML injection)
+  // Leadership section — async, hands off to a background enrichment job on
+  // the server (see functions/leadership-background.js) rather than blocking
+  // on a single slow request. Polls this same endpoint every ~8s while the
+  // job runs, capped at 15 attempts (~2 min) so an abandoned tab doesn't poll
+  // forever — the background job itself keeps running server-side regardless
+  // and will be sitting in cache the next time anyone loads this page even if
+  // this particular tab gives up watching.
   const bankCert  = inst.CERT;
   const bankName = inst.NAME;
   const bankCity = inst.CITY;
   const bankState = inst.STALP;
   const bankWeb   = inst.WEBADDR || null;
+  const MAX_LEADERSHIP_POLLS = 15;
   setTimeout(async () => {
     const el = document.getElementById('leadershipContainer');
     if (!el) return;
-    let people = [];
-    let companyLinkedInUrl = null;
-    let lookupError = null;
-    try {
-      const result = await fetchLeadershipFromClaude(bankCert, bankName, bankCity, bankState, bankWeb);
-      people = result.people;
-      companyLinkedInUrl = result.company_linkedin_url;
-      lookupError = result.error;
-    } catch(e) { lookupError = e.message; }
 
-    // Build website link — always shown
     const webUrl = bankWeb ? (bankWeb.startsWith('http') ? bankWeb : 'https://'+bankWeb) : null;
-    const leadershipPageHints = ['leadership','about','team','management','executives','about-us','our-team'];
     const webLinkHtml = webUrl ? `
       <div style="margin-top:12px;padding:10px 14px;background:rgba(77,184,255,0.06);border:1px solid rgba(77,184,255,0.15);border-radius:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
         <span style="font-family:var(--mono);font-size:11px;color:var(--muted);">For accurate, up-to-date leadership information:</span>
@@ -2965,6 +2961,32 @@ function renderLeadershipSection(inst, officers, stock) {
           Visit ${bankWeb.replace(/^https?:\/\//i,'').replace(/\/$/,'')} ↗
         </a>
       </div>` : '';
+
+    let people = [], companyLinkedInUrl = null, lookupError = null, status = null, attempt = 0;
+    while (attempt < MAX_LEADERSHIP_POLLS) {
+      attempt++;
+      try {
+        const result = await fetchLeadershipFromClaude(bankCert, bankName, bankCity, bankState, bankWeb);
+        people = result.people;
+        companyLinkedInUrl = result.company_linkedin_url;
+        lookupError = result.error;
+        status = result.status;
+      } catch(e) { lookupError = e.message; status = null; }
+
+      if (status !== 'pending') break; // resolved (cache hit or a real error) — stop polling
+
+      const stillHere = document.getElementById('leadershipContainer');
+      if (!stillHere) return; // user navigated away — stop polling, nothing to update
+      stillHere.innerHTML = `<p style="color:var(--muted);font-size:13px;font-family:var(--mono);padding:8px 0;">🔎 Looking up leadership — this can take up to a couple minutes for banks with generic or common names…</p>`;
+      await new Promise(r => setTimeout(r, 8000));
+    }
+
+    if (status === 'pending') {
+      // Gave up watching, but the background job is still running server-side
+      // — it'll be in cache next time this page loads, just not this visit.
+      el.innerHTML = `<p style="color:var(--muted);font-size:13px;font-family:var(--mono);padding:8px 0;">Still looking — this is taking longer than usual. Refresh in a minute to check again.</p>${webLinkHtml}`;
+      return;
+    }
 
     // Distinguish "the search genuinely errored/timed out" from "Claude searched
     // successfully and found nobody" — these used to show the identical message,
