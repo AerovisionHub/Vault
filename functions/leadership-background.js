@@ -99,6 +99,47 @@ function experienceMatchesCompany(experience, companyLinkedInUrl) {
   return hyphenMatch || concatMatch;
 }
 
+// Verifies a candidate company LinkedIn URL actually resembles the bank
+// being searched for, using the same distinctive-word-overlap technique as
+// experienceMatchesCompany, just applied in the opposite direction (does
+// the SLUG resemble the BANK NAME, rather than does a person's experience
+// text resemble the slug). Found via a real false-positive: searching for
+// "Bank of Hydro" (a tiny Oklahoma bank with little online presence)
+// returned linkedin.com/company/north-valley-bank as the top "linkedin.com
+// /company/" link in the SERP results — completely unrelated, but nothing
+// checked before this fix. That's a serious failure mode: every downstream
+// person-verification step trusts this URL as ground truth, so a wrong
+// company URL silently corrupts everything built on top of it, not just
+// the company link itself.
+function companyUrlMatchesBankName(companyUrl, bankName, city) {
+  if (!companyUrl || !bankName) return false;
+  const slug = companyUrl.split('/company/')[1]?.split('/')[0] || '';
+  const stopWords = new Set(['the', 'bank', 'of', 'na', 'national', 'association', 'inc', 'corp', 'corporation', 'company', 'llc', 'group', 'financial', 'trust', 'and', 'co', 'bancorp', 'bankshares']);
+  const slugWords = slug.replace(/-/g, ' ').toLowerCase().split(/\s+/).filter(w => w.length > 2 && !stopWords.has(w));
+  const slugConcatenated = slug.replace(/-/g, '').toLowerCase();
+  const nameWords = bankName.toLowerCase().split(/\s+/).filter(w => w.length > 2 && !stopWords.has(w));
+  if (!nameWords.length) return true; // bank name is entirely generic/stopwords -- nothing distinctive to check against, allow through
+  if (!slugWords.length && slugConcatenated.length <= 3) return false; // slug itself has nothing distinctive either -- can't verify, reject rather than risk a coincidental match
+  const nameMatch = nameWords.some(w => slugWords.includes(w) || slugConcatenated.includes(w));
+  if (nameMatch) return true;
+  // Bank names commonly get abbreviated to initials in real LinkedIn slugs
+  // (confirmed live: "Security Bank" of Tulsa's real slug is "sbtulsa" --
+  // "SB" + city, not the spelled-out name at all). The bank-name-word check
+  // above would wrongly REJECT this true match, so also accept if the slug
+  // contains the city name -- abbreviated slugs consistently keep that even
+  // when the bank name itself is compressed to initials.
+  const cityWord = (city || '').toLowerCase().replace(/[^a-z]/g, '');
+  if (cityWord.length > 2 && slugConcatenated.includes(cityWord)) return true;
+  // Some slugs are pure initials (e.g. "fnbok" = First National Bank + OK) --
+  // build an acronym from the bank name's words (excluding only true filler
+  // words, keeping "national"/"bank"/etc since those commonly contribute
+  // real initials) and accept if the slug starts with it.
+  const fillers = new Set(['of', 'the', 'and']);
+  const initials = bankName.toLowerCase().split(/\s+/).filter(w => w.length && !fillers.has(w)).map(w => w[0]).join('');
+  if (initials.length >= 2 && slugConcatenated.startsWith(initials)) return true;
+  return false;
+}
+
 // Generous version — up to ~90s across both attempts (14s + 1.5s delay + 75s
 // retry ceiling), vs. the synchronous version's tight ~24s total budget. No
 // deadline-vs-overall-ceiling math needed here since there's no shared 26s
@@ -132,8 +173,16 @@ async function findCompanyLinkedInUrl(bankName, city, state) {
       }
       const parsed = typeof j.body === 'string' ? JSON.parse(j.body) : j;
       const organic = parsed.organic || parsed.organic_results || [];
-      const hit = organic.find(o => (o.link || '').includes('linkedin.com/company/'));
-      return { ok: true, url: hit ? hit.link : null };
+      // Check EVERY "linkedin.com/company/" candidate, not just the first —
+      // same principle as the person-matching fix (v1.11.3): the top-ranked
+      // result isn't always the right one, and blindly trusting it is
+      // exactly what let north-valley-bank through for "Bank of Hydro."
+      const candidates = organic.filter(o => (o.link || '').includes('linkedin.com/company/'));
+      const verified = candidates.find(o => companyUrlMatchesBankName(o.link, bankName, city));
+      if (candidates.length && !verified) {
+        console.log('[leadership-background] REJECTED all', candidates.length, 'company URL candidate(s) for', bankName, ':', candidates.map(o => o.link).join(' | '));
+      }
+      return { ok: true, url: verified ? verified.link : null };
     } catch (e) {
       clearTimeout(timer);
       return { ok: false, reason: e.name === 'AbortError' ? `timeout (>${timeoutMs}ms)` : e.message };
