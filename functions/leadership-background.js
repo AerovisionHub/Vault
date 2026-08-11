@@ -204,6 +204,96 @@ async function lookupLinkedInProfile(companyUrl, fullName, deadlineMs) {
   }
 }
 
+const BRIGHTDATA_PROFILE_DATASET_ID = 'gd_l1viktl72bvl7bjuj0'; // Bright Data "LinkedIn People Profiles" — collect-by-URL, real structured data (not a search snippet)
+
+// Independently verifies a candidate LinkedIn URL that Claude's web search
+// proposed, by actually scraping that exact profile and checking its REAL
+// structured data — not trusting Claude's interpretation of a truncated
+// search-result snippet.
+//
+// WHY THIS EXISTS: caught live. Claude's web-search fallback proposed
+// https://www.linkedin.com/in/eric-bohne-63159411/ for the real Chairman of
+// Security Bank (a 50-year banking veteran per the bank's own news page).
+// The search snippet did contain "Experience: Security Bank Tulsa Okla",
+// which passed the text-match bar — but the actual profile had 5
+// connections and a generic "Owner, [Company Name]" title with no real
+// bio, sitting alongside a batch of similarly-patterned unrelated people in
+// entirely different states (Cincinnati OH, Amarillo TX, Atlanta, Baton
+// Rouge). That's the signature of an auto-generated directory/spam
+// listing, not a real executive's profile — and the search-snippet text
+// alone can't distinguish the two. A real scrape can: it exposes the
+// connection count and the ACTUAL experience array to check against,
+// instead of whatever fragment Google's snippet happened to surface.
+//
+// Conservative on purpose, same philosophy as experienceMatchesCompany: a
+// missed real match (false negative — we just don't get a LinkedIn URL for
+// this person) costs far less than confidently handing Lee a wrong one for
+// outreach.
+async function verifyLinkedInProfileByUrl(profileUrl, companyLinkedInUrl, deadlineMs) {
+  const apiKey = process.env.BRIGHTDATA_API_KEY;
+  if (!apiKey || !profileUrl) return { verified: false, reason: 'missing api key or url' };
+
+  try {
+    const triggerResp = await fetch(`https://api.brightdata.com/datasets/v3/trigger?dataset_id=${BRIGHTDATA_PROFILE_DATASET_ID}&include_errors=true`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify([{ url: profileUrl }]),
+    });
+    if (!triggerResp.ok) return { verified: false, reason: `trigger HTTP ${triggerResp.status}` };
+    const { snapshot_id } = await triggerResp.json();
+    if (!snapshot_id) return { verified: false, reason: 'no snapshot_id returned' };
+
+    while (Date.now() < deadlineMs) {
+      await new Promise(r => setTimeout(r, 3000));
+      const progResp = await fetch(`https://api.brightdata.com/datasets/v3/progress/${snapshot_id}`, {
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+      });
+      if (!progResp.ok) return { verified: false, reason: `progress HTTP ${progResp.status}` };
+      const prog = await progResp.json();
+      if (prog.status === 'failed') return { verified: false, reason: 'scrape failed' };
+      if (prog.status !== 'ready') continue;
+
+      const dlResp = await fetch(`https://api.brightdata.com/datasets/v3/snapshot/${snapshot_id}?format=json`, {
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+      });
+      if (!dlResp.ok) return { verified: false, reason: `download HTTP ${dlResp.status}` };
+      const arr = await dlResp.json();
+      const profile = Array.isArray(arr) ? arr[0] : arr;
+      if (!profile || !profile.name) return { verified: false, reason: 'empty or malformed profile — likely an invalid/removed URL' };
+
+      // Build a text blob from the REAL experience array (not a search
+      // snippet) to run through the same company-match check used for
+      // Bright-Data-sourced candidates.
+      const expText = Array.isArray(profile.experience)
+        ? profile.experience.map(e => `${e.company || e.company_name || ''} ${e.title || e.position || ''}`).join(' | ')
+        : (profile.experience || profile.current_company?.name || profile.position || '');
+      const textMatches = experienceMatchesCompany(expText, companyLinkedInUrl);
+
+      // Spam/directory-listing heuristic — the exact signal that would have
+      // caught the Eric Bohne false positive. Field name isn't fully
+      // confirmed against live data (checking a few plausible variants),
+      // so this only rejects on a CONFIRMED low number, never on a missing
+      // field (missing data is not itself suspicious).
+      const connectionsRaw = profile.connections ?? profile.connections_count ?? profile.followers ?? profile.follower_count;
+      const suspiciouslyThin = typeof connectionsRaw === 'number' && connectionsRaw > 0 && connectionsRaw < 20;
+
+      if (!textMatches) {
+        console.log('[leadership-background] SCRAPE-VERIFY rejected (no company match):', profile.name, '| experience:', expText.slice(0, 200));
+        return { verified: false, reason: 'real experience data does not mention the company' };
+      }
+      if (suspiciouslyThin) {
+        console.log('[leadership-background] SCRAPE-VERIFY rejected (thin profile):', profile.name, '| connections:', connectionsRaw);
+        return { verified: false, reason: `only ${connectionsRaw} connections — likely a directory/spam listing, not a real executive profile` };
+      }
+
+      return { verified: true, profile };
+    }
+    return { verified: false, reason: 'timed out waiting for scrape' };
+  } catch (e) {
+    return { verified: false, reason: e.message };
+  }
+}
+
 async function fetchLeadershipFromClaude(bankName, city, state, webAddr) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY not configured on the server.');
@@ -278,6 +368,33 @@ Max 4 people, one per role above. Only include people you are highly confident a
   return people;
 }
 
+// Resolves one person's LinkedIn URL, trying the cheaper/faster path first
+// and only spending a second Bright Data call if it's actually needed:
+//   1. Bright Data name-search match, verified against real experience data
+//      (existing path) -- if this succeeds, done, no further spend.
+//   2. Only if that fails AND Claude's web search proposed a candidate:
+//      independently verify THAT specific candidate via a real profile
+//      scrape (not the search snippet Claude saw) before trusting it at
+//      all. This is what replaces the old "just trust Claude's candidate"
+//      behavior that produced a real false positive (see
+//      verifyLinkedInProfileByUrl's comment for the full story).
+// Either path succeeding returns a URL + honest source tag; both failing
+// returns null — same graceful degradation as always, just never an
+// unverified guess presented as usable data.
+async function resolvePersonLinkedIn(companyLinkedInUrl, fullName, claudeCandidateUrl, deadline) {
+  if (companyLinkedInUrl) {
+    const verified = await lookupLinkedInProfile(companyLinkedInUrl, fullName, deadline);
+    if (verified) return { url: verified, source: 'brightdata_verified' };
+  }
+  if (claudeCandidateUrl) {
+    const scrapeDeadline = Math.min(deadline, Date.now() + 90000);
+    const result = await verifyLinkedInProfileByUrl(claudeCandidateUrl, companyLinkedInUrl, scrapeDeadline);
+    if (result.verified) return { url: claudeCandidateUrl, source: 'ai_search_scrape_verified' };
+    console.log('[leadership-background] AI candidate for', fullName, 'failed scrape verification:', result.reason);
+  }
+  return { url: null, source: null };
+}
+
 exports.handler = async (event) => {
   const started = Date.now();
   let cert;
@@ -303,39 +420,31 @@ exports.handler = async (event) => {
     const claudeCandidateUrls = rawPeople.map(p => p.linkedin_url || null);
     let people = rawPeople.map(p => ({ ...p, linkedin_url: null, linkedin_source: null }));
 
-    if (companyLinkedInUrl && people.length) {
-      const priorityIdx = people
-        .map((p, i) => ({ p, i }))
-        .filter(({ p }) => PRIORITY_ROLES.has(p.role_category));
+    const priorityIdx = people
+      .map((p, i) => ({ p, i }))
+      .filter(({ p }) => PRIORITY_ROLES.has(p.role_category));
 
-      // Full patience now — 3 minutes per person, run concurrently (Bright
-      // Data handles concurrent snapshot jobs fine; this is the same
-      // assumption the bulk trigger_linkedin_match/check_linkedin_match
-      // workflow already relies on).
-      const deadline = Date.now() + 3 * 60 * 1000;
-      const results = await Promise.allSettled(
-        priorityIdx.map(({ p }) => lookupLinkedInProfile(companyLinkedInUrl, p.name, deadline))
-      );
-      priorityIdx.forEach(({ i }, j) => {
-        const verified = results[j].status === 'fulfilled' ? results[j].value : null;
-        if (verified) {
-          people[i].linkedin_url = verified;
-          people[i].linkedin_source = 'brightdata_verified';
-        } else if (claudeCandidateUrls[i]) {
-          people[i].linkedin_url = claudeCandidateUrls[i];
-          people[i].linkedin_source = 'ai_search_unverified';
-        }
-      });
-    } else {
-      people = people.map((p, i) => {
-        const claudeUrl = claudeCandidateUrls[i];
-        return { ...p, linkedin_url: claudeUrl || null, linkedin_source: claudeUrl ? 'ai_search_unverified' : null };
-      });
-    }
+    // Full patience now — 3 minutes per person for the primary path, run
+    // concurrently across people (Bright Data handles concurrent snapshot
+    // jobs fine — same assumption the bulk trigger/check workflow relies
+    // on). Each person's own scrape-verification fallback (if needed) adds
+    // up to another 90s on top, but only for that one person, only if the
+    // primary path actually failed.
+    const deadline = Date.now() + 3 * 60 * 1000;
+    const results = await Promise.allSettled(
+      priorityIdx.map(({ p, i }) => resolvePersonLinkedIn(companyLinkedInUrl, p.name, claudeCandidateUrls[i], deadline))
+    );
+    priorityIdx.forEach(({ i }, j) => {
+      const outcome = results[j].status === 'fulfilled' ? results[j].value : { url: null, source: null };
+      people[i].linkedin_url = outcome.url;
+      people[i].linkedin_source = outcome.source;
+    });
 
     await cacheSet(cacheKey, { people, company_linkedin_url: companyLinkedInUrl });
     await cacheDelete(pendingKey);
-    console.log('[leadership-background] DONE for', cert, 'in', Math.round((Date.now() - started) / 1000), 's —', people.length, 'people,', people.filter(p => p.linkedin_source === 'brightdata_verified').length, 'verified LinkedIn');
+    console.log('[leadership-background] DONE for', cert, 'in', Math.round((Date.now() - started) / 1000), 's —', people.length, 'people,',
+      people.filter(p => p.linkedin_source === 'brightdata_verified').length, 'brightdata_verified,',
+      people.filter(p => p.linkedin_source === 'ai_search_scrape_verified').length, 'ai_search_scrape_verified');
   } catch (e) {
     console.log('[leadership-background] FAILED for', cert, ':', e.message);
     // Fail soft into the cache too — an empty result with an error note

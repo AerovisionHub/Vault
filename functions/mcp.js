@@ -171,7 +171,7 @@ const TOOLS = [
   },
   {
     name: 'get_bank_leadership',
-    description: 'Get key decision-makers for a specific bank, prioritized for B2B sales targeting: CEO/President, CIO/CTO (or closest functional equivalent at smaller banks), and COO -- each with name, title, role_category, source URL, and (when found) a LinkedIn profile URL. Useful for building sales target lists: call search_institutions or get_lender_rankings first to find candidate banks matching your criteria, then call this for each one to build out contacts ready for outreach. Typically responds in 8-20 seconds on first lookup, ~150ms on repeat lookups (cached 30 days). IMPORTANT for outreach lists: check linkedin_source before trusting a linkedin_url -- "brightdata_verified" means the match was independently confirmed against the actual work history on file (safe to use); "ai_search_unverified" means an AI web search found a plausible URL but it has not been cross-checked (spot-check before bulk outreach, especially on common names); null means no LinkedIn URL at all. LinkedIn URLs come back null (or ai_search_unverified) on a first-ever lookup of a bank more often than not -- the Bright Data match takes 1-2 minutes, longer than this tool waits. If a LinkedIn URL is null and a verified one is wanted: call trigger_linkedin_match (pass this cert so the result gets saved permanently), wait about a minute, then check_linkedin_match. This works the same way for any user, not just bulk workflows -- once someone resolves a verified match for a bank, it is cached and every future call to this tool for that bank returns the LinkedIn URL immediately. Returns an empty people list when no confident public leadership data can be found.',
+    description: 'Get key decision-makers for a specific bank, prioritized for B2B sales targeting: CEO/President, CIO/CTO (or closest functional equivalent at smaller banks), and COO -- each with name, title, role_category, source URL, and (when found) a LinkedIn profile URL. Useful for building sales target lists: call search_institutions or get_lender_rankings first to find candidate banks matching your criteria, then call this for each one to build out contacts ready for outreach. On an uncached bank, the FIRST call returns almost instantly (1-2 seconds) with status: "pending" -- enrichment runs in the background (can take 30 seconds to a few minutes, longer for banks with generic/common names) rather than blocking the call. Call this same tool again with the same cert a little later to check; it returns the finished result once ready, or another pending status if still running. Repeat calls on an already-resolved bank return in ~150ms (cached 30 days). linkedin_source tells you how a LinkedIn match was confirmed -- "brightdata_verified" (matched by name+company search, verified against real work history) or "ai_search_scrape_verified" (found via an AI web search, then independently confirmed by scraping that exact profile to check its real data) -- both are safe to use for outreach; null means no LinkedIn URL was found. Nothing is ever returned as an unverified guess. Returns an empty people list when no confident public leadership data can be found for the bank at all.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1471,7 +1471,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.12.0',
+        name: 'vault-mcp', version: '1.12.1',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -1518,7 +1518,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.12.0' },
+          serverInfo: { name: 'vault-mcp', version: '1.12.1' },
           capabilities: { tools: {} },
         });
       }
