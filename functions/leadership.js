@@ -264,8 +264,10 @@ async function fetchLeadershipFromClaude(bankName, city, state, webAddr) {
 
 Important: banks often have a registered/charter address that differs from where their executive team actually operates — company-wide executive leadership is exactly what's wanted here, regardless of which specific office is on file with regulators. Do not discard a bank's real, published leadership team just because it's described as "company-wide" rather than tied to one specific address.
 
+For each person, also try a quick web search for their personal LinkedIn profile (e.g. "{name} {bank name} linkedin"). Only include a linkedin_url if a real search result explicitly connects that exact person to this exact bank (e.g. the result text itself says something like "Experience: ${bankName}" or an announcement names them in that role at this bank) — never guess, infer from a common name, or supply a URL you're not directly citing from a search result. Omit the field entirely if you don't have that level of confidence; a missing LinkedIn URL costs nothing, a wrong one could mean contacting the wrong person.
+
 Return ONLY a JSON array (no markdown, no explanation):
-[{"name":"Full Name","title":"Their actual title as published","role_category":"ceo|president|cio_cto|coo","source":"URL or public record"}]
+[{"name":"Full Name","title":"Their actual title as published","role_category":"ceo|president|cio_cto|coo","source":"URL or public record","linkedin_url":"https://linkedin.com/in/... (omit if not confidently verified)"}]
 
 Max 4 people, one per role above. Only include people you are highly confident about based on search results. If you found no relevant information at all, return [].`;
 
@@ -331,6 +333,11 @@ Max 4 people, one per role above. Only include people you are highly confident a
       try { people = JSON.parse(jsonStr); } catch (e) { people = []; }
     }
   }
+  // Claude's self-reported linkedin_url (if any) — kept separate from
+  // linkedin_url itself so it's never conflated with a Bright-Data-verified
+  // match. See functions/mcp.js for the full rationale (kept in sync between
+  // both files); used below only as a labeled fallback.
+  const claudeCandidateUrls = people.map(p => p.linkedin_url || null);
 
   // Enrich with a LinkedIn profile URL — ONLY for priority-role people, so
   // Bright Data credits and time budget aren't spent on anyone outside the
@@ -352,16 +359,32 @@ Max 4 people, one per role above. Only include people you are highly confident a
     const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), remainingBudgetMs));
     const linkedinResults = await Promise.race([lookupPromise, timeoutPromise]);
 
-    people = people.map(p => ({ ...p, linkedin_url: null }));
+    people = people.map((p, i) => ({ ...p, linkedin_url: null, linkedin_source: null }));
     if (linkedinResults !== null) {
       priorityIdx.forEach(({ i }, j) => {
-        people[i].linkedin_url = linkedinResults[j].status === 'fulfilled' ? linkedinResults[j].value : null;
+        const verified = linkedinResults[j].status === 'fulfilled' ? linkedinResults[j].value : null;
+        if (verified) {
+          people[i].linkedin_url = verified;
+          people[i].linkedin_source = 'brightdata_verified';
+        } else if (claudeCandidateUrls[i]) {
+          people[i].linkedin_url = claudeCandidateUrls[i];
+          people[i].linkedin_source = 'ai_search_unverified';
+        }
       });
     } else {
       console.log('[vault-linkedin] enrichment phase skipped — out of time budget (', remainingBudgetMs, 'ms remaining)');
+      priorityIdx.forEach(({ i }) => {
+        if (claudeCandidateUrls[i]) {
+          people[i].linkedin_url = claudeCandidateUrls[i];
+          people[i].linkedin_source = 'ai_search_unverified';
+        }
+      });
     }
   } else {
-    people = people.map(p => ({ ...p, linkedin_url: null }));
+    people = people.map((p, i) => {
+      const claudeUrl = claudeCandidateUrls[i];
+      return { ...p, linkedin_url: claudeUrl || null, linkedin_source: claudeUrl ? 'ai_search_unverified' : null };
+    });
   }
 
   if (!people.length) {

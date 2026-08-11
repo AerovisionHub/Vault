@@ -171,7 +171,7 @@ const TOOLS = [
   },
   {
     name: 'get_bank_leadership',
-    description: 'Get key decision-makers for a specific bank, prioritized for B2B sales targeting: CEO/President, CIO/CTO (or closest functional equivalent at smaller banks), and COO — each with name, title, role_category, source URL, and (when found) a LinkedIn profile URL. Useful for building sales target lists: call search_institutions or get_lender_rankings first to find candidate banks matching your criteria, then call this for each one to build out contacts ready for outreach. Typically responds in 8-20 seconds on first lookup, ~150ms on repeat lookups (cached 30 days). LinkedIn URLs come back null on a first-ever lookup of a bank more often than not -- the underlying match takes 1-2 minutes, longer than this tool waits. If a LinkedIn URL is null and you want it: call trigger_linkedin_match (pass this cert so the result gets saved permanently), wait about a minute, then check_linkedin_match. This works the same way for any user, not just bulk workflows -- once someone resolves a match for a bank, it is cached and every future call to this tool for that bank returns the LinkedIn URL immediately. Returns an empty people list when no confident public leadership data can be found.',
+    description: 'Get key decision-makers for a specific bank, prioritized for B2B sales targeting: CEO/President, CIO/CTO (or closest functional equivalent at smaller banks), and COO -- each with name, title, role_category, source URL, and (when found) a LinkedIn profile URL. Useful for building sales target lists: call search_institutions or get_lender_rankings first to find candidate banks matching your criteria, then call this for each one to build out contacts ready for outreach. Typically responds in 8-20 seconds on first lookup, ~150ms on repeat lookups (cached 30 days). IMPORTANT for outreach lists: check linkedin_source before trusting a linkedin_url -- "brightdata_verified" means the match was independently confirmed against the actual work history on file (safe to use); "ai_search_unverified" means an AI web search found a plausible URL but it has not been cross-checked (spot-check before bulk outreach, especially on common names); null means no LinkedIn URL at all. LinkedIn URLs come back null (or ai_search_unverified) on a first-ever lookup of a bank more often than not -- the Bright Data match takes 1-2 minutes, longer than this tool waits. If a LinkedIn URL is null and a verified one is wanted: call trigger_linkedin_match (pass this cert so the result gets saved permanently), wait about a minute, then check_linkedin_match. This works the same way for any user, not just bulk workflows -- once someone resolves a verified match for a bank, it is cached and every future call to this tool for that bank returns the LinkedIn URL immediately. Returns an empty people list when no confident public leadership data can be found.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -658,8 +658,10 @@ async function getBankLeadership(args) {
 
 Important: banks often have a registered/charter address that differs from where their executive team actually operates — company-wide executive leadership is exactly what's wanted here, regardless of which specific office is on file with regulators. Do not discard a bank's real, published leadership team just because it's described as "company-wide" rather than tied to one specific address.
 
+For each person, also try a quick web search for their personal LinkedIn profile (e.g. "{name} {bank name} linkedin"). Only include a linkedin_url if a real search result explicitly connects that exact person to this exact bank (e.g. the result text itself says something like "Experience: ${inst.NAME}" or an announcement names them in that role at this bank) — never guess, infer from a common name, or supply a URL you're not directly citing from a search result. Omit the field entirely if you don't have that level of confidence; a missing LinkedIn URL costs nothing, a wrong one could mean contacting the wrong person.
+
 Return ONLY a JSON array (no markdown, no explanation):
-[{"name":"Full Name","title":"Their actual title as published","role_category":"ceo|president|cio_cto|coo","source":"URL or public record"}]
+[{"name":"Full Name","title":"Their actual title as published","role_category":"ceo|president|cio_cto|coo","source":"URL or public record","linkedin_url":"https://linkedin.com/in/... (omit if not confidently verified)"}]
 
 Max 4 people, one per role above. Only include people you are highly confident about based on search results. If you found no relevant information at all, return [].`;
 
@@ -716,6 +718,15 @@ Max 4 people, one per role above. Only include people you are highly confident a
       try { people = JSON.parse(jsonStr); } catch (e) { people = []; }
     }
   }
+  // Claude's self-reported linkedin_url (if any) is a second, independent
+  // candidate — kept separate from linkedin_url itself so it's never
+  // conflated with a Bright-Data-verified match. Bright Data's structured
+  // dataset can simply fail to surface the right candidate at all for a
+  // common name (confirmed live: Alicia Wade, COO at Sovereign Bank) — since
+  // Claude's web search is a different index with different blind spots,
+  // it's used below as a fallback ONLY when Bright Data comes back with
+  // nothing, and always tagged with its true (lower) confidence level.
+  const claudeCandidateUrls = people.map(p => p.linkedin_url || null);
 
   // Enrich with a LinkedIn profile URL — but ONLY for people in the priority
   // role categories (ceo, president, cio_cto, coo). This directly targets
@@ -740,19 +751,41 @@ Max 4 people, one per role above. Only include people you are highly confident a
     const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), remainingBudgetMs));
     const linkedinResults = await Promise.race([lookupPromise, timeoutPromise]);
 
-    // Start everyone at null, then fill in results for the priority subset
-    // that was actually looked up (whether the race finished or not — if it
-    // timed out, linkedinResults is null and everyone correctly stays null).
-    people = people.map(p => ({ ...p, linkedin_url: null }));
+    // Start everyone at null/no-source, then fill in results for the
+    // priority subset that was actually looked up (whether the race
+    // finished or not — if it timed out, linkedinResults is null and
+    // everyone correctly stays null).
+    people = people.map((p, i) => ({ ...p, linkedin_url: null, linkedin_source: null }));
     if (linkedinResults !== null) {
       priorityIdx.forEach(({ i }, j) => {
-        people[i].linkedin_url = linkedinResults[j].status === 'fulfilled' ? linkedinResults[j].value : null;
+        const verified = linkedinResults[j].status === 'fulfilled' ? linkedinResults[j].value : null;
+        if (verified) {
+          people[i].linkedin_url = verified;
+          people[i].linkedin_source = 'brightdata_verified';
+        } else if (claudeCandidateUrls[i]) {
+          people[i].linkedin_url = claudeCandidateUrls[i];
+          people[i].linkedin_source = 'ai_search_unverified';
+        }
       });
     } else {
       console.log('[vault-linkedin] enrichment phase skipped — out of time budget (', remainingBudgetMs, 'ms remaining)');
+      // Still apply Claude's candidates even if the Bright Data phase never
+      // ran at all — better than nothing, and still honestly labeled.
+      priorityIdx.forEach(({ i }) => {
+        if (claudeCandidateUrls[i]) {
+          people[i].linkedin_url = claudeCandidateUrls[i];
+          people[i].linkedin_source = 'ai_search_unverified';
+        }
+      });
     }
   } else {
-    people = people.map(p => ({ ...p, linkedin_url: null }));
+    // No company LinkedIn page found at all — Bright Data verification was
+    // never possible, but Claude's candidates (if any) are still usable,
+    // honestly labeled as unverified.
+    people = people.map((p, i) => {
+      const claudeUrl = claudeCandidateUrls[i];
+      return { ...p, linkedin_url: claudeUrl || null, linkedin_source: claudeUrl ? 'ai_search_unverified' : null };
+    });
   }
 
   await cacheSetLeadership(cacheKey, { people });
@@ -1533,7 +1566,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.11.3',
+        name: 'vault-mcp', version: '1.11.4',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -1580,7 +1613,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.11.3' },
+          serverInfo: { name: 'vault-mcp', version: '1.11.4' },
           capabilities: { tools: {} },
         });
       }
