@@ -232,9 +232,10 @@ async function lookupLinkedInProfile(companyUrl, fullName, deadlineMs) {
       });
       if (!dlResp.ok) return null;
       const arr = await dlResp.json();
-      const match = Array.isArray(arr) ? arr[0] : null;
-      if (match?.url && !experienceMatchesCompany(match.experience, companyUrl)) {
-        console.log('[vault-linkedin] REJECTED likely false match for', fullName, ':', match.name, '| experience:', match.experience);
+      const candidates = Array.isArray(arr) ? arr : [];
+      const match = candidates.find(c => c?.url && experienceMatchesCompany(c.experience, companyUrl));
+      if (!match && candidates.length) {
+        console.log('[vault-linkedin] REJECTED all', candidates.length, 'candidate(s) for', fullName, ':', candidates.map(c => `${c?.name} (${c?.experience})`).join(' | '));
         return null;
       }
       return match?.url || null;
@@ -441,22 +442,27 @@ exports.handler = async function (event) {
       const dlResp = await fetch(`https://api.brightdata.com/datasets/v3/snapshot/${snapshotId}?format=json`, { headers: { 'Authorization': `Bearer ${apiKey}` } });
       if (!dlResp.ok) throw new Error(`Snapshot download HTTP ${dlResp.status}`);
       const arr = await dlResp.json();
-      const match = Array.isArray(arr) ? arr[0] : null;
+      const candidates = Array.isArray(arr) ? arr : [];
+      const pending = await cacheGet(`linkedin-pending-${snapshotId}`);
+      // Verify against every candidate, not just the top-ranked one — Bright
+      // Data's matcher treats company_linkedin_url as a soft ranking hint,
+      // not a hard filter, and can confidently rank an unrelated same-named
+      // person first (confirmed: "Tom Wayne" at The Bank of Oak Ridge
+      // returned a Meta employee whose middle name happens to be Wayne).
+      // Checking only arr[0] meant a real match further down the candidate
+      // list was silently discarded the moment the top one failed
+      // verification (confirmed: the real Alicia Wade — COO, Sovereign Bank
+      // — was missed this way on a common-enough name). See
+      // experienceMatchesCompany in functions/mcp.js for the same check
+      // (kept in sync between both files).
+      const match = candidates.find(c => c?.url && experienceMatchesCompany(c.experience, pending?.company_linkedin_url)) || null;
+
+      if (candidates.length && !match) {
+        console.log('[vault-linkedin] REJECTED all', candidates.length, 'candidate(s):', candidates.map(c => `${c?.name} (${c?.experience})`).join(' | '), '| expected company:', pending?.company_linkedin_url);
+        return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: 'not_found', rejected_reason: 'experience did not mention target company — likely false match, not a real profile' }) };
+      }
 
       if (match?.url) {
-        const pending = await cacheGet(`linkedin-pending-${snapshotId}`);
-        // Verify the match actually has some connection to the target company
-        // before trusting it — Bright Data's matcher treats company_linkedin_url
-        // as a soft ranking hint, not a hard filter, and can confidently return
-        // someone with zero real connection to the company (confirmed: matching
-        // "Tom Wayne" at The Bank of Oak Ridge returned a Meta employee whose
-        // middle name happens to be Wayne). See experienceMatchesCompany in
-        // functions/mcp.js for the same check (kept in sync between both files).
-        const verified = experienceMatchesCompany(match.experience, pending?.company_linkedin_url);
-        if (!verified) {
-          console.log('[vault-linkedin] REJECTED likely false match:', match.name, '| experience:', match.experience, '| expected company:', pending?.company_linkedin_url);
-          return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: 'not_found', rejected_reason: 'experience did not mention target company' }) };
-        }
         // Write back into the shared leadership cache — same mechanism as the
         // MCP side, so this bank's cache entry is permanently updated for
         // every future visitor/user regardless of which surface resolved it.

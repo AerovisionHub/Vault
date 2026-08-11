@@ -463,9 +463,10 @@ async function lookupLinkedInProfile(companyUrl, fullName, deadlineMs) {
       });
       if (!dlResp.ok) return null;
       const arr = await dlResp.json();
-      const match = Array.isArray(arr) ? arr[0] : null;
-      if (match?.url && !experienceMatchesCompany(match.experience, companyUrl)) {
-        console.log('[vault-linkedin] REJECTED likely false match for', fullName, ':', match.name, '| experience:', match.experience);
+      const candidates = Array.isArray(arr) ? arr : [];
+      const match = candidates.find(c => c?.url && experienceMatchesCompany(c.experience, companyUrl));
+      if (!match && candidates.length) {
+        console.log('[vault-linkedin] REJECTED all', candidates.length, 'candidate(s) for', fullName, ':', candidates.map(c => `${c?.name} (${c?.experience})`).join(' | '));
         return null;
       }
       return match?.url || null;
@@ -583,15 +584,16 @@ async function checkLinkedinMatch(args) {
     throw new Error(`Bright Data snapshot download returned HTTP ${dlResp.status}. ${text.slice(0, 200)}`);
   }
   const arr = await dlResp.json();
-  const match = Array.isArray(arr) ? arr[0] : null;
+  const candidates = Array.isArray(arr) ? arr : [];
+  const pending = await cacheGetLeadership(`linkedin-pending-${snapshot_id}`);
+  const match = candidates.find(c => c?.url && experienceMatchesCompany(c.experience, pending?.company_linkedin_url)) || null;
+
+  if (candidates.length && !match) {
+    console.log('[vault-linkedin] REJECTED all', candidates.length, 'candidate(s):', candidates.map(c => `${c?.name} (${c?.experience})`).join(' | '), '| expected company:', pending?.company_linkedin_url);
+    return { snapshot_id, status: 'not_found', rejected_reason: 'experience did not mention target company — likely false match, not a real profile' };
+  }
 
   if (match?.url) {
-    const pending = await cacheGetLeadership(`linkedin-pending-${snapshot_id}`);
-    const verified = experienceMatchesCompany(match.experience, pending?.company_linkedin_url);
-    if (!verified) {
-      console.log('[vault-linkedin] REJECTED likely false match:', match.name, '| experience:', match.experience, '| expected company:', pending?.company_linkedin_url);
-      return { snapshot_id, status: 'not_found', rejected_reason: 'experience did not mention target company — likely false match, not a real profile' };
-    }
     // Write this result back into the shared leadership cache if we know
     // which cert/person it belongs to (i.e. trigger_linkedin_match was called
     // with a cert). This is what makes a match PERMANENT — the next lookup of
@@ -1531,7 +1533,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.11.2',
+        name: 'vault-mcp', version: '1.11.3',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -1578,7 +1580,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.11.2' },
+          serverInfo: { name: 'vault-mcp', version: '1.11.3' },
           capabilities: { tools: {} },
         });
       }
