@@ -70,7 +70,7 @@ async function cacheSet(key, data) {
 // URLs don't follow a guessable pattern, so this has to be a search, not a
 // direct lookup. Best-effort: returns null on any failure rather than
 // throwing, since the core name/title data shouldn't depend on this succeeding.
-async function findCompanyLinkedInUrl(bankName, city, state, debugSink) {
+async function findCompanyLinkedInUrl(bankName, city, state, debugSink, deadline) {
   const apiKey = process.env.BRIGHTDATA_API_KEY;
   if (!apiKey) return null;
   // NOTE: deliberately NOT using a "site:" operator here. Confirmed via direct
@@ -138,10 +138,16 @@ async function findCompanyLinkedInUrl(bankName, city, state, debugSink) {
     if (result.reason.includes('timeout')) {
       console.log('[vault-linkedin] SERP attempt 1 timed out — not retrying (retrying a timeout rarely helps and costs more time)');
     } else {
-      console.log('[vault-linkedin] SERP attempt 1 failed:', result.reason, '- retrying once');
-      await new Promise(r => setTimeout(r, 1500));
-      result = await doSerpCall();
-      if (debugSink) debugSink.attempt2 = result.ok ? 'succeeded' : result.reason;
+      const budgetLeftMs = deadline ? deadline - Date.now() : Infinity;
+      if (budgetLeftMs < 16000) {
+        console.log('[vault-linkedin] SERP attempt 1 failed:', result.reason, '- skipping retry, only', Math.round(budgetLeftMs), 'ms left in budget');
+        if (debugSink) debugSink.attempt2 = 'skipped (insufficient budget)';
+      } else {
+        console.log('[vault-linkedin] SERP attempt 1 failed:', result.reason, '- retrying once');
+        await new Promise(r => setTimeout(r, 1500));
+        result = await doSerpCall();
+        if (debugSink) debugSink.attempt2 = result.ok ? 'succeeded' : result.reason;
+      }
     }
   }
   if (!result.ok) {
@@ -286,7 +292,7 @@ Max 4 people, one per role above. Only include people you are highly confident a
   const serpDebug = {};
   const [claudeSettled, companyLinkedInUrl] = await Promise.all([
     claudePromise.then(r => ({ ok: true, resp: r })).catch(e => ({ ok: false, error: e })),
-    findCompanyLinkedInUrl(bankName, city, state, serpDebug),
+    findCompanyLinkedInUrl(bankName, city, state, serpDebug, overallStart + 24000),
   ]);
 
   if (!claudeSettled.ok) {

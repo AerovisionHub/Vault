@@ -332,7 +332,7 @@ async function cacheSetLeadership(key, data) {
 const BRIGHTDATA_SERP_ZONE = 'serp_api1vault_serp';
 const BRIGHTDATA_LINKEDIN_DATASET_ID = 'gd_m8d03he47z8nwb5xc';
 
-async function findCompanyLinkedInUrl(bankName, city, state) {
+async function findCompanyLinkedInUrl(bankName, city, state, deadline) {
   const apiKey = process.env.BRIGHTDATA_API_KEY;
   if (!apiKey) return null;
   // NOTE: deliberately NOT using a "site:" operator here. Confirmed via direct
@@ -395,8 +395,17 @@ async function findCompanyLinkedInUrl(bankName, city, state) {
     // Only retry on a genuine error (CAPTCHA, malformed response) — NOT on a
     // plain timeout. A timeout means the request was just slow; retrying
     // immediately costs more time without meaningfully improving the odds.
+    // Also skip the retry if there isn't enough of the overall function
+    // budget left — 14s (attempt 1) + 1.5s delay + up to 14s (retry) can hit
+    // 29.5s on its own, independent of Claude's parallel search, which is
+    // enough on its own to blow past Netlify's real platform ceiling with no
+    // chance for any code here to fail soft. Confirmed live: this exact path
+    // is why "Sovereign Bank" (Shawnee, OK) failed 3/3 times.
+    const budgetLeftMs = deadline ? deadline - Date.now() : Infinity;
     if (result.reason.includes('timeout')) {
       console.log('[vault-linkedin] SERP attempt 1 timed out — not retrying');
+    } else if (budgetLeftMs < 16000) {
+      console.log('[vault-linkedin] SERP attempt 1 failed:', result.reason, '- skipping retry, only', Math.round(budgetLeftMs), 'ms left in budget');
     } else {
       console.log('[vault-linkedin] SERP attempt 1 failed:', result.reason, '- retrying once');
       await new Promise(r => setTimeout(r, 1500));
@@ -678,7 +687,7 @@ Max 4 people, one per role above. Only include people you are highly confident a
 
   const [claudeSettled, companyLinkedInUrl] = await Promise.all([
     claudePromise.then(r => ({ ok: true, resp: r })).catch(e => ({ ok: false, error: e })),
-    findCompanyLinkedInUrl(inst.NAME, inst.CITY, inst.STALP),
+    findCompanyLinkedInUrl(inst.NAME, inst.CITY, inst.STALP, overallStart + 24000),
   ]);
 
   if (!claudeSettled.ok) {
@@ -1522,7 +1531,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.11.1',
+        name: 'vault-mcp', version: '1.11.2',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -1569,7 +1578,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.11.1' },
+          serverInfo: { name: 'vault-mcp', version: '1.11.2' },
           capabilities: { tools: {} },
         });
       }
