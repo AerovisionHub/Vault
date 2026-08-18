@@ -2,6 +2,8 @@ const https = require('https');
 const zlib = require('zlib');
 
 let cuCache = null;
+let lastFoicuHeaders = null; // diagnostic: real column names from the most recent FOICU.txt load
+let lastZipFileList = null;  // diagnostic: every file name found in the most recent quarterly ZIP
 let cacheTimestamp = 0; 
 const CACHE_TTL = 60 * 60 * 1000;
 const BULK_URL = 'https://ncua.gov/files/publications/analysis/call-report-data-2025-12.zip';
@@ -47,6 +49,28 @@ function extractFromZip(buf, targetFile) {
     offset = dataOffset + compSize;
   }
   return null;
+}
+
+// Walks the same local-file-header structure as extractFromZip, but
+// collects every filename instead of extracting one target. Diagnostic
+// tool: the quarterly bundle likely contains more files than just the two
+// (FOICU.txt, FS220.txt) currently extracted -- if charter date isn't in
+// FOICU.txt under any name tried so far, it may live in a different file
+// in the same ZIP that's never been looked at.
+function listZipFiles(buf) {
+  const names = [];
+  let offset = 0;
+  while (offset < buf.length - 4) {
+    if (buf.readUInt32LE(offset) !== 0x04034b50) { offset++; continue; }
+    const fnLen = buf.readUInt16LE(offset + 26, true);
+    const extraLen = buf.readUInt16LE(offset + 28, true);
+    const fn = buf.slice(offset + 30, offset + 30 + fnLen).toString('utf8');
+    const compSize = buf.readUInt32LE(offset + 18, true);
+    const dataOffset = offset + 30 + fnLen + extraLen;
+    names.push(fn);
+    offset = dataOffset + compSize;
+  }
+  return names;
 }
 
 function parseCSVLine(line) {
@@ -144,6 +168,8 @@ async function loadCUData() {
   const foicuHeaderLine = foicuBuf.toString('latin1').split('\n')[0].replace('\r', '');
   const foicuHeaders = parseCSVLine(foicuHeaderLine);
   const charterDateField = detectCharterDateField(foicuHeaders);
+  lastFoicuHeaders = foicuHeaders;
+  lastZipFileList = listZipFiles(zipBuf);
 
   // Parse FS220.txt — financial data (assets, members, shares, loans)
   // FS220 headers include: CU_NUMBER, ACCT_010 (total assets), ACCT_730 (members)
@@ -259,6 +285,11 @@ exports.handler = async function(event, context) {
           cus_with_charter_date: withDate.length,
           charter_date_field_detected: withDate.length > 0,
           sample,
+          // Diagnostic: real column names and every file in the quarterly
+          // ZIP, so a missing charter-date field can be reasoned about from
+          // actual data rather than guessed a third time.
+          foicu_headers: lastFoicuHeaders,
+          zip_file_list: lastZipFileList,
         }),
       };
     } catch (e) {
