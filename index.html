@@ -3554,6 +3554,17 @@ function renderLenders() {
             onkeydown="if(event.key==='Enter') runLenderSearch()" />
         </div>
       </div>
+      <!-- Row 1b: ZIP search, own row since it's a narrower/optional filter -->
+      <div style="width:100%;display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">ZIP Code <span style="opacity:0.6;">(explore nearby)</span></label>
+          <input id="lenderZip" type="text" inputmode="numeric" maxlength="5" placeholder="e.g. 74133"
+            style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:10px 14px;font-size:13px;font-family:var(--mono);outline:none;transition:border-color 0.2s;"
+            onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
+            onkeydown="if(event.key==='Enter') runLenderSearch()" />
+        </div>
+        <div></div>
+      </div>
       <!-- Row 2: Dropdowns -->
       <div style="display:flex;flex-direction:column;gap:6px;flex:1;min-width:120px;">
         <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">State</label>
@@ -3622,6 +3633,14 @@ async function runLenderSearch() {
 
   const searchTerm  = (document.getElementById('lenderSearch')?.value || '').trim();
   const cityTerm    = (document.getElementById('lenderCity')?.value || '').trim();
+  const zipTerm     = (document.getElementById('lenderZip')?.value || '').trim().replace(/\D/g, '');
+  // ZIP codes' first 3 digits correspond to a Sectional Center Facility --
+  // roughly a metro/regional area, not one exact postal route. A full
+  // 5-digit exact match would usually return zero results (most zips have
+  // 0-1 bank headquarters in them), so "explore nearby" uses the 3-digit
+  // prefix -- a simple, no-geocoding-required way to approximate "nearby"
+  // that's genuinely useful without needing lat/long radius math.
+  const zipPrefix   = zipTerm.length >= 3 ? zipTerm.slice(0, 3) : zipTerm;
   const stateVal    = document.getElementById('lenderState')?.value || '';
   const loanType    = document.getElementById('lenderLoanType')?.value || 'residential';
   const assetSize   = document.getElementById('lenderAssetSize')?.value || 'community';
@@ -3640,7 +3659,7 @@ async function runLenderSearch() {
 
     // If name/city search provided — query institutions endpoint first to get matching CERTs
     if (searchTerm) {
-      const instFields = 'NAME,CERT,CITY,STALP,ASSET,ACTIVE';
+      const instFields = 'NAME,CERT,CITY,STALP,ZIP,ASSET,ACTIVE';
       const q = searchTerm.trim();
       const firstWord = q.split(/\s+/)[0];
 
@@ -3653,6 +3672,10 @@ async function runLenderSearch() {
       if (cityTerm) {
         fetchUrls.push(fetch(`${FDIC_BASE}/institutions?filters=NAME%3A${encodeURIComponent(firstWord)}*%20AND%20CITY%3A${encodeURIComponent(cityTerm)}*%20AND%20ACTIVE%3A1&fields=${instFields}&limit=100&sort_by=ASSET&sort_order=DESC`));
       }
+      // If zip field also filled, filter name results by zip prefix (nearby region)
+      if (zipPrefix) {
+        fetchUrls.push(fetch(`${FDIC_BASE}/institutions?filters=NAME%3A${encodeURIComponent(firstWord)}*%20AND%20ZIP%3A${encodeURIComponent(zipPrefix)}*%20AND%20ACTIVE%3A1&fields=${instFields}&limit=100&sort_by=ASSET&sort_order=DESC`));
+      }
       const results = await Promise.all(fetchUrls.map(p => p.then(r => r.json()).catch(() => ({ data: [] }))));
       const all = results.flatMap(d => (d.data || []).map(x => x.data)).filter(Boolean);
       const seenCerts = new Set();
@@ -3662,14 +3685,16 @@ async function runLenderSearch() {
         return true;
       });
 
-      // Re-rank client-side — city match boosts score
+      // Re-rank client-side — city or zip match boosts score
       const scored = merged
         .map(i => ({
           inst: i,
           score: Math.max(
             fuzzyScore(i.NAME || '', q),
             cityTerm ? fuzzyScore(i.CITY || '', cityTerm) * 0.8 : 0
-          ) + (cityTerm && (i.CITY || '').toLowerCase().includes(cityTerm.toLowerCase()) ? 20 : 0)
+          )
+            + (cityTerm && (i.CITY || '').toLowerCase().includes(cityTerm.toLowerCase()) ? 20 : 0)
+            + (zipPrefix && (i.ZIP || '').startsWith(zipPrefix) ? 20 : 0)
         }))
         .filter(({ score }) => score >= 30)
         .sort((a, b) => b.score - a.score);
@@ -3679,17 +3704,29 @@ async function runLenderSearch() {
         return;
       }
       certSet = new Map(scored.map(({ inst }) => [inst.CERT, inst]));
-    } else if (cityTerm) {
-      // City-only search — no name term
-      const instFields = 'NAME,CERT,CITY,STALP,ASSET,ACTIVE';
+    } else if (cityTerm || zipPrefix) {
+      // City and/or ZIP search — no name term. This is the "explore banks
+      // nearby" path: either field alone works, and combining both narrows
+      // further (e.g. ZIP prefix for the metro area + city to disambiguate
+      // a metro that spans multiple cities).
+      const instFields = 'NAME,CERT,CITY,STALP,ZIP,ASSET,ACTIVE';
       const stateFilter = stateVal ? `%20AND%20STALP%3A${stateVal}` : '';
-      const cityData = await fetch(`${FDIC_BASE}/institutions?filters=CITY%3A${encodeURIComponent(cityTerm)}*%20AND%20ACTIVE%3A1${stateFilter}&fields=${instFields}&limit=200&sort_by=ASSET&sort_order=DESC`).then(r => r.json()).catch(() => ({ data: [] }));
-      const cityResults = (cityData.data || []).map(d => d.data).filter(Boolean);
-      if (!cityResults.length) {
-        el.innerHTML = '<div style="color:var(--muted);font-family:var(--mono);font-size:13px;padding:40px 0;text-align:center;">No institutions found in that city. Try a different city or check the spelling.</div>';
+      const cityFilter = cityTerm ? `%20AND%20CITY%3A${encodeURIComponent(cityTerm)}*` : '';
+      const zipFilter = zipPrefix ? `%20AND%20ZIP%3A${encodeURIComponent(zipPrefix)}*` : '';
+      // Need at least one real filter term to anchor the query -- if only
+      // zip is provided, use it as the anchor; otherwise city anchors it.
+      const anchorFilter = cityTerm
+        ? `CITY%3A${encodeURIComponent(cityTerm)}*`
+        : `ZIP%3A${encodeURIComponent(zipPrefix)}*`;
+      const extraFilter = cityTerm ? zipFilter : ''; // avoid duplicating the anchor field as an "extra" filter
+      const nearbyData = await fetch(`${FDIC_BASE}/institutions?filters=${anchorFilter}%20AND%20ACTIVE%3A1${extraFilter}${stateFilter}&fields=${instFields}&limit=200&sort_by=ASSET&sort_order=DESC`).then(r => r.json()).catch(() => ({ data: [] }));
+      const nearbyResults = (nearbyData.data || []).map(d => d.data).filter(Boolean);
+      if (!nearbyResults.length) {
+        const what = cityTerm && zipPrefix ? 'that city/ZIP combination' : cityTerm ? 'that city' : 'that ZIP code area';
+        el.innerHTML = `<div style="color:var(--muted);font-family:var(--mono);font-size:13px;padding:40px 0;text-align:center;">No institutions found near ${what}. Try a broader search.</div>`;
         return;
       }
-      certSet = new Map(cityResults.map(i => [i.CERT, i]));
+      certSet = new Map(nearbyResults.map(i => [i.CERT, i]));
     }
 
     // Build financials query
