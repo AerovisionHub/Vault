@@ -115,26 +115,47 @@ function parseCSVtoMap(buf, keyField) {
 // verify-don't-guess approach already used above for FS220's member-count
 // field (ACCT_083, confirmed via logging before trusting it).
 function detectCharterDateField(headers) {
+  // Confirmed via live data (2026-08-11): FOICU.txt has no CHARTER_DATE or
+  // CHTR_DT-style field at all -- the real field is YEAR_OPENED, which
+  // doesn't contain "charter" or "chtr" as a substring and genuinely could
+  // not have been found by pattern-matching alone. YEAR_OPENED gives
+  // year-only precision, not a full date -- reflected in the 'year' mode
+  // returned below.
+  if (headers.includes('YEAR_OPENED')) {
+    console.log('[ncua-charters] using confirmed real field: YEAR_OPENED (year-only precision)');
+    return { field: 'YEAR_OPENED', mode: 'year' };
+  }
+  // Fallback pattern-match, kept in case NCUA renames/adds a proper dated
+  // field in a future quarter's file.
   const candidates = headers.filter(h => {
     const up = h.toUpperCase();
-    const hasCharterWord = up.includes('CHARTER') || up.includes('CHTR'); // NCUA commonly abbreviates CHARTER as CHTR
+    const hasCharterWord = up.includes('CHARTER') || up.includes('CHTR');
     const hasDateWord = up.includes('DATE') || up.includes('DT') || up.includes('_DT');
     return hasCharterWord && hasDateWord;
   });
   if (candidates.length) {
     console.log('[ncua-charters] charter date field candidates found:', candidates.join(', '), '- using:', candidates[0]);
-    return candidates[0];
+    return { field: candidates[0], mode: 'date' };
   }
-  console.log('[ncua-charters] NO charter date field found in FOICU.txt headers:', headers.join(', '));
+  console.log('[ncua-charters] NO charter date or YEAR_OPENED field found in FOICU.txt headers:', headers.join(', '));
   return null;
 }
 
 // Parses whatever date format NCUA actually uses (commonly MM/DD/YYYY per
 // their own AIRES layout spec) into a normalized {iso, year} pair. Returns
 // null on anything that doesn't parse cleanly rather than guessing.
-function parseCharterDate(raw) {
+function parseCharterDate(raw, mode = 'date') {
   if (!raw) return null;
-  const s = raw.trim();
+  const s = String(raw).trim();
+  if (mode === 'year') {
+    // YEAR_OPENED is a bare year (e.g. "1987") -- no month/day precision
+    // available, so iso stays null and only charterYear is usable.
+    const y = s.match(/^(\d{4})$/);
+    if (!y) return null;
+    const year = parseInt(y[1], 10);
+    if (year < 1900 || year > new Date().getFullYear()) return null; // sanity guard against garbage/placeholder values
+    return { iso: null, year };
+  }
   const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (mdy) {
     const [, mm, dd, yyyy] = mdy;
@@ -196,7 +217,7 @@ async function loadCUData() {
       // NCUA 5300 call report: ACCT_731 = total members (most reliable)
       // Fallbacks: ACCT_730, ACCT_084 (potential members - too high), ACCT_083
       const members = parseInt(fin.ACCT_083 || '0', 10); // ACCT_083 = total members (confirmed from FS220 Q4 2025)
-      const charterDate = charterDateField ? parseCharterDate(p[charterDateField]) : null;
+      const charterDate = charterDateField ? parseCharterDate(p[charterDateField.field], charterDateField.mode) : null;
       return {
         id:      p.CU_NUMBER,
         name:    p.CU_NAME,
@@ -275,7 +296,7 @@ exports.handler = async function(event, context) {
   if (debug) {
     try {
       const allCUs = await loadCUData();
-      const withDate = allCUs.filter(cu => cu.charterDate);
+      const withDate = allCUs.filter(cu => cu.charterYear);
       const sample = withDate.slice(0, 5).map(cu => ({ name: cu.name, charterDate: cu.charterDate, charterYear: cu.charterYear }));
       return {
         statusCode: 200,
