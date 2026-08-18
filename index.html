@@ -4059,6 +4059,14 @@ function renderCharters() {
       </p>
     </div>
 
+    <!-- Bank / Credit Union toggle -->
+    <div style="display:flex;gap:8px;margin-bottom:16px;">
+      <button onclick="setCharterType('bank')" id="charterTypeBtnbank"
+        style="padding:8px 20px;border-radius:8px;font-family:var(--mono);font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--accent);background:rgba(77,184,255,0.15);color:var(--accent);">Banks</button>
+      <button onclick="setCharterType('cu')" id="charterTypeBtncu"
+        style="padding:8px 20px;border-radius:8px;font-family:var(--mono);font-size:12px;font-weight:600;cursor:pointer;border:1px solid rgba(255,255,255,0.15);background:transparent;color:var(--muted);">Credit Unions</button>
+    </div>
+
     <!-- Year selector -->
     <div style="display:flex;gap:8px;margin-bottom:28px;flex-wrap:wrap;">
       <button onclick="setCharterYear(2025)" id="charterBtn2025"
@@ -4085,7 +4093,22 @@ function renderCharters() {
 }
 
 let _charterYear = 2025;
+let _charterType = 'bank';
 let _charterCache = {};
+let _cuCharterCache = {};
+
+function setCharterType(type) {
+  _charterType = type;
+  ['bank','cu'].forEach(t => {
+    const btn = document.getElementById(`charterTypeBtn${t}`);
+    if (!btn) return;
+    const active = t === type;
+    btn.style.border = active ? '1px solid var(--accent)' : '1px solid rgba(255,255,255,0.15)';
+    btn.style.background = active ? 'rgba(77,184,255,0.15)' : 'transparent';
+    btn.style.color = active ? 'var(--accent)' : 'var(--muted)';
+  });
+  loadCharters(_charterYear);
+}
 
 function setCharterYear(year) {
   _charterYear = year;
@@ -4106,6 +4129,8 @@ async function initCharters() {
 }
 
 async function loadCharters(year) {
+  if (_charterType === 'cu') return loadCUCharters(year);
+
   const listEl = document.getElementById('charterList');
   const statsEl = document.getElementById('charterStats');
   if (!listEl) return;
@@ -4221,6 +4246,150 @@ async function loadCharterNews(bank) {
     // Filter: must mention bank name, cutoff 3 years
     const cutoff = new Date(); cutoff.setFullYear(cutoff.getFullYear() - 3);
     const nameWords = bank.NAME.toLowerCase().split(/\s+/).filter(w => w.length > 3 && !['bank','trust','national','federal','savings'].includes(w));
+    const relevant = data.items.filter(item => {
+      const t = item.title?.toLowerCase() || '';
+      const fresh = !item.pubDate || new Date(item.pubDate) >= cutoff;
+      return fresh && nameWords.some(w => t.includes(w));
+    }).slice(0, 2);
+
+    if (!relevant.length) { el.innerHTML = ''; return; }
+
+    el.innerHTML = relevant.map(item => {
+      const dashIdx = item.title?.lastIndexOf(' - ') ?? -1;
+      const title = dashIdx > 0 ? item.title.slice(0, dashIdx) : item.title;
+      const source = dashIdx > 0 ? item.title.slice(dashIdx + 3) : 'News';
+      const date = item.pubDate ? new Date(item.pubDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+      return `<a href="${item.link}" target="_blank" rel="noopener" onclick="event.stopPropagation()"
+        style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;text-decoration:none;padding:6px 0;flex-wrap:wrap;"
+        onmouseover="this.style.opacity='0.75'" onmouseout="this.style.opacity='1'">
+        <div style="font-size:12px;color:var(--text);line-height:1.4;min-width:0;flex:1;">${title}</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;">${source} · ${date}</div>
+      </a>`;
+    }).join('<div style="border-top:1px solid rgba(255,255,255,0.05);"></div>');
+  } catch(e) {
+    el.innerHTML = '';
+  }
+}
+
+// ── Credit union new-charters (mirrors the FDIC path above) ─────────────────
+// Backed by functions/ncua.js's ?newCharters=1 mode, which uses the real
+// YEAR_OPENED field from NCUA's FOICU.txt (confirmed live 2026-08-11 — no
+// CHARTER_DATE-style field exists at all; see functions/ncua.js for the full
+// story). Year-only precision — no exact charter date/month available, so
+// cards show "Chartered 2023" rather than a specific date.
+async function loadCUCharters(year) {
+  const listEl = document.getElementById('charterList');
+  const statsEl = document.getElementById('charterStats');
+  if (!listEl) return;
+
+  listEl.innerHTML = '<div style="display:flex;align-items:center;gap:10px;padding:40px 0;justify-content:center;color:var(--muted);font-family:var(--mono);font-size:13px;"><div class="spinner"></div>Loading…</div>';
+
+  const cacheKey = String(year);
+  if (_cuCharterCache[cacheKey]) { renderCUCharterData(_cuCharterCache[cacheKey], year); return; }
+
+  try {
+    // "All Years" mirrors the FDIC page's semantics (recent revival era,
+    // not literally all-time): fetch the 200 most recently chartered CUs
+    // with no year filter (sorted desc by the endpoint itself), then filter
+    // client-side to 2023+. 200 comfortably covers new CU formation since
+    // 2023 — de novo credit unions are rare, nowhere near 200/year.
+    const params = year === 'all' ? 'limit=200' : `year=${year}&limit=100`;
+    const r = await fetch(`/.netlify/functions/ncua?newCharters=1&${params}`);
+    const data = await r.json();
+    if (data.note) {
+      // Honest fallback per functions/ncua.js — the charter field wasn't
+      // found in this quarter's file. Surface this instead of silently
+      // showing zero results, since those look identical to a user.
+      listEl.innerHTML = `<div style="color:#fbbf24;font-family:var(--mono);font-size:13px;padding:20px 0;">${data.note}</div>`;
+      if (statsEl) statsEl.innerHTML = '';
+      return;
+    }
+    let cus = data.results || [];
+    if (year === 'all') cus = cus.filter(cu => cu.charterYear >= 2023);
+    _cuCharterCache[cacheKey] = cus;
+    renderCUCharterData(cus, year);
+  } catch(e) {
+    listEl.innerHTML = `<div style="color:#f87171;font-family:var(--mono);font-size:13px;padding:20px 0;">Error loading charter data: ${e.message}</div>`;
+  }
+}
+
+function renderCUCharterData(cus, year) {
+  const listEl = document.getElementById('charterList');
+  const statsEl = document.getElementById('charterStats');
+  if (!listEl) return;
+
+  const totalAssets = cus.reduce((s, cu) => s + (Number(cu.assets) || 0), 0);
+  const totalMembers = cus.reduce((s, cu) => s + (Number(cu.members) || 0), 0);
+  const states = [...new Set(cus.map(cu => cu.state))].length;
+
+  if (statsEl) {
+    statsEl.innerHTML = [
+      { label: 'New Charters', val: cus.length, sub: year === 'all' ? '2023–present' : `In ${year}`, color: '#fbbf24' },
+      { label: 'Total Assets', val: `$${(totalAssets/1000000).toFixed(1)}M`, sub: 'Combined', color: '#4db8ff' },
+      { label: 'States', val: states, sub: 'Represented', color: '#b06ef3' },
+      { label: 'Total Members', val: totalMembers.toLocaleString(), sub: 'Combined', color: '#4ade80' },
+    ].map(s => `
+      <div style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:12px;padding:16px;text-align:center;">
+        <div style="font-family:var(--serif);font-size:28px;color:${s.color};margin-bottom:4px;">${s.val}</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text);">${s.label}</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);">${s.sub}</div>
+      </div>`).join('');
+  }
+
+  if (!cus.length) {
+    listEl.innerHTML = '<div style="color:var(--muted);font-family:var(--mono);font-size:13px;padding:40px 0;text-align:center;">No new credit union charters found for this period.</div>';
+    return;
+  }
+
+  listEl.innerHTML = cus.map(cu => {
+    const assets = Number(cu.assets) || 0;
+    return `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:12px;cursor:pointer;transition:border-color 0.2s,background 0.2s;"
+      onmouseover="this.style.borderColor='var(--accent)';this.style.background='rgba(77,184,255,0.05)'"
+      onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface)'"
+      onclick="loadDetail('${cu.id}','cu')">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:4px;">${cu.name}</div>
+          <div style="font-family:var(--mono);font-size:12px;color:var(--muted);">
+            ${cu.city}, ${cu.state} · Charter ${cu.charter} · Chartered ${cu.charterYear || '—'}
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+            <span style="font-family:var(--mono);font-size:10px;padding:2px 8px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.25);border-radius:4px;color:#fbbf24;">
+              ✦ New Charter
+            </span>
+            <span style="font-family:var(--mono);font-size:10px;padding:2px 8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:4px;color:var(--muted);">${cu.type || 'Credit Union'}</span>
+          </div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;min-width:100px;">
+          <div style="font-family:var(--serif);font-size:22px;color:var(--accent);">${fmt$(assets)}</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);">Total Assets</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px;">${(cu.members || 0).toLocaleString()} members</div>
+        </div>
+      </div>
+      <div id="charterNews_cu_${cu.id}" style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.06);">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);">Loading news…</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  cus.forEach(cu => loadCUCharterNews(cu));
+}
+
+async function loadCUCharterNews(cu) {
+  const el = document.getElementById(`charterNews_cu_${cu.id}`);
+  if (!el) return;
+  try {
+    const q = `"${cu.name}" credit union charter`;
+    const innerRss = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
+    const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(innerRss)}`;
+    const r = await fetch(apiUrl);
+    if (!r.ok) { el.innerHTML = ''; return; }
+    const data = await r.json();
+    if (data.status !== 'ok' || !data.items?.length) { el.innerHTML = ''; return; }
+
+    const cutoff = new Date(); cutoff.setFullYear(cutoff.getFullYear() - 3);
+    const nameWords = cu.name.toLowerCase().split(/\s+/).filter(w => w.length > 3 && !['credit','union','federal','financial'].includes(w));
     const relevant = data.items.filter(item => {
       const t = item.title?.toLowerCase() || '';
       const fresh = !item.pubDate || new Date(item.pubDate) >= cutoff;
