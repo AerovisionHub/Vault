@@ -340,7 +340,7 @@ exports.handler = async function(event, context) {
       let pool = withDates;
       if (year) pool = pool.filter(cu => cu.charterYear === year);
       if (state) pool = pool.filter(cu => cu.state === state);
-      pool.sort((a, b) => (b.charterDate || '').localeCompare(a.charterDate || ''));
+      pool.sort((a, b) => (b.charterYear || 0) - (a.charterYear || 0) || (b.charterDate || '').localeCompare(a.charterDate || ''));
       return {
         statusCode: 200,
         headers: corsHeaders,
