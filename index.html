@@ -4338,6 +4338,25 @@ async function fetchLiveFDICAggregate() {
   }
 }
 
+// Top N banks nationally by deposits — used to compute a live, real
+// "top N banks hold X% of all deposits" concentration stat. DEP is in
+// thousands of dollars at the institution level (same convention already
+// relied on elsewhere in this file for ASSET, e.g. searchFDIC's
+// `assets: thousands(d.data.ASSET)`), so the conversion to billions for
+// comparison against the already-displayed FDIC_DEPOSITS total is ÷1e6.
+async function fetchTopDepositBanks(n = 25) {
+  try {
+    const fields = 'NAME,CERT,DEP';
+    const url = `${FDIC_BASE}/institutions?filters=ACTIVE%3A1&fields=${fields}&limit=${n}&sort_by=DEP&sort_order=DESC`;
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const data = await r.json();
+    return (data.data || []).map(d => d.data).filter(Boolean);
+  } catch(e) {
+    return null;
+  }
+}
+
 function renderIndustry() {
   return `
     <div class="about-back">
@@ -4471,6 +4490,15 @@ function renderIndustry() {
         <div class="industry-chart-sub">A proxy for the health of the broader economy. The 2020 COVID-19 stimulus spike — deposits surging $4T in a single year — is the most dramatic single-year move in modern banking history. Deposit growth mirrors GDP expansion, monetary policy cycles, and crisis response in real time.</div>
         <div class="industry-chart-wrap" style="height:clamp(160px,22vw,220px)"><canvas id="depositChart"></canvas></div>
         <div class="industry-source">Source: FDIC BankFind · 1984–2024 · Values in $billions</div>
+      </div>
+    </div>
+
+    <div class="industry-chart-full">
+      <div class="industry-chart-card">
+        <div class="industry-chart-title">Deposit concentration <span id="depositConcTag" style="font-size:10px;color:#fbbf24;margin-left:8px;"></span></div>
+        <div class="industry-chart-sub">Just 25 banks — out of roughly 4,300 FDIC-insured institutions — hold <strong id="depositConcPct">—</strong> of every dollar deposited in the U.S. banking system. Scale concentrates deposits far faster than it concentrates institutions.</div>
+        <div class="industry-chart-wrap" style="height:clamp(160px,22vw,220px)"><canvas id="depositConcentrationChart"></canvas></div>
+        <div class="industry-source">Source: FDIC BankFind · live, current quarter · Top 25 by reported deposits</div>
       </div>
     </div>
 
@@ -4779,6 +4807,38 @@ function drawIndustryCharts() {
           x: xScale,
           yRoa: { ...yScale, position: 'left',  ticks: { ...yScale.ticks, callback: v => v.toFixed(1) + '%' } },
           yRoe: { ...yScale, position: 'right', ticks: { ...yScale.ticks, callback: v => v.toFixed(0) + '%' }, grid: { display: false } },
+        }
+      }
+    });
+  });
+
+  // ── 12. Deposit concentration (live, real top-25 sum — no estimation) ─────
+  fetchTopDepositBanks(25).then(topBanks => {
+    if (!topBanks || !topBanks.length) return; // fail soft — leave the card's "—" placeholder rather than show a wrong/partial number
+    const topSumThousands = topBanks.reduce((s, b) => s + (parseFloat(b.DEP) || 0), 0);
+    const topSumB = topSumThousands / 1e6; // thousands -> billions, same convention as ASSET elsewhere in this file
+    const latestYear = Math.max(...Object.keys(FDIC_DEPOSITS).map(Number));
+    const totalB = FDIC_DEPOSITS[latestYear];
+    if (!totalB) return;
+    const pct = Math.min(100, (topSumB / totalB) * 100); // clamp defensively — top-25 sum should never exceed the total, but guards against any stale-static-vs-live mismatch
+    const restPct = 100 - pct;
+
+    const pctEl = document.getElementById('depositConcPct');
+    if (pctEl) pctEl.textContent = pct.toFixed(1) + '%';
+    const tagEl2 = document.getElementById('depositConcTag');
+    if (tagEl2) tagEl2.textContent = '● LIVE';
+
+    makeChart('depositConcentrationChart', {
+      type: 'doughnut',
+      data: { labels: ['Top 25 banks', `All other ~${(4317-25).toLocaleString()} banks`], datasets: [{
+        data: [pct, restPct],
+        backgroundColor: ['rgba(255,107,107,0.75)', 'rgba(77,184,255,0.35)'],
+        borderColor: 'rgba(15,18,64,0.8)', borderWidth: 2, hoverOffset: 6
+      }]},
+      options: { responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { color: 'rgba(255,255,255,0.5)', font: { size: 10 }, boxWidth: 10, padding: 8 } },
+          tooltip: { ...tip, callbacks: { title: () => '', label: c => ` ${c.label}: ${c.parsed.toFixed(1)}%` } }
         }
       }
     });
