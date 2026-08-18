@@ -80,6 +80,55 @@ function parseCSVtoMap(buf, keyField) {
   return map;
 }
 
+// Detects the charter-date column in FOICU.txt by scanning actual headers
+// for a plausible name, rather than hardcoding a guessed field name. NCUA's
+// public documentation doesn't clearly pin down this exact column name (it's
+// buried in internal AIRES/5300 schema references, not a clean published
+// data dictionary for FOICU.txt specifically) — guessing wrong here risks
+// silently showing incorrect charter dates rather than failing loudly.
+// Logs whatever it finds so a real field-name mismatch is visible in
+// function logs rather than silently wrong, matching the same
+// verify-don't-guess approach already used above for FS220's member-count
+// field (ACCT_083, confirmed via logging before trusting it).
+function detectCharterDateField(headers) {
+  const candidates = headers.filter(h => {
+    const up = h.toUpperCase();
+    const hasCharterWord = up.includes('CHARTER') || up.includes('CHTR'); // NCUA commonly abbreviates CHARTER as CHTR
+    const hasDateWord = up.includes('DATE') || up.includes('DT') || up.includes('_DT');
+    return hasCharterWord && hasDateWord;
+  });
+  if (candidates.length) {
+    console.log('[ncua-charters] charter date field candidates found:', candidates.join(', '), '- using:', candidates[0]);
+    return candidates[0];
+  }
+  console.log('[ncua-charters] NO charter date field found in FOICU.txt headers:', headers.join(', '));
+  return null;
+}
+
+// Parses whatever date format NCUA actually uses (commonly MM/DD/YYYY per
+// their own AIRES layout spec) into a normalized {iso, year} pair. Returns
+// null on anything that doesn't parse cleanly rather than guessing.
+function parseCharterDate(raw) {
+  if (!raw) return null;
+  const s = raw.trim();
+  const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (mdy) {
+    const [, mm, dd, yyyy] = mdy;
+    return { iso: `${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`, year: parseInt(yyyy, 10) };
+  }
+  const ymd = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (ymd) {
+    const [, yyyy, mm, dd] = ymd;
+    return { iso: `${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`, year: parseInt(yyyy, 10) };
+  }
+  const yyyymmdd = s.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (yyyymmdd) {
+    const [, yyyy, mm, dd] = yyyymmdd;
+    return { iso: `${yyyy}-${mm}-${dd}`, year: parseInt(yyyy, 10) };
+  }
+  return null;
+}
+
 async function loadCUData() {
   if (cuCache && (Date.now() - cacheTimestamp) < CACHE_TTL) return cuCache;
 
@@ -89,6 +138,12 @@ async function loadCUData() {
   const foicuBuf = extractFromZip(zipBuf, 'FOICU.txt');
   if (!foicuBuf) throw new Error('FOICU.txt not found');
   const profiles = parseCSVtoMap(foicuBuf, 'CU_NUMBER');
+
+  // Detect the charter date field from the real header row rather than
+  // assuming a name — see detectCharterDateField's comment for why.
+  const foicuHeaderLine = foicuBuf.toString('latin1').split('\n')[0].replace('\r', '');
+  const foicuHeaders = parseCSVLine(foicuHeaderLine);
+  const charterDateField = detectCharterDateField(foicuHeaders);
 
   // Parse FS220.txt — financial data (assets, members, shares, loans)
   // FS220 headers include: CU_NUMBER, ACCT_010 (total assets), ACCT_730 (members)
@@ -115,6 +170,7 @@ async function loadCUData() {
       // NCUA 5300 call report: ACCT_731 = total members (most reliable)
       // Fallbacks: ACCT_730, ACCT_084 (potential members - too high), ACCT_083
       const members = parseInt(fin.ACCT_083 || '0', 10); // ACCT_083 = total members (confirmed from FS220 Q4 2025)
+      const charterDate = charterDateField ? parseCharterDate(p[charterDateField]) : null;
       return {
         id:      p.CU_NUMBER,
         name:    p.CU_NAME,
@@ -125,6 +181,8 @@ async function loadCUData() {
         members,
         type:    CU_TYPE_MAP[p.CU_TYPE] || p.CU_TYPE,
         charter: p.CU_NUMBER,
+        charterDate: charterDate?.iso || null,
+        charterYear: charterDate?.year || null,
         website: p.STREET ? '' : '', // FOICU has no website field
       };
     });
@@ -180,6 +238,66 @@ exports.handler = async function(event, context) {
   const minAssets = params.minAssets ? parseInt(params.minAssets, 10) : null;
   const maxAssets = params.maxAssets ? parseInt(params.maxAssets, 10) : null;
   const state = params.state ? params.state.toUpperCase() : null;
+  const newCharters = params.newCharters === '1';
+  const year = params.year ? parseInt(params.year, 10) : null;
+  const debug = params.debug === '1';
+
+  // Debug mode: confirms whether the charter-date field was actually found
+  // in this quarter's real FOICU.txt, rather than trusting the detection
+  // silently. Check this after any NCUA data-file schema change (NCUA does
+  // occasionally rename columns between reporting cycles).
+  if (debug) {
+    try {
+      const allCUs = await loadCUData();
+      const withDate = allCUs.filter(cu => cu.charterDate);
+      const sample = withDate.slice(0, 5).map(cu => ({ name: cu.name, charterDate: cu.charterDate, charterYear: cu.charterYear }));
+      return {
+        statusCode: 200,
+        headers: corsHeaders,
+        body: JSON.stringify({
+          total_cus: allCUs.length,
+          cus_with_charter_date: withDate.length,
+          charter_date_field_detected: withDate.length > 0,
+          sample,
+        }),
+      };
+    } catch (e) {
+      return { statusCode: 502, headers: corsHeaders, body: JSON.stringify({ error: e.message }) };
+    }
+  }
+
+  // New charters mode — mirrors get_recent_charters for FDIC banks. Only
+  // returns real data if the charter-date field was actually detected in
+  // this quarter's file (see detectCharterDateField) — if NCUA doesn't
+  // expose it or renamed the column, this returns an honest empty result
+  // with an explanatory note rather than fabricating dates.
+  if (newCharters) {
+    try {
+      const allCUs = await loadCUData();
+      const withDates = allCUs.filter(cu => cu.charterYear);
+      if (!withDates.length) {
+        return {
+          statusCode: 200,
+          headers: corsHeaders,
+          body: JSON.stringify({
+            results: [], totalResultCount: 0,
+            note: 'Charter date field not found in the current NCUA data file -- this feature needs a schema check, not necessarily zero new charters.',
+          }),
+        };
+      }
+      let pool = withDates;
+      if (year) pool = pool.filter(cu => cu.charterYear === year);
+      if (state) pool = pool.filter(cu => cu.state === state);
+      pool.sort((a, b) => (b.charterDate || '').localeCompare(a.charterDate || ''));
+      return {
+        statusCode: 200,
+        headers: corsHeaders,
+        body: JSON.stringify({ results: pool.slice(0, limit), totalResultCount: pool.length }),
+      };
+    } catch (e) {
+      return { statusCode: 502, headers: corsHeaders, body: JSON.stringify({ error: e.message, results: [], totalResultCount: 0 }) };
+    }
+  }
 
   if (!q && !minAssets) {
     return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ results: [], totalResultCount: 0 }) };
