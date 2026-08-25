@@ -351,7 +351,7 @@ exports.handler = async function(event, context) {
     }
   }
 
-  if (!q && !minAssets) {
+  if (!q && !minAssets && !state) {
     return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ results: [], totalResultCount: 0 }) };
   }
 
@@ -360,7 +360,7 @@ exports.handler = async function(event, context) {
 
     // Asset range filter (for peers)
     let pool = allCUs;
-    if (minAssets !== null) pool = pool.filter(cu => cu.assets >= minAssets && cu.assets <= maxAssets);
+    if (minAssets !== null) pool = pool.filter(cu => cu.assets >= minAssets && cu.assets <= (maxAssets ?? Infinity));
     if (state) pool = pool.filter(cu => cu.state === state);
 
     // Text search with fuzzy scoring

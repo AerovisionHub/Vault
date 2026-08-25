@@ -792,6 +792,63 @@
 
 <script>
 const FDIC_BASE = 'https://banks.data.fdic.gov/api';
+
+// Full state name -> 2-letter code, for detecting "banks in Oklahoma" style
+// queries. Keys are lowercase for case-insensitive matching.
+const STATE_NAME_TO_CODE = {
+  'alabama':'AL','alaska':'AK','arizona':'AZ','arkansas':'AR','california':'CA',
+  'colorado':'CO','connecticut':'CT','delaware':'DE','florida':'FL','georgia':'GA',
+  'hawaii':'HI','idaho':'ID','illinois':'IL','indiana':'IN','iowa':'IA',
+  'kansas':'KS','kentucky':'KY','louisiana':'LA','maine':'ME','maryland':'MD',
+  'massachusetts':'MA','michigan':'MI','minnesota':'MN','mississippi':'MS','missouri':'MO',
+  'montana':'MT','nebraska':'NE','nevada':'NV','new hampshire':'NH','new jersey':'NJ',
+  'new mexico':'NM','new york':'NY','north carolina':'NC','north dakota':'ND','ohio':'OH',
+  'oklahoma':'OK','oregon':'OR','pennsylvania':'PA','rhode island':'RI','south carolina':'SC',
+  'south dakota':'SD','tennessee':'TN','texas':'TX','utah':'UT','vermont':'VT',
+  'virginia':'VA','washington':'WA','west virginia':'WV','wisconsin':'WI','wyoming':'WY',
+  'district of columbia':'DC',
+};
+const VALID_STATE_CODES = new Set(Object.values(STATE_NAME_TO_CODE));
+
+// Detects "banks in Oklahoma" / "Oklahoma banks" / "credit unions near OK" /
+// bare "Oklahoma" style queries and returns the 2-letter state code, or null
+// if the query doesn't match one of these specific patterns.
+//
+// Deliberately anchored (^...$) rather than a loose substring match — a real
+// bank literally named "Bank of Oklahoma" must never get hijacked into a
+// state-wide listing instead of finding that specific bank. None of the
+// patterns below match "bank of oklahoma": it doesn't start with
+// "bank(s) in/near/from", and it doesn't end with "banks"/"credit unions"
+// immediately preceded by just the state name (the "of" breaks that).
+function detectStateOnlyQuery(q) {
+  if (!q) return null;
+  const query = q.trim().toLowerCase();
+
+  // Build the state-name alternation once, longest names first so multi-word
+  // states ("new york") aren't cut short by a shorter partial match.
+  const stateNames = Object.keys(STATE_NAME_TO_CODE).sort((a, b) => b.length - a.length);
+  const stateAlt = stateNames.map(n => n.replace(/\s+/g, '\\s+')).join('|');
+  const codeAlt = [...VALID_STATE_CODES].join('|');
+  const anyState = `(?:${stateAlt}|${codeAlt})`;
+
+  const patterns = [
+    new RegExp(`^banks?\\s+(?:in|near|from)\\s+(${anyState})$`, 'i'),
+    new RegExp(`^credit\\s+unions?\\s+(?:in|near|from)\\s+(${anyState})$`, 'i'),
+    new RegExp(`^(${anyState})\\s+banks?$`, 'i'),
+    new RegExp(`^(${anyState})\\s+credit\\s+unions?$`, 'i'),
+    new RegExp(`^(${anyState})$`, 'i'), // bare state name/code alone
+  ];
+
+  for (const re of patterns) {
+    const m = query.match(re);
+    if (m) {
+      const matched = m[1].toLowerCase();
+      // Matched text is either a full state name or a 2-letter code
+      return STATE_NAME_TO_CODE[matched] || (VALID_STATE_CODES.has(matched.toUpperCase()) ? matched.toUpperCase() : null);
+    }
+  }
+  return null;
+}
 const NCUA_BASE = 'https://data.ncua.gov/api';
 
 // FDIC fetch with rate-limit + bad-response detection.
@@ -2469,6 +2526,46 @@ function bindEvents() {
   });
 }
 
+// State-only search — "banks in Oklahoma" style queries, detected by
+// detectStateOnlyQuery. Fetches banks and credit unions in parallel, same
+// result shape as the normal name-based search path so renderResults()
+// doesn't need to know the difference.
+async function searchByState(stateCode) {
+  const fields = 'NAME,CERT,CITY,STALP,ASSET,REPDTE,ACTIVE,WEBADDR';
+
+  const bankPromise = fetch(`${FDIC_BASE}/institutions?filters=STALP%3A${stateCode}%20AND%20ACTIVE%3A1&fields=${fields}&limit=200&sort_by=ASSET&sort_order=DESC`)
+    .then(r => r.json())
+    .then(data => (data.data || []).map(d => d.data).filter(Boolean).map(d => ({
+      type: 'bank',
+      id: d.CERT,
+      name: d.NAME,
+      city: d.CITY,
+      state: d.STALP,
+      assets: thousands(d.ASSET),
+      reportDate: d.REPDTE,
+      cert: d.CERT,
+      webAddr: d.WEBADDR || null,
+    })))
+    .catch(() => []);
+
+  const cuPromise = fetch(`/.netlify/functions/ncua?state=${stateCode}&limit=100`)
+    .then(r => r.json())
+    .then(data => (data.results || []).map(d => ({
+      type: 'cu',
+      id: d.id,
+      name: d.name,
+      city: d.city,
+      state: d.state,
+      assets: d.assets,
+      members: d.members,
+      cuType: d.type,
+    })))
+    .catch(() => []);
+
+  const [banks, cus] = await Promise.all([bankPromise, cuPromise]);
+  return [...banks, ...cus];
+}
+
 async function performSearch(q) {
   if (!q) return;
   if (window.plausible) plausible('Search', { props: { query: q, type: 'all' } });
@@ -2482,16 +2579,23 @@ async function performSearch(q) {
   render();
 
   try {
-    // Always search both FDIC banks and NCUA credit unions in parallel
-    const [banks, cus] = await Promise.allSettled([
-      searchFDIC(q),
-      searchNCUA(q).catch(() => []),
-    ]);
-    const bankResults = banks.status === 'fulfilled' ? banks.value : [];
-    const cuResults   = cus.status   === 'fulfilled' ? cus.value   : [];
-    const results = [...bankResults, ...cuResults];
-    results.sort((a, b) => (b.assets || 0) - (a.assets || 0));
-    state.results = results;
+    const stateCode = detectStateOnlyQuery(q);
+    if (stateCode) {
+      const results = await searchByState(stateCode);
+      results.sort((a, b) => (b.assets || 0) - (a.assets || 0));
+      state.results = results;
+    } else {
+      // Always search both FDIC banks and NCUA credit unions in parallel
+      const [banks, cus] = await Promise.allSettled([
+        searchFDIC(q),
+        searchNCUA(q).catch(() => []),
+      ]);
+      const bankResults = banks.status === 'fulfilled' ? banks.value : [];
+      const cuResults   = cus.status   === 'fulfilled' ? cus.value   : [];
+      const results = [...bankResults, ...cuResults];
+      results.sort((a, b) => (b.assets || 0) - (a.assets || 0));
+      state.results = results;
+    }
   } catch(e) {
     state.error = 'Search failed: ' + e.message;
   } finally {
