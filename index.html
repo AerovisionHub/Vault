@@ -1698,7 +1698,7 @@ function renderCUChart(cu) {
 
 // ── Render functions ──────────────────────────────────────────────────────────
 
-let state; window._vaultState = state = { view: 'search', query: '', resultFilter: 'all', results: [], loading: false, error: null, detail: null };
+let state; window._vaultState = state = { view: 'search', query: '', resultFilter: 'all', results: [], loading: false, error: null, detail: null, mergedNotice: null };
 
 function toggleMobileNav() {
   const nav = document.getElementById('mobileNav');
@@ -1763,7 +1763,7 @@ function closeMobileSearch() {
   document.getElementById('mobileSearchOverlay')?.classList.remove('open');
 }
 
-function showHome() { state = { view: 'search', query: '', resultFilter: 'all', results: [], loading: false, error: null, detail: null }; render(); }
+function showHome() { state = { view: 'search', query: '', resultFilter: 'all', results: [], loading: false, error: null, detail: null, mergedNotice: null }; render(); }
 // ── URL routing ──────────────────────────────────────────────────────────────
 const PAGE_META = {
   home: {
@@ -2093,6 +2093,34 @@ function renderSearchBar(query = '') {
     </div>`;
 }
 
+// Renders either the merged-away notice (when checkMergedAway found
+// something) or the plain empty-results message — called from the
+// zero-results branch of renderResults().
+function renderMergedNotice() {
+  const n = state.mergedNotice;
+  if (!n) return '<div class="state-msg"><span class="big">∅</span>No results found. Try a broader search.</div>';
+
+  const dateStr = n.effDate ? new Date(n.effDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : null;
+
+  return `
+    <div style="background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.25);border-radius:12px;padding:24px;margin-bottom:16px;">
+      <div style="font-family:var(--mono);font-size:11px;color:#fbbf24;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">⚠ Institution No Longer Active</div>
+      <div style="font-size:18px;font-weight:700;color:var(--text);margin-bottom:4px;">${n.name}</div>
+      <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:16px;">${n.city || '—'}, ${n.state || '—'} · CERT ${n.cert}</div>
+      ${n.acquirerName ? `
+        <p style="font-size:14px;color:var(--text);line-height:1.6;margin-bottom:16px;">
+          This institution no longer exists as a separate entity — FDIC records show it was acquired by
+          <strong>${n.acquirerName}</strong>${dateStr ? ` on ${dateStr}` : ''}. Its charter is inactive, which is why it doesn't show up in a normal search.
+        </p>
+        ${n.acquirerCert ? `<button onclick="loadDetail('${n.acquirerCert}','bank')" style="padding:10px 20px;border-radius:8px;background:var(--accent);color:#0a0e27;border:none;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer;">View ${escAttr(n.acquirerName)} →</button>` : ''}
+      ` : `
+        <p style="font-size:14px;color:var(--muted);line-height:1.6;">
+          This institution's FDIC charter is no longer active, but we couldn't automatically confirm which institution acquired it. It may have merged, failed, or voluntarily liquidated.
+        </p>
+      `}
+    </div>`;
+}
+
 function renderResults() {
   const results = state.results;
   const filter = state.resultFilter || 'all';
@@ -2119,7 +2147,7 @@ function renderResults() {
     </div>
     ${state.loading ? `<div class="state-msg"><div class="spinner"></div><br>Searching banks &amp; credit unions…</div>` : ''}
     ${state.error ? `<div class="state-msg">${state.error}</div>` : ''}
-    ${!state.loading && results.length === 0 ? '<div class="state-msg"><span class="big">∅</span>No results found. Try a broader search.</div>' : ''}
+    ${!state.loading && results.length === 0 ? renderMergedNotice() : ''}
     ${!state.loading && results.length > 0 ? `
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
       <button style="${pillStyle(filter==='all')}" onclick="state.resultFilter='all';render();">All (${results.length})</button>
@@ -2227,6 +2255,10 @@ function renderBankDetail(d) {
 
     ${inst._stub ? `<div style="padding:12px 16px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.25);border-radius:10px;margin-bottom:24px;font-family:var(--mono);font-size:12px;color:#fbbf24;line-height:1.6;">
       ⚠ Limited data — CERT ${inst.CERT} has financial filings but no institution profile in FDIC BankFind. May be a new charter, special purpose entity, or data lag.
+    </div>` : ''}
+    ${d.recentAcquisitions?.length ? `<div style="padding:12px 16px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.25);border-radius:10px;margin-bottom:24px;font-family:var(--mono);font-size:12px;color:#fbbf24;line-height:1.6;">
+      ⚠ ${d.recentAcquisitions.length > 1 ? 'Recent acquisitions' : 'Recent acquisition'}: ${d.recentAcquisitions.map(a => `${a.OUT_INSTNAME}${a.EFFDATE ? ' (' + new Date(a.EFFDATE).toLocaleDateString('en-US',{month:'short',year:'numeric'}) + ')' : ''}`).join(', ')}.
+      The financials below may not yet reflect the combined balance sheet — FDIC's quarterly call report cycle can lag a real-world merger closing by a quarter or more.
     </div>` : ''}
     ${narrative ? `<div class="narrative-box">${narrative}</div>` : ''}
 
@@ -2566,6 +2598,66 @@ async function searchByState(stateCode) {
   return [...banks, ...cus];
 }
 
+// Checks if this bank recently acquired another institution — if so, its
+// own reported financials may not yet reflect the combined/pro-forma
+// balance sheet, since FDIC's quarterly call report cycle lags real-world
+// merger closings by a quarter or more. Surfacing this turns "why does
+// this number look wrong" into "oh, that's why" (a real user report: a
+// bank's assets looked unchanged right after a merger it had just closed).
+// Generous ~15 month window — better to show the notice a little longer
+// than necessary than to hide it while data is still genuinely stale.
+async function checkRecentAcquisition(cert) {
+  try {
+    const fields = 'ACQ_INSTNAME,ACQ_CERT,EFFDATE,OUT_INSTNAME,OUT_CERT';
+    const r = await fetch(`${FDIC_BASE}/history?filters=REPORT_TYPE%3A223%20AND%20ACQ_CERT%3A${cert}&fields=${fields}&limit=5&sort_by=EFFDATE&sort_order=DESC`);
+    const data = await r.json();
+    const deals = (data.data || []).map(d => d.data).filter(Boolean);
+    if (!deals.length) return null;
+
+    const cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - 15);
+    const recent = deals.filter(d => d.EFFDATE && new Date(d.EFFDATE) >= cutoff);
+    return recent.length ? recent : null;
+  } catch(e) {
+    return null;
+  }
+}
+
+// When a name search finds zero active institutions, checks whether it's
+// because the bank was acquired/merged away (its FDIC charter goes
+// inactive, not deleted). Reuses the exact same merger-history data source
+// as the /ma page (REPORT_TYPE:223) rather than inventing a new one.
+async function checkMergedAway(query) {
+  try {
+    const q = query.trim();
+    if (!q) return null;
+    const fields = 'NAME,CERT,CITY,STALP,ENDEFYMD';
+    const r = await fetch(`${FDIC_BASE}/institutions?filters=NAME%3A${encodeURIComponent(q)}*%20AND%20ACTIVE%3A0&fields=${fields}&limit=5&sort_by=ENDEFYMD&sort_order=DESC`);
+    const data = await r.json();
+    const inactive = (data.data || []).map(d => d.data).filter(Boolean);
+    if (!inactive.length) return null;
+
+    // Most recently-ended match — if a name matches multiple historical
+    // entities across decades, the most recent one is the most likely fit
+    // for "I know this bank existed, where did it go."
+    const match = inactive[0];
+
+    const histFields = 'ACQ_INSTNAME,ACQ_CERT,EFFDATE';
+    const hr = await fetch(`${FDIC_BASE}/history?filters=REPORT_TYPE%3A223%20AND%20OUT_CERT%3A${match.CERT}&fields=${histFields}&limit=1&sort_by=EFFDATE&sort_order=DESC`);
+    const hdata = await hr.json();
+    const deal = (hdata.data || []).map(d => d.data).filter(Boolean)[0];
+
+    return {
+      name: match.NAME, city: match.CITY, state: match.STALP, cert: match.CERT,
+      acquirerName: deal?.ACQ_INSTNAME || null,
+      acquirerCert: deal?.ACQ_CERT || null,
+      effDate: deal?.EFFDATE || match.ENDEFYMD || null,
+    };
+  } catch(e) {
+    return null;
+  }
+}
+
 async function performSearch(q) {
   if (!q) return;
   if (window.plausible) plausible('Search', { props: { query: q, type: 'all' } });
@@ -2575,6 +2667,7 @@ async function performSearch(q) {
   state.error = null;
   state.results = [];
   state.resultFilter = 'all'; // reset filter on new search
+  state.mergedNotice = null;
   state.view = 'results';
   render();
 
@@ -2595,6 +2688,16 @@ async function performSearch(q) {
       const results = [...bankResults, ...cuResults];
       results.sort((a, b) => (b.assets || 0) - (a.assets || 0));
       state.results = results;
+
+      // Zero results is exactly the case a merged-away bank produces —
+      // its FDIC charter goes inactive, not deleted, so the normal
+      // active-only search finds nothing. Check before showing a bare
+      // "no results" message. See checkMergedAway's comment for why this
+      // exists (a real user report: searching a bank that had recently
+      // merged into another returned nothing, with no explanation).
+      if (results.length === 0) {
+        state.mergedNotice = await checkMergedAway(q);
+      }
     }
   } catch(e) {
     state.error = 'Search failed: ' + e.message;
@@ -2677,13 +2780,14 @@ async function loadDetail(id, type) {
   try {
     if (type === 'bank') {
       const { inst, history } = await getFDICDetail(id);
-      const [peers, officers, stock, edgar] = await Promise.all([
+      const [peers, officers, stock, edgar, recentAcquisitions] = await Promise.all([
         fetchPeers(inst, history),
         fetchOfficers(id),
         fetchStockInfo(inst),
         fetchEDGAR(inst),
+        checkRecentAcquisition(id),
       ]);
-      state.detail = { type: 'bank', inst, history, peers, officers, stock, edgar };
+      state.detail = { type: 'bank', inst, history, peers, officers, stock, edgar, recentAcquisitions };
     } else {
       const raw = await getNCUADetail(id);
       state.detail = { type: 'cu', id, raw: raw || { name: id, id } };
