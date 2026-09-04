@@ -348,7 +348,7 @@ async function fetchLeadershipFromClaude(bankName, city, state, webAddr) {
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY not configured on the server.');
 
   const domainHint = webAddr
-    ? `Focus your search on the bank's own website: ${webAddr.replace(/^https?:\/\//i, '').split('/')[0]}. `
+    ? `The bank's own website is ${webAddr.replace(/^https?:\/\//i, '').split('/')[0]} — check it as a starting point, but don't stop there if it doesn't yield clear names. Bank "leadership" or "about us" pages are frequently JS-rendered or image-based bio grids with no crawlable name text, so a real, current leadership team can exist on a site that returns nothing useful from a web search of it. If the bank's own site doesn't clearly name people, actively search local business news coverage (e.g. "${bankName} names new CEO", "${bankName} names president", "${bankName} CEO") and the bank's LinkedIn company page/posts — these frequently name executives (leadership announcements, promotions, hires) even when the bank's own website doesn't surface them. `
     : '';
   const prompt = `You are a financial research assistant. ${domainHint}Find the following specific decision-makers at the US bank "${bankName}" (FDIC-chartered, headquartered near ${city}, ${state}) — in priority order:
 
