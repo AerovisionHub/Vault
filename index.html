@@ -5040,18 +5040,19 @@ function renderWrapped() {
         </div>
       </div>
 
-      <!-- One-click share — this is the actual primary action. LinkedIn
-           doesn't allow any site to silently publish a post on someone's
-           behalf (a deliberate platform restriction), so this opens
-           LinkedIn's own share dialog with the link pre-filled; LinkedIn
-           generates the preview card itself from the page's link tags. -->
+      <!-- Copy Link is the primary action now — pasting a link directly
+           into LinkedIn's own post composer (not the share-offsite deep
+           link) is the reliable path: LinkedIn crawls it the standard
+           way and renders the preview correctly. The share-offsite
+           popup this used to open is documented to be unreliable on its
+           own (LinkedIn's mobile app intercepts it and opens the feed
+           instead of a share box; on desktop, LinkedIn can serve a
+           stale cached crawl from before a page's data was correct) --
+           dropping it removes a fragile mechanism rather than continuing
+           to patch it. -->
       <div style="display:flex;gap:12px;justify-content:center;margin-top:24px;flex-wrap:wrap;">
-        <button onclick="window.open('https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}', '_blank', 'width=600,height=600')"
-          style="padding:12px 24px;border-radius:8px;background:#0A66C2;color:#fff;border:none;font-family:var(--mono);font-size:13px;font-weight:700;cursor:pointer;">
-          Share on LinkedIn
-        </button>
         <button onclick="navigator.clipboard.writeText('${shareUrl}').then(() => { const b=event.target; const t=b.textContent; b.textContent='Copied!'; setTimeout(()=>b.textContent=t,1500); })"
-          style="padding:12px 24px;border-radius:8px;background:rgba(255,255,255,0.08);color:var(--text);border:1px solid rgba(255,255,255,0.15);font-family:var(--mono);font-size:13px;font-weight:700;cursor:pointer;">
+          style="padding:12px 24px;border-radius:8px;background:#0A66C2;color:#fff;border:none;font-family:var(--mono);font-size:13px;font-weight:700;cursor:pointer;">
           Copy Link
         </button>
         <button onclick="loadDetail('${w.cert}','bank')"
@@ -5059,6 +5060,9 @@ function renderWrapped() {
           Full Profile →
         </button>
       </div>
+      <p style="text-align:center;font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:12px;">
+        Paste into a new LinkedIn post — the preview card will show up automatically.
+      </p>
 
       <p style="text-align:center;font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:20px;">
         Rankings compare capital ratio, profitability (ROA), and asset quality against other banks in the same state, using public FDIC financial data — not a regulatory rating.
