@@ -1055,15 +1055,15 @@ async function searchFDIC(query) {
 // getLenderRankings — kept in sync deliberately. Reusing the same formula
 // here (not a different one) means a bank's Wrapped score always matches
 // what it would rank as on the /lenders page.
-// NOT currently called from anywhere in this file. Originally powered the
-// Wrapped card's single composite "Lending Score" hero stat -- retired in
-// favor of individual metric percentiles (capital ratio, ROA, delinquency)
-// after concluding a composite invites legitimate pushback (a bank strong
-// on one input but average on another could reasonably feel undercounted
-// by fixed, somewhat arbitrary weights). Left in place, not deleted --
-// still an exact mirror of the formula functions/mcp.js's
-// getLenderRankings uses for /lenders page rankings, so it's a useful
-// reference if a composite-style stat is ever wanted again.
+// Powers the Wrapped card's headline Lending Score. Briefly retired in
+// favor of individual metric percentiles only (capital ratio, ROA,
+// delinquency), then brought back after reconsidering the actual
+// audience for a shared post: customers/investors want one legible
+// number, not several technical metric labels. Self-selection (a bank
+// only shares a score it's happy with) already covers the "would a bank
+// push back on the methodology" risk this was originally retired over.
+// The individual metrics stayed too -- full detail for anyone who wants
+// it, headline simplicity for everyone else.
 function computeLendingScore(fin) {
   const loanRatio = (Number(fin.LNLSNET) || 0) / (Number(fin.ASSET) || 1) * 100;
   const cap = Number(fin.RBC1AAJ) || 0;
@@ -2944,21 +2944,31 @@ async function loadWrapped(cert) {
     const capitalRatio = latestFin.RBC1AAJ != null ? Number(latestFin.RBC1AAJ) : null;
     const roa          = latestFin.ROA != null ? Number(latestFin.ROA) : null;
     const delinq       = latestFin.NCLNLSR != null ? Number(latestFin.NCLNLSR) : null;
+    const score         = Number(computeLendingScore({ ...latestFin, ASSET: inst.ASSET }).toFixed(1));
 
-    // Same-state peer set — reused across all three metric percentiles,
-    // one fetch instead of three, since get_lender_rankings already
-    // returns capital_ratio_percent/roa_percent/noncurrent_loans_percent
-    // for every peer it scores.
+    // Same-state peer set — reused across the composite score AND all
+    // three individual metric percentiles below, one fetch instead of
+    // four, since get_lender_rankings already returns lending_score plus
+    // capital_ratio_percent/roa_percent/noncurrent_loans_percent for
+    // every peer it scores.
     const peers = await fetchLenderRankingsViaMCP(inst.STALP, 100);
 
-    // Three single-metric, individually legible rankings — replacing the
-    // old single composite "Lending Score" hero. Real risk with a
-    // composite: a bank strong on profitability but average on loan
-    // concentration could reasonably feel undercounted, since the
-    // composite blends four things at fixed, somewhat arbitrary weights.
-    // A capital-ratio percentile or an ROA percentile is a real,
-    // singular, industry-standard number nobody can argue with the
-    // definition of.
+    // Composite Lending Score percentile — brought back as the card's
+    // single headline number after reconsidering the actual audience: the
+    // people seeing a shared post are a bank's own customers/investors,
+    // not other bankers scrutinizing methodology. One legible number
+    // matters more to them than several correct-but-technical metric
+    // labels. The individual metrics below are kept, not removed -- full
+    // transparency for anyone who wants the detail, headline simplicity
+    // for everyone else. Self-selection (nobody's forced to share a score
+    // they don't like) already covers the "would a bank push back"
+    // risk this was originally designed around.
+    const scoreRank = (peers && peers.length)
+      ? computeMetricPercentile(peers, cert, score, 'lending_score', true)
+      : null;
+
+    // Three single-metric, individually legible rankings, kept alongside
+    // the headline score above for full transparency.
     const metricDefs = [
       { key: 'capital',       label: 'Capital Strength', value: capitalRatio, field: 'capital_ratio_percent',      higherIsBetter: true  },
       { key: 'profitability', label: 'Profitability',    value: roa,         field: 'roa_percent',                 higherIsBetter: true  },
@@ -2995,6 +3005,7 @@ async function loadWrapped(cert) {
 
     state.wrapped = {
       inst, cert, highlights,
+      score, scoreRank,
       capitalRatio, roa, delinq, assetGrowthPct,
     };
 
@@ -4968,11 +4979,26 @@ function renderWrapped() {
           <div style="font-family:var(--mono);font-size:13px;color:rgba(255,255,255,0.55);margin-top:6px;">${inst.CITY}, ${inst.STALP} · CERT ${inst.CERT}</div>
         </div>
 
-        <!-- Highlights — this bank's best 1-2 individually-legible metric
-             rankings, replacing the old single composite score. Each one
-             is a real, singular, industry-standard number (capital ratio,
-             ROA, delinquency) rather than a blended index whose weights
-             a sophisticated bank exec could reasonably argue with. -->
+        <!-- Headline Lending Score — one simple number for the audience
+             that actually sees a shared post (customers, investors, small
+             businesses), not other bankers scrutinizing methodology. The
+             detailed single-metric highlights below stay too, for anyone
+             who wants the breakdown. -->
+        <div style="text-align:center;margin-bottom:28px;">
+          <div style="font-family:var(--serif);font-size:64px;color:var(--accent);font-weight:700;line-height:1;">${w.score}</div>
+          <div style="font-family:var(--mono);font-size:12px;color:rgba(255,255,255,0.6);text-transform:uppercase;letter-spacing:0.05em;margin-top:4px;">Lending Score</div>
+          ${w.scoreRank ? (() => {
+            const topPct = 100 - w.scoreRank.percentile;
+            const line = topPct <= 50 ? `Top ${topPct}% in ${inst.STALP}` : `#${w.scoreRank.rank} of ${w.scoreRank.total} in ${inst.STALP}`;
+            return `<div style="display:inline-block;margin-top:12px;padding:6px 16px;background:rgba(251,191,36,0.15);border:1px solid rgba(251,191,36,0.35);border-radius:20px;font-family:var(--mono);font-size:13px;font-weight:700;color:#fbbf24;">${line}</div>`;
+          })() : ''}
+        </div>
+
+        <!-- Highlights — the same bank's best 1-2 individual metric
+             rankings, kept as supporting detail underneath the headline
+             score above. Each is a real, singular, industry-standard
+             number (capital ratio, ROA, delinquency) for anyone who wants
+             the specifics behind the headline. -->
         ${w.highlights.length ? `
         <div style="display:grid;grid-template-columns:repeat(${w.highlights.length},1fr);gap:16px;margin-bottom:32px;">
           ${w.highlights.map(highlightHTML).join('')}
