@@ -40,6 +40,7 @@ export default async (request, context) => {
 
   const cert = match[1];
   const canonicalUrl = `https://vaultbot.ai/wrapped/${cert}`;
+  const imageUrl = `https://vaultbot.ai/wrapped-image/${cert}.png?v=1`;
 
   // Best-effort personalization, short timeout so a slow/failed FDIC call
   // never makes a real visitor wait on this. If it fails, the page still
@@ -85,6 +86,12 @@ export default async (request, context) => {
   html = html.replace(/<meta name="twitter:title" content="[^"]*">/, `<meta name="twitter:title" content="${t}">`);
   html = html.replace(/<meta name="twitter:description" content="[^"]*">/, `<meta name="twitter:description" content="${d}">`);
   html = html.replace(/(<link rel="canonical" href=")[^"]*(")/, `$1${u}$2`);
+  // The per-bank generated PNG (netlify/edge-functions/wrapped-image.ts).
+  // ?v= is a manual cache-buster: LinkedIn caches a crawled image URL hard,
+  // so bump it if the card design ever changes.
+  html = html.replace(/<meta property="og:image" content="[^"]*">/, `<meta property="og:image" content="${escAttr(imageUrl)}">`);
+  html = html.replace(/<meta name="twitter:image" content="[^"]*">/, `<meta name="twitter:image" content="${escAttr(imageUrl)}">`);
+  html = html.replace(/<meta property="og:image:alt" content="[^"]*">/, `<meta property="og:image:alt" content="${t}">`);
   html = html.replace(/<title>[^<]*<\/title>/, `<title>${t}</title>`);
 
   return new Response(html, {
