@@ -1055,6 +1055,15 @@ async function searchFDIC(query) {
 // getLenderRankings — kept in sync deliberately. Reusing the same formula
 // here (not a different one) means a bank's Wrapped score always matches
 // what it would rank as on the /lenders page.
+// NOT currently called from anywhere in this file. Originally powered the
+// Wrapped card's single composite "Lending Score" hero stat -- retired in
+// favor of individual metric percentiles (capital ratio, ROA, delinquency)
+// after concluding a composite invites legitimate pushback (a bank strong
+// on one input but average on another could reasonably feel undercounted
+// by fixed, somewhat arbitrary weights). Left in place, not deleted --
+// still an exact mirror of the formula functions/mcp.js's
+// getLenderRankings uses for /lenders page rankings, so it's a useful
+// reference if a composite-style stat is ever wanted again.
 function computeLendingScore(fin) {
   const loanRatio = (Number(fin.LNLSNET) || 0) / (Number(fin.ASSET) || 1) * 100;
   const cap = Number(fin.RBC1AAJ) || 0;
@@ -2894,6 +2903,27 @@ async function loadDetail(id, type) {
 // lending-score inputs come for free), plus a same-state peer set (via
 // the proven get_lender_rankings server logic) to compute a real
 // percentile rank, not an estimated one.
+// Computes this bank's percentile rank (0-100, higher=always better) for
+// ONE metric among its state peers, inserting its own value if it's not
+// already present in the peer set (peers come from get_lender_rankings,
+// which caps at 100 and can occasionally omit an institution -- same
+// fallback logic as the lending-score percentile below).
+// higherIsBetter=false flips the sort for metrics like delinquency where
+// a LOWER number is the good outcome.
+function computeMetricPercentile(peers, cert, ownValue, fieldName, higherIsBetter) {
+  if (ownValue == null || isNaN(ownValue)) return null;
+  const peerValues = peers
+    .filter(p => String(p.cert) !== String(cert))
+    .map(p => Number(p[fieldName]))
+    .filter(v => !isNaN(v));
+  const all = [...peerValues, ownValue];
+  const sorted = [...all].sort((a, b) => higherIsBetter ? b - a : a - b);
+  const idx = sorted.indexOf(ownValue);
+  const total = sorted.length;
+  if (idx < 0 || total === 0) return null;
+  return { percentile: Math.round((1 - idx / total) * 100), rank: idx + 1, total };
+}
+
 async function loadWrapped(cert) {
   state.view = 'wrapped';
   state.wrapped = null;
@@ -2910,34 +2940,53 @@ async function loadWrapped(cert) {
     const { inst, history } = await getFDICDetail(cert);
     if (!inst) throw new Error('Institution not found.');
     const latestFin = history[0] || {};
-    const score = computeLendingScore({ ...latestFin, ASSET: inst.ASSET });
 
-    // Same-state peer set for a real percentile — capped at 100 (the
-    // get_lender_rankings tool's own max), which comfortably covers most
-    // states' community-bank population for a "top X%" comparison.
+    const capitalRatio = latestFin.RBC1AAJ != null ? Number(latestFin.RBC1AAJ) : null;
+    const roa          = latestFin.ROA != null ? Number(latestFin.ROA) : null;
+    const delinq       = latestFin.NCLNLSR != null ? Number(latestFin.NCLNLSR) : null;
+
+    // Same-state peer set — reused across all three metric percentiles,
+    // one fetch instead of three, since get_lender_rankings already
+    // returns capital_ratio_percent/roa_percent/noncurrent_loans_percent
+    // for every peer it scores.
     const peers = await fetchLenderRankingsViaMCP(inst.STALP, 100);
-    let percentile = null, rank = null, totalPeers = null;
-    if (peers && peers.length) {
-      const sorted = [...peers].sort((a, b) => b.lending_score - a.lending_score);
-      const idx = sorted.findIndex(p => String(p.cert) === String(cert));
-      if (idx >= 0) {
-        rank = idx + 1;
-        totalPeers = sorted.length;
-        percentile = Math.round((1 - idx / sorted.length) * 100);
-      } else {
-        // This bank didn't come back in its own state's top-100 list (e.g.
-        // capped out, or missing a financials row server-side) -- estimate
-        // its rank by inserting its own client-computed score into the set
-        // rather than showing nothing.
-        const better = sorted.filter(p => p.lending_score > score).length;
-        totalPeers = sorted.length + 1;
-        rank = better + 1;
-        percentile = Math.round((1 - better / totalPeers) * 100);
-      }
-    }
+
+    // Three single-metric, individually legible rankings — replacing the
+    // old single composite "Lending Score" hero. Real risk with a
+    // composite: a bank strong on profitability but average on loan
+    // concentration could reasonably feel undercounted, since the
+    // composite blends four things at fixed, somewhat arbitrary weights.
+    // A capital-ratio percentile or an ROA percentile is a real,
+    // singular, industry-standard number nobody can argue with the
+    // definition of.
+    const metricDefs = [
+      { key: 'capital',       label: 'Capital Strength', value: capitalRatio, field: 'capital_ratio_percent',      higherIsBetter: true  },
+      { key: 'profitability', label: 'Profitability',    value: roa,         field: 'roa_percent',                 higherIsBetter: true  },
+      { key: 'assetQuality',  label: 'Asset Quality',    value: delinq,      field: 'noncurrent_loans_percent',     higherIsBetter: false },
+    ];
+    const rankedMetrics = (peers && peers.length)
+      ? metricDefs
+          .map(m => ({ ...m, result: computeMetricPercentile(peers, cert, m.value, m.field, m.higherIsBetter) }))
+          .filter(m => m.result != null)
+          .sort((a, b) => b.result.percentile - a.result.percentile)
+      : [];
+    // Best 2 metrics become the card's highlights — mirrors Spotify Wrapped
+    // picking YOUR top genre, not everyone's top genre. A bank that isn't
+    // exceptional anywhere still gets its two least-bad rankings shown
+    // honestly (neutral rank framing, not forced positivity) rather than
+    // nothing at all.
+    const highlights = rankedMetrics.slice(0, 2).map(m => ({
+      label: m.label,
+      percentile: m.result.percentile,
+      rank: m.result.rank,
+      total: m.result.total,
+    }));
 
     // Asset growth: oldest vs newest available quarter (up to 8 quarters
-    // back, same history getFDICDetail already fetched).
+    // back, same history getFDICDetail already fetched). Kept as a
+    // supporting stat, not a peer-ranked highlight -- get_lender_rankings
+    // doesn't return growth data for peers, so there's no fair percentile
+    // to compute here without a separate fetch.
     const oldestFin = history[history.length - 1];
     let assetGrowthPct = null;
     if (oldestFin?.ASSET && latestFin?.ASSET) {
@@ -2945,13 +2994,8 @@ async function loadWrapped(cert) {
     }
 
     state.wrapped = {
-      inst,
-      cert,
-      score: Number(score.toFixed(1)),
-      percentile, rank, totalPeers,
-      capitalRatio: latestFin.RBC1AAJ != null ? Number(latestFin.RBC1AAJ) : null,
-      roa: latestFin.ROA != null ? Number(latestFin.ROA) : null,
-      assetGrowthPct,
+      inst, cert, highlights,
+      capitalRatio, roa, delinq, assetGrowthPct,
     };
 
     // Personalize the tab title / meta for real browsers loading the page
@@ -4888,18 +4932,25 @@ function renderWrapped() {
 
   const inst = w.inst;
   const shareUrl = `https://vaultbot.ai/wrapped/${w.cert}`;
-  const topPct = w.percentile != null ? 100 - w.percentile : null;
-  // Only frame as "Top X%" when it's actually flattering (top half or
-  // better) — "Top 73%" reads as good news but means bottom-third, which
-  // is exactly the kind of misleading framing this feature can't afford.
-  // Below the midpoint, show the plain rank/total instead and let the
-  // number speak for itself rather than spin it.
-  const rankLine = (topPct != null && topPct <= 50)
-    ? `Top ${topPct}% in ${inst.STALP}`
-    : (w.rank ? `Ranked #${w.rank} of ${w.totalPeers} in ${inst.STALP}` : null);
 
   const growthColor = w.assetGrowthPct == null ? 'var(--muted)' : (w.assetGrowthPct >= 0 ? '#4ade80' : '#f87171');
   const growthSign = w.assetGrowthPct == null ? '' : (w.assetGrowthPct >= 0 ? '+' : '');
+
+  // Same "only say Top X% when it's actually flattering" rule as before,
+  // now applied per-highlight instead of to one composite score. A bank
+  // whose best metric is still below the state median gets a plain,
+  // factual rank line instead of spun-positive language.
+  const highlightHTML = (h) => {
+    const topPct = 100 - h.percentile;
+    const flattering = topPct <= 50;
+    const line = flattering ? `Top ${topPct}%` : `#${h.rank} of ${h.total}`;
+    return `
+      <div style="text-align:center;background:rgba(255,255,255,0.05);border-radius:16px;padding:20px 12px;">
+        <div style="font-family:var(--mono);font-size:11px;color:rgba(255,255,255,0.6);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">${h.label}</div>
+        <div style="display:inline-block;padding:8px 16px;background:rgba(251,191,36,0.15);border:1px solid rgba(251,191,36,0.35);border-radius:20px;font-family:var(--mono);font-size:16px;font-weight:700;color:#fbbf24;">${line}</div>
+        <div style="font-family:var(--mono);font-size:11px;color:rgba(255,255,255,0.4);margin-top:8px;">in ${inst.STALP}</div>
+      </div>`;
+  };
 
   return `
     <div class="about-back">
@@ -4917,15 +4968,23 @@ function renderWrapped() {
           <div style="font-family:var(--mono);font-size:13px;color:rgba(255,255,255,0.55);margin-top:6px;">${inst.CITY}, ${inst.STALP} · CERT ${inst.CERT}</div>
         </div>
 
-        <!-- Hero stat -->
-        <div style="text-align:center;margin-bottom:32px;">
-          <div style="font-family:var(--serif);font-size:72px;color:var(--accent);font-weight:700;line-height:1;">${w.score}</div>
-          <div style="font-family:var(--mono);font-size:12px;color:rgba(255,255,255,0.6);text-transform:uppercase;letter-spacing:0.05em;margin-top:4px;">Lending Score</div>
-          ${rankLine ? `<div style="display:inline-block;margin-top:14px;padding:6px 16px;background:rgba(251,191,36,0.15);border:1px solid rgba(251,191,36,0.35);border-radius:20px;font-family:var(--mono);font-size:13px;font-weight:700;color:#fbbf24;">${rankLine}</div>` : ''}
-        </div>
+        <!-- Highlights — this bank's best 1-2 individually-legible metric
+             rankings, replacing the old single composite score. Each one
+             is a real, singular, industry-standard number (capital ratio,
+             ROA, delinquency) rather than a blended index whose weights
+             a sophisticated bank exec could reasonably argue with. -->
+        ${w.highlights.length ? `
+        <div style="display:grid;grid-template-columns:repeat(${w.highlights.length},1fr);gap:16px;margin-bottom:32px;">
+          ${w.highlights.map(highlightHTML).join('')}
+        </div>` : `
+        <div style="text-align:center;color:rgba(255,255,255,0.5);font-family:var(--mono);font-size:13px;margin-bottom:32px;padding:20px 0;">
+          Peer comparison unavailable for this bank right now — showing raw financials below.
+        </div>`}
 
-        <!-- Supporting stats -->
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:8px;">
+        <!-- Supporting stats — full transparency: every input that feeds
+             the highlights above is shown as a plain number here too, so
+             nothing on this card is a black box. -->
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:8px;">
           <div style="background:rgba(255,255,255,0.06);border-radius:12px;padding:16px 12px;text-align:center;">
             <div style="font-family:var(--serif);font-size:22px;color:#fff;">${w.capitalRatio != null ? w.capitalRatio.toFixed(1) + '%' : '—'}</div>
             <div style="font-family:var(--mono);font-size:10px;color:rgba(255,255,255,0.55);margin-top:2px;">Capital Ratio</div>
@@ -4933,6 +4992,10 @@ function renderWrapped() {
           <div style="background:rgba(255,255,255,0.06);border-radius:12px;padding:16px 12px;text-align:center;">
             <div style="font-family:var(--serif);font-size:22px;color:#fff;">${w.roa != null ? w.roa.toFixed(2) + '%' : '—'}</div>
             <div style="font-family:var(--mono);font-size:10px;color:rgba(255,255,255,0.55);margin-top:2px;">ROA</div>
+          </div>
+          <div style="background:rgba(255,255,255,0.06);border-radius:12px;padding:16px 12px;text-align:center;">
+            <div style="font-family:var(--serif);font-size:22px;color:#fff;">${w.delinq != null ? w.delinq.toFixed(2) + '%' : '—'}</div>
+            <div style="font-family:var(--mono);font-size:10px;color:rgba(255,255,255,0.55);margin-top:2px;">Noncurrent Loans</div>
           </div>
           <div style="background:rgba(255,255,255,0.06);border-radius:12px;padding:16px 12px;text-align:center;">
             <div style="font-family:var(--serif);font-size:22px;color:${growthColor};">${w.assetGrowthPct != null ? growthSign + w.assetGrowthPct.toFixed(1) + '%' : '—'}</div>
@@ -4968,7 +5031,7 @@ function renderWrapped() {
       </div>
 
       <p style="text-align:center;font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:20px;">
-        Lending Score is a composite of loan concentration, capital strength, asset quality, and profitability from public FDIC data — not a regulatory rating.
+        Rankings compare capital ratio, profitability (ROA), and asset quality against other banks in the same state, using public FDIC financial data — not a regulatory rating.
       </p>
     </div>
   `;
