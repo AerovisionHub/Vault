@@ -1051,6 +1051,49 @@ async function searchFDIC(query) {
     }));
 }
 
+// Exact port of the lending-score formula in functions/mcp.js's
+// getLenderRankings — kept in sync deliberately. Reusing the same formula
+// here (not a different one) means a bank's Wrapped score always matches
+// what it would rank as on the /lenders page.
+function computeLendingScore(fin) {
+  const loanRatio = (Number(fin.LNLSNET) || 0) / (Number(fin.ASSET) || 1) * 100;
+  const cap = Number(fin.RBC1AAJ) || 0;
+  const delinq = Number(fin.NCLNLSR) || 0;
+  const roa = Number(fin.ROA) || 0;
+  return (
+    Math.min(loanRatio, 100) * 0.35 +
+    Math.min(cap, 25) * 4 * 0.20 +
+    (100 - Math.min(delinq * 10, 100)) * 0.25 +
+    Math.min(Math.max(roa * 50, 0), 100) * 0.20
+  );
+}
+
+// Calls get_lender_rankings via the MCP JSON-RPC endpoint (CORS-open)
+// instead of re-implementing the institutions+financials join client-side.
+// That join has a real, subtle bug history (see hard-won-bugs notes on
+// get_lender_rankings) — reusing the already-fixed server logic avoids
+// reintroducing the same class of bug a third time.
+async function fetchLenderRankingsViaMCP(stateCode, limit = 100) {
+  try {
+    const resp = await fetch('/.netlify/functions/mcp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: 1, method: 'tools/call',
+        params: { name: 'get_lender_rankings', arguments: { state: stateCode, asset_size: 'all', limit } },
+      }),
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const text = data?.result?.content?.[0]?.text;
+    if (!text) return null;
+    const parsed = JSON.parse(text);
+    return parsed.rankings || [];
+  } catch(e) {
+    return null;
+  }
+}
+
 async function getFDICDetail(cert) {
   // Institution info
   const instFields = 'NAME,CERT,CITY,STALP,ADDRESS,ZIP,WEBADDR,ESTYMD,ACTIVE,INSTCAT,CHRTAGNT,INSDATE,REPDTE,ASSET,DEP,EQ,NETINC,INTINC,NONII,NONIX,LNLSNET,REPDTE,STNAME,SC,LNLSDEPR,NCLNLSR,HCTMULT,NAMEHCR';
@@ -1772,6 +1815,12 @@ const PAGE_META = {
     canonical: 'https://vaultbot.ai/',
     image: 'https://vaultbot.ai/og-image.png?v=4'
   },
+  wrapped: {
+    title: 'Vault Wrapped — Bank Performance Report',
+    desc:  'See how any U.S. bank or credit union stacks up against its peers — lending score, capital ratio, and growth, generated free from public FDIC data.',
+    canonical: 'https://vaultbot.ai/wrapped',
+    image: 'https://vaultbot.ai/og-image.png?v=4'
+  },
   industry: {
     title: 'U.S. Banking Industry Analytics — Vault',
     desc:  'Fifty years of FDIC data: new bank charters, failures, branch concentration, and deposit trends. Free industry intelligence from Vault by iDENTIFY.',
@@ -1868,12 +1917,17 @@ window.addEventListener('popstate', (e) => {
     if (bankMatch) { loadDetail(bankMatch[1], 'bank'); return; }
     if (cuMatch)   { loadDetail(cuMatch[1],   'cu');   return; }
   }
+  if (view === 'wrapped') {
+    const wrappedMatch = path.match(/^\/wrapped\/(\d+)$/);
+    if (wrappedMatch) { loadWrapped(wrappedMatch[1]); return; }
+  }
   state.view = view;
   setPageMeta(view);
   render();
 });
 
 function pathToView(path) {
+  if (path.startsWith('/wrapped/')) return 'wrapped';
   if (path.startsWith('/industry')) return 'industry';
   if (path.startsWith('/lenders'))  return 'lenders';
   if (path.startsWith('/charters')) return 'charters';
@@ -1896,6 +1950,7 @@ function render() {
   else if (state.view === 'ma') { app.innerHTML = renderMA(); setTimeout(initMA, 50); }
   else if (state.view === 'compare') { app.innerHTML = renderCompare(); setTimeout(initCompare, 50); }
   else if (state.view === 'industry') { app.innerHTML = renderIndustry(); setTimeout(drawIndustryCharts, 50); }
+  else if (state.view === 'wrapped') { app.innerHTML = renderWrapped(); }
   bindEvents();
   // Keep the persistent header search (and mobile overlay) in sync with the active
   // query, but never overwrite what the user is actively typing into them.
@@ -2245,6 +2300,7 @@ function renderBankDetail(d) {
           <span class="inst-meta-item">As of <strong>${inst.REPDTE || '—'}</strong></span>
           ${inst.WEBADDR ? `<span class="inst-meta-item"><a href="https://${inst.WEBADDR}" target="_blank" style="color:var(--accent)">${inst.WEBADDR}</a></span>` : ''}
           <span class="inst-meta-item"><button onclick="addToCompare('${inst.CERT}','bank')" style="font-family:var(--mono);font-size:11px;padding:3px 10px;background:rgba(176,110,243,0.1);border:1px solid rgba(176,110,243,0.3);border-radius:6px;color:#b06ef3;cursor:pointer;letter-spacing:0.05em;">+ Compare</button></span>
+          <span class="inst-meta-item"><button onclick="showWrapped('${inst.CERT}')" style="font-family:var(--mono);font-size:11px;padding:3px 10px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);border-radius:6px;color:#fbbf24;cursor:pointer;letter-spacing:0.05em;">✦ Wrapped</button></span>
           ${inst.INSTCAT ? `<span class="inst-meta-item"><span style="font-family:var(--mono);font-size:11px;padding:3px 8px;background:rgba(77,184,255,0.1);border:1px solid rgba(77,184,255,0.25);border-radius:6px;color:var(--accent);letter-spacing:0.05em;">${decodeInstcat(inst.INSTCAT).label}</span></span>` : ''}
           ${(()=>{ const o = getOwnershipLabel(inst); return o ? `<span class="inst-meta-item"><span style="font-family:var(--mono);font-size:11px;padding:3px 8px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.25);border-radius:6px;color:#fbbf24;letter-spacing:0.05em;">${o}</span></span>` : ''; })()}
           <span class="inst-meta-item" id="stockBadge"><span style="font-family:var(--mono);font-size:11px;padding:3px 8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--muted);letter-spacing:0.05em;">Loading…</span></span>
@@ -2832,6 +2888,88 @@ async function loadDetail(id, type) {
     document.querySelector('link[rel="canonical"]')?.setAttribute('href', fullUrl);
   }
 }
+
+// Loads everything needed for a bank's Wrapped card: own financials (via
+// getFDICDetail — same call the normal detail page already makes, so the
+// lending-score inputs come for free), plus a same-state peer set (via
+// the proven get_lender_rankings server logic) to compute a real
+// percentile rank, not an estimated one.
+async function loadWrapped(cert) {
+  state.view = 'wrapped';
+  state.wrapped = null;
+  state.loading = true;
+  const tempPath = `/wrapped/${cert}`;
+  if (location.pathname !== tempPath) {
+    window.history.pushState({ view: 'wrapped', cert }, '', tempPath);
+  }
+  setPageMeta('wrapped');
+  render();
+  if (window.plausible) plausible('View Wrapped', { props: { cert: String(cert) } });
+
+  try {
+    const { inst, history } = await getFDICDetail(cert);
+    if (!inst) throw new Error('Institution not found.');
+    const latestFin = history[0] || {};
+    const score = computeLendingScore({ ...latestFin, ASSET: inst.ASSET });
+
+    // Same-state peer set for a real percentile — capped at 100 (the
+    // get_lender_rankings tool's own max), which comfortably covers most
+    // states' community-bank population for a "top X%" comparison.
+    const peers = await fetchLenderRankingsViaMCP(inst.STALP, 100);
+    let percentile = null, rank = null, totalPeers = null;
+    if (peers && peers.length) {
+      const sorted = [...peers].sort((a, b) => b.lending_score - a.lending_score);
+      const idx = sorted.findIndex(p => String(p.cert) === String(cert));
+      if (idx >= 0) {
+        rank = idx + 1;
+        totalPeers = sorted.length;
+        percentile = Math.round((1 - idx / sorted.length) * 100);
+      } else {
+        // This bank didn't come back in its own state's top-100 list (e.g.
+        // capped out, or missing a financials row server-side) -- estimate
+        // its rank by inserting its own client-computed score into the set
+        // rather than showing nothing.
+        const better = sorted.filter(p => p.lending_score > score).length;
+        totalPeers = sorted.length + 1;
+        rank = better + 1;
+        percentile = Math.round((1 - better / totalPeers) * 100);
+      }
+    }
+
+    // Asset growth: oldest vs newest available quarter (up to 8 quarters
+    // back, same history getFDICDetail already fetched).
+    const oldestFin = history[history.length - 1];
+    let assetGrowthPct = null;
+    if (oldestFin?.ASSET && latestFin?.ASSET) {
+      assetGrowthPct = ((Number(latestFin.ASSET) - Number(oldestFin.ASSET)) / Number(oldestFin.ASSET)) * 100;
+    }
+
+    state.wrapped = {
+      inst,
+      cert,
+      score: Number(score.toFixed(1)),
+      percentile, rank, totalPeers,
+      capitalRatio: latestFin.RBC1AAJ != null ? Number(latestFin.RBC1AAJ) : null,
+      roa: latestFin.ROA != null ? Number(latestFin.ROA) : null,
+      assetGrowthPct,
+    };
+
+    // Personalize the tab title / meta for real browsers loading the page
+    // (crawler bots reading link-preview tags won't see this -- they read
+    // the static HTML's tags, not JS-applied changes -- so the shared-link
+    // preview itself stays generic for now; the full personalized reveal
+    // is what a human sees once they click through).
+    const title = `${inst.NAME} — Vault Wrapped`;
+    document.title = title;
+    document.querySelector('meta[property="og:title"]')?.setAttribute('content', title);
+  } catch(e) {
+    state.wrapped = { error: e.message || 'Could not load this institution.' };
+  }
+  state.loading = false;
+  render();
+}
+
+function showWrapped(cert) { loadWrapped(cert); }
 
 async function fetchOfficers(cert) {
   // FDIC /summary endpoint has officer/director data
@@ -4734,6 +4872,108 @@ async function fetchTopDepositBanks(n = 25) {
   }
 }
 
+function renderWrapped() {
+  const w = state.wrapped;
+
+  if (state.loading || !w) {
+    return `
+      <div class="about-back"><button class="back-btn" onclick="showHome()">← Back to Search</button></div>
+      <div class="state-msg" style="padding:80px 0;"><div class="spinner"></div><br>Generating report…</div>`;
+  }
+  if (w.error) {
+    return `
+      <div class="about-back"><button class="back-btn" onclick="showHome()">← Back to Search</button></div>
+      <div class="state-msg" style="padding:80px 0;"><span class="big">∅</span>${escAttr(w.error)}</div>`;
+  }
+
+  const inst = w.inst;
+  const shareUrl = `https://vaultbot.ai/wrapped/${w.cert}`;
+  const topPct = w.percentile != null ? 100 - w.percentile : null;
+  // Only frame as "Top X%" when it's actually flattering (top half or
+  // better) — "Top 73%" reads as good news but means bottom-third, which
+  // is exactly the kind of misleading framing this feature can't afford.
+  // Below the midpoint, show the plain rank/total instead and let the
+  // number speak for itself rather than spin it.
+  const rankLine = (topPct != null && topPct <= 50)
+    ? `Top ${topPct}% in ${inst.STALP}`
+    : (w.rank ? `Ranked #${w.rank} of ${w.totalPeers} in ${inst.STALP}` : null);
+
+  const growthColor = w.assetGrowthPct == null ? 'var(--muted)' : (w.assetGrowthPct >= 0 ? '#4ade80' : '#f87171');
+  const growthSign = w.assetGrowthPct == null ? '' : (w.assetGrowthPct >= 0 ? '+' : '');
+
+  return `
+    <div class="about-back">
+      <button class="back-btn" onclick="showHome()">← Back to Search</button>
+    </div>
+
+    <div style="max-width:720px;margin:0 auto;">
+      <div style="font-family:var(--mono);font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:16px;text-align:center;">// Vault Wrapped</div>
+
+      <!-- The card itself — this is the part meant to be screenshotted -->
+      <div id="wrappedCard" style="background:linear-gradient(135deg, #1a1060, #2d1080);border:1px solid rgba(255,255,255,0.12);border-radius:20px;padding:40px;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+
+        <div style="text-align:center;margin-bottom:32px;">
+          <div style="font-family:var(--serif);font-size:32px;color:#fff;font-weight:700;line-height:1.2;">${escAttr(inst.NAME)}</div>
+          <div style="font-family:var(--mono);font-size:13px;color:rgba(255,255,255,0.55);margin-top:6px;">${inst.CITY}, ${inst.STALP} · CERT ${inst.CERT}</div>
+        </div>
+
+        <!-- Hero stat -->
+        <div style="text-align:center;margin-bottom:32px;">
+          <div style="font-family:var(--serif);font-size:72px;color:var(--accent);font-weight:700;line-height:1;">${w.score}</div>
+          <div style="font-family:var(--mono);font-size:12px;color:rgba(255,255,255,0.6);text-transform:uppercase;letter-spacing:0.05em;margin-top:4px;">Lending Score</div>
+          ${rankLine ? `<div style="display:inline-block;margin-top:14px;padding:6px 16px;background:rgba(251,191,36,0.15);border:1px solid rgba(251,191,36,0.35);border-radius:20px;font-family:var(--mono);font-size:13px;font-weight:700;color:#fbbf24;">${rankLine}</div>` : ''}
+        </div>
+
+        <!-- Supporting stats -->
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:8px;">
+          <div style="background:rgba(255,255,255,0.06);border-radius:12px;padding:16px 12px;text-align:center;">
+            <div style="font-family:var(--serif);font-size:22px;color:#fff;">${w.capitalRatio != null ? w.capitalRatio.toFixed(1) + '%' : '—'}</div>
+            <div style="font-family:var(--mono);font-size:10px;color:rgba(255,255,255,0.55);margin-top:2px;">Capital Ratio</div>
+          </div>
+          <div style="background:rgba(255,255,255,0.06);border-radius:12px;padding:16px 12px;text-align:center;">
+            <div style="font-family:var(--serif);font-size:22px;color:#fff;">${w.roa != null ? w.roa.toFixed(2) + '%' : '—'}</div>
+            <div style="font-family:var(--mono);font-size:10px;color:rgba(255,255,255,0.55);margin-top:2px;">ROA</div>
+          </div>
+          <div style="background:rgba(255,255,255,0.06);border-radius:12px;padding:16px 12px;text-align:center;">
+            <div style="font-family:var(--serif);font-size:22px;color:${growthColor};">${w.assetGrowthPct != null ? growthSign + w.assetGrowthPct.toFixed(1) + '%' : '—'}</div>
+            <div style="font-family:var(--mono);font-size:10px;color:rgba(255,255,255,0.55);margin-top:2px;">Asset Growth</div>
+          </div>
+        </div>
+
+        <!-- Reserved sponsor slot — intentionally empty/hidden in v1. Layout
+             space is reserved so activating sponsorship later is a config
+             change, not a redesign. -->
+        <div id="wrappedSponsorSlot" style="display:none;"></div>
+
+        <div style="text-align:center;margin-top:28px;padding-top:20px;border-top:1px solid rgba(255,255,255,0.1);">
+          <span style="font-family:var(--serif);font-size:14px;color:#fff;">Vault<span style="color:var(--accent);">.</span></span>
+          <span style="font-family:var(--mono);font-size:11px;color:rgba(255,255,255,0.4);"> · vaultbot.ai · Free FDIC data</span>
+        </div>
+      </div>
+
+      <!-- Share actions -->
+      <div style="display:flex;gap:12px;justify-content:center;margin-top:24px;flex-wrap:wrap;">
+        <button onclick="window.open('https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}', '_blank', 'width=600,height=600')"
+          style="padding:12px 24px;border-radius:8px;background:#0A66C2;color:#fff;border:none;font-family:var(--mono);font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px;">
+          Share on LinkedIn
+        </button>
+        <button onclick="navigator.clipboard.writeText('${shareUrl}').then(() => { const b=event.target; const t=b.textContent; b.textContent='Copied!'; setTimeout(()=>b.textContent=t,1500); })"
+          style="padding:12px 24px;border-radius:8px;background:rgba(255,255,255,0.08);color:var(--text);border:1px solid rgba(255,255,255,0.15);font-family:var(--mono);font-size:13px;font-weight:700;cursor:pointer;">
+          Copy Link
+        </button>
+        <button onclick="loadDetail('${w.cert}','bank')"
+          style="padding:12px 24px;border-radius:8px;background:transparent;color:var(--muted);border:1px solid rgba(255,255,255,0.1);font-family:var(--mono);font-size:13px;cursor:pointer;">
+          Full Profile →
+        </button>
+      </div>
+
+      <p style="text-align:center;font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:20px;">
+        Lending Score is a composite of loan concentration, capital strength, asset quality, and profitability from public FDIC data — not a regulatory rating.
+      </p>
+    </div>
+  `;
+}
+
 function renderIndustry() {
   return `
     <div class="about-back">
@@ -5686,10 +5926,13 @@ setPageMeta(_bootView);
 // Handle direct deep links: /bank/23473 or /cu/66354
 const _bankMatch = _bootPath.match(/^\/bank\/.*?-?(\d+)$/);
 const _cuMatch   = _bootPath.match(/^\/cu\/.*?-?(\d+)$/);
+const _wrappedMatch = _bootPath.match(/^\/wrapped\/(\d+)$/);
 if (_bankMatch) {
   loadDetail(_bankMatch[1], 'bank');
 } else if (_cuMatch) {
   loadDetail(_cuMatch[1], 'cu');
+} else if (_wrappedMatch) {
+  loadWrapped(_wrappedMatch[1]);
 } else if (_bootView === 'industry') {
   render();
   setTimeout(drawIndustryCharts, 100);
