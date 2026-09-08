@@ -8,7 +8,7 @@ exports.handler = async (event) => {
 
   const HEADERS = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' };
   const EMPTY = {
-    all_time: { total_calls: 0, unique_users: 0, total_errors: 0, error_rate: '0%', tool_usage: {}, client_usage: {} },
+    all_time: { tool_calls: 0, tool_unique_users: 0, tool_error_rate: 'not yet measured', tool_errors: 0, tool_client_usage: {}, handshakes: 0, total_requests: 0, connections_unique_ips: 0, total_calls: 0, unique_users: 0, total_errors: 0, error_rate: '0%', tool_usage: {}, client_usage: {} },
     daily: [],
     last_updated: new Date().toISOString(),
   };
@@ -51,18 +51,40 @@ exports.handler = async (event) => {
     const valid = dayData.filter(Boolean).sort((a, b) => (b.day || '').localeCompare(a.day || ''));
 
     const totals = {
-      total_calls: 0,
+      total_requests: 0,
+      tool_calls: 0,
+      tool_errors: 0,
+      tool_error_basis: 0,   // tool calls on days where tool_errors was instrumented
       total_unique_users: new Set(),
+      tool_unique_users: new Set(),
       total_errors: 0,
       tools: {},
       clients: {},
+      tool_clients: {},
     };
+
+    // Per-day tool_calls is derivable retroactively: by_tool has only ever been
+    // written on a tools/call, so its sum IS the real tool-call count for days
+    // recorded before tool_calls existed. No history is lost by this change.
+    const dayToolCalls = (d) => {
+      if (typeof d.tool_calls === 'number') return d.tool_calls;
+      return Object.values(d.by_tool || {}).reduce((a, b) => a + b, 0);
+    };
+
     valid.forEach(d => {
-      totals.total_calls += d.total_calls || 0;
+      const tc = dayToolCalls(d);
+      totals.total_requests += d.total_calls || 0;
+      totals.tool_calls += tc;
       totals.total_errors += d.errors || 0;
+      if (typeof d.tool_errors === 'number') {
+        totals.tool_errors += d.tool_errors;
+        totals.tool_error_basis += tc;
+      }
       (d.unique_ips || []).forEach(ip => totals.total_unique_users.add(ip));
+      (d.tool_unique_ips || []).forEach(ip => totals.tool_unique_users.add(ip));
       Object.entries(d.by_tool || {}).forEach(([t, n]) => totals.tools[t] = (totals.tools[t] || 0) + n);
       Object.entries(d.by_client || {}).forEach(([c, n]) => totals.clients[c] = (totals.clients[c] || 0) + n);
+      Object.entries(d.by_client_tools || {}).forEach(([c, n]) => totals.tool_clients[c] = (totals.tool_clients[c] || 0) + n);
     });
 
     return {
@@ -70,17 +92,36 @@ exports.handler = async (event) => {
       headers: HEADERS,
       body: JSON.stringify({
         all_time: {
-          total_calls: totals.total_calls,
+          // Headline metric: actual tools/call requests.
+          tool_calls: totals.tool_calls,
+          tool_unique_users: totals.tool_unique_users.size,
+          tool_error_rate: totals.tool_error_basis > 0
+            ? `${((totals.tool_errors / totals.tool_error_basis) * 100).toFixed(2)}%`
+            : 'not yet measured',
+          tool_errors: totals.tool_errors,
+          tool_client_usage: totals.tool_clients,
+
+          // Protocol chatter — connections and reconnects, not usage.
+          handshakes: Math.max(totals.total_requests - totals.tool_calls, 0),
+          total_requests: totals.total_requests,
+          connections_unique_ips: totals.total_unique_users.size,
+
+          // Retained for backwards compatibility. total_calls is every JSON-RPC
+          // method, NOT tool calls — do not quote it as a usage number.
+          total_calls: totals.total_requests,
           unique_users: totals.total_unique_users.size,
           total_errors: totals.total_errors,
-          error_rate: totals.total_calls > 0 ? `${((totals.total_errors / totals.total_calls) * 100).toFixed(2)}%` : '0%',
+          error_rate: totals.total_requests > 0 ? `${((totals.total_errors / totals.total_requests) * 100).toFixed(2)}%` : '0%',
           tool_usage: totals.tools,
           client_usage: totals.clients,
         },
         daily: valid.slice(0, 30).map(d => ({
           day: d.day,
+          tool_calls: dayToolCalls(d),
+          handshakes: Math.max((d.total_calls || 0) - dayToolCalls(d), 0),
           calls: d.total_calls,
           unique_users: (d.unique_ips || []).length,
+          tool_unique_users: (d.tool_unique_ips || []).length,
           errors: d.errors,
           top_tool: Object.entries(d.by_tool || {}).sort((a,b) => b[1]-a[1])[0]?.[0] || null,
           top_client: Object.entries(d.by_client || {}).sort((a,b) => b[1]-a[1])[0]?.[0] || null,

@@ -79,7 +79,7 @@ async function load() {
     const d = await r.json();
     if (d.error) throw new Error(d.error);
     const all = d.all_time || {};
-    if (!all.total_calls) {
+    if (!all.tool_calls && !all.total_requests) {
       c.innerHTML = '<div id="empty"><h3>No usage yet.</h3><p>Once people start using Vault MCP, stats will appear here.</p><p style="font-family:var(--mono);font-size:11px;color:#666;margin-top:14px;">Endpoint: /.netlify/functions/mcp</p></div>';
       return;
     }
@@ -89,11 +89,18 @@ async function load() {
     const maxClient = clients[0]?.[1] || 1;
     const html = `
       <div class="kpi-grid">
-        <div class="kpi accent"><div class="label">Total tool calls</div><div class="value">${all.total_calls.toLocaleString()}</div></div>
-        <div class="kpi green"><div class="label">Unique users</div><div class="value">${all.unique_users}</div></div>
+        <div class="kpi accent"><div class="label">Tool calls</div><div class="value">${(all.tool_calls||0).toLocaleString()}</div></div>
+        <div class="kpi green"><div class="label">Unique tool users</div><div class="value">${all.tool_unique_users ?? '—'}</div></div>
         <div class="kpi gold"><div class="label">Active tools</div><div class="value">${tools.length}</div></div>
-        <div class="kpi red"><div class="label">Error rate</div><div class="value">${all.error_rate}</div></div>
+        <div class="kpi red"><div class="label">Tool error rate</div><div class="value">${all.tool_error_rate || '—'}</div></div>
       </div>
+      <p style="font-family:var(--mono);font-size:11px;color:var(--muted);margin:-6px 0 18px;">
+        Tool calls = real <code>tools/call</code> requests. A further
+        ${(all.handshakes||0).toLocaleString()} protocol handshakes (connects and
+        reconnects) are excluded — they measure client retry behaviour, not usage.
+        Unique tool users counts only IPs that actually ran a tool, and is measured
+        from 2026-09-07 onward.
+      </p>
       <h2>Tool usage</h2>
       <table><thead><tr><th>Tool</th><th>Calls</th><th>Distribution</th></tr></thead>
       <tbody>${tools.map(([t,n]) => `<tr><td style="font-family:var(--mono);color:var(--accent)">${t}</td><td>${n}</td><td><span class="bar" style="width:${(n/maxTool)*240}px"></span></td></tr>`).join('')}</tbody></table>
@@ -101,8 +108,8 @@ async function load() {
       <table><thead><tr><th>Client</th><th>Sessions</th><th>Distribution</th></tr></thead>
       <tbody>${clients.map(([c,n]) => `<tr><td style="font-family:var(--mono);color:var(--accent)">${c}</td><td>${n}</td><td><span class="bar" style="width:${(n/maxClient)*240}px"></span></td></tr>`).join('')}</tbody></table>
       <h2>Daily breakdown (last 30 days)</h2>
-      <table><thead><tr><th>Day</th><th>Calls</th><th>Unique users</th><th>Top tool</th><th>Top client</th><th>Errors</th></tr></thead>
-      <tbody>${(d.daily||[]).map(day => `<tr><td style="font-family:var(--mono)">${day.day}</td><td>${day.calls}</td><td>${day.unique_users}</td><td style="font-family:var(--mono);color:var(--accent);font-size:11px">${day.top_tool||'—'}</td><td style="font-family:var(--mono);color:var(--accent2);font-size:11px">${day.top_client||'—'}</td><td style="color:${day.errors?'var(--red)':'var(--muted)'}">${day.errors}</td></tr>`).join('')}</tbody></table>
+      <table><thead><tr><th>Day</th><th>Tool calls</th><th>Handshakes</th><th>Unique users</th><th>Top tool</th><th>Top client</th><th>Errors</th></tr></thead>
+      <tbody>${(d.daily||[]).map(day => `<tr><td style="font-family:var(--mono)">${day.day}</td><td>${day.tool_calls ?? '—'}</td><td style="color:var(--muted)">${(day.handshakes ?? 0).toLocaleString()}</td><td>${day.unique_users}</td><td style="font-family:var(--mono);color:var(--accent);font-size:11px">${day.top_tool||'—'}</td><td style="font-family:var(--mono);color:var(--accent2);font-size:11px">${day.top_client||'—'}</td><td style="color:${day.errors?'var(--red)':'var(--muted)'}">${day.errors}</td></tr>`).join('')}</tbody></table>
       <p style="margin-top:24px;font-family:var(--mono);font-size:10px;color:var(--muted)">Last updated: ${d.last_updated}</p>`;
     c.innerHTML = html;
   } catch(e) {

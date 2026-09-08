@@ -780,11 +780,34 @@ async function logCall(event, { method, toolName, clientName, durationMs, succes
     const existing = await store.get(counterKey, { type: 'json' }).catch(() => null) || {
       day: dayKey, total_calls: 0, unique_ips: [], by_tool: {}, by_client: {}, errors: 0
     };
+    // total_calls counts EVERY JSON-RPC method — initialize, tools/list,
+    // notifications/*, ping, tools/call. MCP clients (mcp-remote especially)
+    // re-handshake constantly, so this number is dominated by protocol chatter
+    // and is NOT a usage metric. It's kept for continuity; the tool_* fields
+    // below are the ones that mean anything.
     existing.total_calls += 1;
     if (!existing.unique_ips.includes(hashIP(ip))) existing.unique_ips.push(hashIP(ip));
-    if (toolName) existing.by_tool[toolName] = (existing.by_tool[toolName] || 0) + 1;
     if (clientName) existing.by_client[clientName] = (existing.by_client[clientName] || 0) + 1;
     if (success === false) existing.errors += 1;
+
+    // Real work only. toolName is set exclusively on a tools/call, so these
+    // fields answer "did somebody actually use Vault" rather than "did a
+    // client reconnect."
+    if (toolName) {
+      existing.tool_calls = (existing.tool_calls || 0) + 1;
+      existing.by_tool[toolName] = (existing.by_tool[toolName] || 0) + 1;
+      if (success === false) existing.tool_errors = (existing.tool_errors || 0) + 1;
+
+      if (!Array.isArray(existing.tool_unique_ips)) existing.tool_unique_ips = [];
+      if (!existing.tool_unique_ips.includes(hashIP(ip))) existing.tool_unique_ips.push(hashIP(ip));
+
+      // clientInfo only arrives on `initialize`, never on tools/call — which is
+      // why by_client above has only ever measured handshakes. Fall back to the
+      // user-agent so tool calls can be attributed to a client too.
+      const attribution = clientName || userAgent.split(/[\s/]/)[0] || 'unknown';
+      if (!existing.by_client_tools) existing.by_client_tools = {};
+      existing.by_client_tools[attribution] = (existing.by_client_tools[attribution] || 0) + 1;
+    }
     await store.setJSON(counterKey, existing);
   } catch (e) {
     console.error('Analytics log failed (non-fatal):', e.message);
@@ -1471,7 +1494,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.14.1',
+        name: 'vault-mcp', version: '1.15.0',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -1518,7 +1541,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.14.1' },
+          serverInfo: { name: 'vault-mcp', version: '1.15.0' },
           capabilities: { tools: {} },
         });
       }
