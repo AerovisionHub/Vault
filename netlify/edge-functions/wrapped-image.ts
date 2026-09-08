@@ -85,7 +85,9 @@ async function fetchPeers(origin: string, stateCode: string) {
   try {
     const resp = await fetch(`${origin}/.netlify/functions/mcp`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      // Tagged so this render doesn't inflate real MCP usage numbers — every
+      // Wrapped share would otherwise look like a third-party tool call.
+      headers: { "Content-Type": "application/json", "X-Vault-Source": "og-image" },
       signal: c.signal,
       body: JSON.stringify({
         jsonrpc: "2.0",

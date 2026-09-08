@@ -1086,7 +1086,7 @@ async function fetchLenderRankingsViaMCP(stateCode, limit = 100) {
   try {
     const resp = await fetch('/.netlify/functions/mcp', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Vault-Source': 'web' },
       body: JSON.stringify({
         jsonrpc: '2.0', id: 1, method: 'tools/call',
         params: { name: 'get_lender_rankings', arguments: { state: stateCode, asset_size: 'all', limit } },

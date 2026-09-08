@@ -61,6 +61,11 @@ exports.handler = async (event) => {
       tools: {},
       clients: {},
       tool_clients: {},
+      sources: {},
+      tool_calls_external: 0,
+      latency: {},
+      errors_by_tool: {},
+      ip_days: {},        // ip_hash -> count of distinct days it ran a tool
     };
 
     // Per-day tool_calls is derivable retroactively: by_tool has only ever been
@@ -85,7 +90,23 @@ exports.handler = async (event) => {
       Object.entries(d.by_tool || {}).forEach(([t, n]) => totals.tools[t] = (totals.tools[t] || 0) + n);
       Object.entries(d.by_client || {}).forEach(([c, n]) => totals.clients[c] = (totals.clients[c] || 0) + n);
       Object.entries(d.by_client_tools || {}).forEach(([c, n]) => totals.tool_clients[c] = (totals.tool_clients[c] || 0) + n);
+      Object.entries(d.by_source || {}).forEach(([k, n]) => totals.sources[k] = (totals.sources[k] || 0) + n);
+      Object.entries(d.errors_by_tool || {}).forEach(([k, n]) => totals.errors_by_tool[k] = (totals.errors_by_tool[k] || 0) + n);
+      totals.tool_calls_external += d.tool_calls_external || 0;
+      Object.entries(d.tool_latency || {}).forEach(([t, l]) => {
+        const cur = totals.latency[t] || { n: 0, sum: 0, max: 0 };
+        cur.n += l.n || 0; cur.sum += l.sum || 0; cur.max = Math.max(cur.max, l.max || 0);
+        totals.latency[t] = cur;
+      });
+      // Retention: an ip_hash that ran a tool on 2+ distinct days came back.
+      (d.tool_unique_ips || []).forEach(ip => { totals.ip_days[ip] = (totals.ip_days[ip] || 0) + 1; });
     });
+
+    const ipDayCounts = Object.values(totals.ip_days);
+    const returning_tool_users = ipDayCounts.filter(n => n >= 2).length;
+    const latency_ms = Object.fromEntries(
+      Object.entries(totals.latency).map(([t, l]) => [t, { avg: l.n ? Math.round(l.sum / l.n) : null, max: l.max, samples: l.n }])
+    );
 
     return {
       statusCode: 200,
@@ -100,6 +121,17 @@ exports.handler = async (event) => {
             : 'not yet measured',
           tool_errors: totals.tool_errors,
           tool_client_usage: totals.tool_clients,
+
+          // Third-party only. Vault's own website and the Wrapped OG-image
+          // renderer hit this same endpoint; they're tagged and excluded here.
+          tool_calls_external: totals.tool_calls_external,
+          by_source: totals.sources,
+
+          // Retention and health.
+          returning_tool_users,
+          tool_users_seen: ipDayCounts.length,
+          latency_ms,
+          errors_by_tool: totals.errors_by_tool,
 
           // Protocol chatter — connections and reconnects, not usage.
           handshakes: Math.max(totals.total_requests - totals.tool_calls, 0),

@@ -759,6 +759,11 @@ async function logCall(event, { method, toolName, clientName, durationMs, succes
     const ip = event.headers?.['x-forwarded-for']?.split(',')[0]?.trim() ||
                event.headers?.['client-ip'] || 'unknown';
     const userAgent = event.headers?.['user-agent'] || 'unknown';
+    // Vault's own website and the Wrapped OG-image renderer call this same
+    // endpoint. Untagged, that first-party traffic is indistinguishable from a
+    // real third-party MCP client — and Wrapped shares would inflate
+    // get_lender_rankings without anyone actually using Vault.
+    const source = event.headers?.['x-vault-source'] || 'mcp-client';
     const now = new Date();
     const dayKey = now.toISOString().slice(0, 10);  // YYYY-MM-DD
     const callId = `${dayKey}/${now.toISOString()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -768,6 +773,7 @@ async function logCall(event, { method, toolName, clientName, durationMs, succes
       method: method || null,
       tool: toolName || null,
       client: clientName || 'unknown',
+      source,
       ip_hash: hashIP(ip),
       user_agent: userAgent.slice(0, 200),
       duration_ms: durationMs || null,
@@ -807,6 +813,31 @@ async function logCall(event, { method, toolName, clientName, durationMs, succes
       const attribution = clientName || userAgent.split(/[\s/]/)[0] || 'unknown';
       if (!existing.by_client_tools) existing.by_client_tools = {};
       existing.by_client_tools[attribution] = (existing.by_client_tools[attribution] || 0) + 1;
+
+      // First-party vs third-party. tool_calls_external is the number that
+      // actually answers "is anyone else using this."
+      if (!existing.by_source) existing.by_source = {};
+      existing.by_source[source] = (existing.by_source[source] || 0) + 1;
+      if (source === 'mcp-client') {
+        existing.tool_calls_external = (existing.tool_calls_external || 0) + 1;
+      }
+
+      // Latency per tool — matters for the 15s Perplexity ceiling and for
+      // spotting a tool that has quietly gotten slow.
+      if (typeof durationMs === 'number') {
+        if (!existing.tool_latency) existing.tool_latency = {};
+        const lat = existing.tool_latency[toolName] || { n: 0, sum: 0, max: 0 };
+        lat.n += 1;
+        lat.sum += durationMs;
+        lat.max = Math.max(lat.max, durationMs);
+        existing.tool_latency[toolName] = lat;
+      }
+
+      // Which tool is failing, not just how many failures there were.
+      if (success === false) {
+        if (!existing.errors_by_tool) existing.errors_by_tool = {};
+        existing.errors_by_tool[toolName] = (existing.errors_by_tool[toolName] || 0) + 1;
+      }
     }
     await store.setJSON(counterKey, existing);
   } catch (e) {
@@ -1494,7 +1525,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.15.0',
+        name: 'vault-mcp', version: '1.16.0',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -1541,7 +1572,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.15.0' },
+          serverInfo: { name: 'vault-mcp', version: '1.16.0' },
           capabilities: { tools: {} },
         });
       }

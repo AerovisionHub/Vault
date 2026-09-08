@@ -102,8 +102,16 @@ async function load() {
         from 2026-09-07 onward.
       </p>
       <h2>Tool usage</h2>
-      <table><thead><tr><th>Tool</th><th>Calls</th><th>Distribution</th></tr></thead>
-      <tbody>${tools.map(([t,n]) => `<tr><td style="font-family:var(--mono);color:var(--accent)">${t}</td><td>${n}</td><td><span class="bar" style="width:${(n/maxTool)*240}px"></span></td></tr>`).join('')}</tbody></table>
+      <table><thead><tr><th>Tool</th><th>Calls</th><th>Avg ms</th><th>Max ms</th><th>Errors</th><th>Distribution</th></tr></thead>
+      <tbody>${tools.map(([t,n]) => { const L=(all.latency_ms||{})[t]||{}; const e=(all.errors_by_tool||{})[t]||0; return `<tr><td style="font-family:var(--mono);color:var(--accent)">${t}</td><td>${n}</td><td style="font-family:var(--mono);color:var(--muted)">${L.avg ?? '—'}</td><td style="font-family:var(--mono);color:${(L.max||0)>15000?'var(--red)':'var(--muted)'}">${L.max ?? '—'}</td><td style="color:${e?'var(--red)':'var(--muted)'}">${e}</td><td><span class="bar" style="width:${(n/maxTool)*240}px"></span></td></tr>`; }).join('')}</tbody></table>
+      <h2>Traffic source</h2>
+      <p style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:-8px;">
+        Vault's own site and the Wrapped preview-image renderer call this same endpoint.
+        Third-party tool calls: <strong style="color:var(--accent)">${(all.tool_calls_external ?? 0).toLocaleString()}</strong>.
+        Returning tool users (ran a tool on 2+ separate days):
+        <strong style="color:var(--accent)">${all.returning_tool_users ?? 0}</strong> of ${all.tool_users_seen ?? 0}.
+        Both measured from 2026-09-07 onward.
+      </p>
       <h2>MCP clients</h2>
       <table><thead><tr><th>Client</th><th>Sessions</th><th>Distribution</th></tr></thead>
       <tbody>${clients.map(([c,n]) => `<tr><td style="font-family:var(--mono);color:var(--accent)">${c}</td><td>${n}</td><td><span class="bar" style="width:${(n/maxClient)*240}px"></span></td></tr>`).join('')}</tbody></table>
