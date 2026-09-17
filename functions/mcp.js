@@ -1418,10 +1418,13 @@ async function getBranchData(args) {
   const cached = await cacheGet(cacheKey);
   if (cached) return { ...cached, _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) } };
 
-  // Full field set first; SOD field names are less battle-tested in this codebase than
-  // the /financials fields, so fall back to a smaller safe subset if FDIC rejects the query.
-  const fieldsFull = 'CERT,NAMEFULL,ADDRESBR,CITYBR,STALPBR,ZIPBR,DEPSUMBR,BRSERTYP,ESTYMD,RUNDATE,MAINOFF,UNINUMBR';
-  const fieldsSafe = 'CERT,NAMEFULL,CITYBR,STALPBR,DEPSUMBR,MAINOFF,RUNDATE';
+  // SOD gotcha, verified against the live API 2026-09-07: RUNDATE is an ACCEPTED
+  // field name but is never populated in a response, AND it is not sortable —
+  // `sort_by=RUNDATE` returns HTTP 400 "No mapping found for [RUNDATE] in order
+  // to sort on". YEAR is both populated and sortable. Use YEAR for sorting and
+  // for picking the latest annual snapshot; do not reintroduce RUNDATE.
+  const fieldsFull = 'CERT,NAMEFULL,ADDRESBR,CITYBR,STALPBR,ZIPBR,DEPSUMBR,BRSERTYP,ESTYMD,YEAR,MAINOFF,UNINUMBR';
+  const fieldsSafe = 'CERT,NAMEFULL,CITYBR,STALPBR,DEPSUMBR,MAINOFF,YEAR';
 
   let branchFilters = `CERT%3A${cert}`;
   if (state) branchFilters += `%20AND%20STALPBR%3A${state.toUpperCase()}`;
@@ -1429,15 +1432,22 @@ async function getBranchData(args) {
   let rows;
   let usedFullFields = true;
   try {
-    // Pull a generous batch sorted by most recent RUNDATE first, since SOD is an annual
+    // Pull a generous batch sorted by most recent YEAR first, since SOD is an annual
     // snapshot and a given CERT will have one row per branch per year on file.
-    const r = await fetchFDIC(`${FDIC_SOD_BASE}?filters=${branchFilters}&fields=${fieldsFull}&limit=200&sort_by=RUNDATE&sort_order=DESC`);
+    const r = await fetchFDIC(`${FDIC_SOD_BASE}?filters=${branchFilters}&fields=${fieldsFull}&limit=200&sort_by=YEAR&sort_order=DESC`);
     rows = (r.data || []).map(d => d.data).filter(Boolean);
   } catch (e) {
     if (e.message.includes('400') || e.message.toLowerCase().includes('field')) {
       usedFullFields = false;
-      const r = await fetchFDIC(`${FDIC_SOD_BASE}?filters=${branchFilters}&fields=${fieldsSafe}&limit=200&sort_by=RUNDATE&sort_order=DESC`);
-      rows = (r.data || []).map(d => d.data).filter(Boolean);
+      try {
+        const r = await fetchFDIC(`${FDIC_SOD_BASE}?filters=${branchFilters}&fields=${fieldsSafe}&limit=200&sort_by=YEAR&sort_order=DESC`);
+        rows = (r.data || []).map(d => d.data).filter(Boolean);
+      } catch (e2) {
+        // Previously this escaped bare and surfaced to the user as a useless
+        // "Internal error", which is exactly why the RUNDATE bug went
+        // undiagnosed. Always say which tool failed and why.
+        throw new Error(`Branch data lookup for CERT ${cert} failed on both full and reduced field sets. FDIC said: ${e2.message}`);
+      }
     } else {
       throw new Error(`Branch data lookup for CERT ${cert}: ${e.message}`);
     }
@@ -1445,9 +1455,13 @@ async function getBranchData(args) {
 
   if (!rows.length) throw new Error(`No branch data found for CERT ${cert}${state ? ` in ${state.toUpperCase()}` : ''}. The certificate may be inactive, not FDIC-insured, or have no branches in that state. Verify with search_institutions or get_bank_profile first.`);
 
-  // SOD returns one row per branch per filing year — keep only the most recent year present
-  const latestRunDate = rows.reduce((max, r) => (r.RUNDATE > max ? r.RUNDATE : max), rows[0].RUNDATE);
-  let latestRows = rows.filter(r => r.RUNDATE === latestRunDate);
+  // SOD returns one row per branch per filing year — keep only the most recent
+  // year. This previously compared RUNDATE, which is always undefined, so
+  // `undefined === undefined` matched every row and silently blended ~20 years
+  // of branch history into one "current" answer.
+  const years = rows.map(r => Number(r.YEAR)).filter(y => !isNaN(y));
+  const latestYear = years.length ? Math.max(...years) : null;
+  let latestRows = latestYear != null ? rows.filter(r => Number(r.YEAR) === latestYear) : rows;
 
   // De-dupe by branch identifier if available, then cap to requested limit
   if (usedFullFields) {
@@ -1477,13 +1491,13 @@ async function getBranchData(args) {
 
   const result = {
     cert,
-    as_of: latestRunDate,
+    as_of_year: latestYear,
     branch_count: branches.length,
     total_branch_deposits_thousands: totalBranchDeposits,
     state_filter: state ? state.toUpperCase() : null,
     branches,
     interpretation_notes: {
-      source: 'FDIC Summary of Deposits (SOD) — an annual census of branch locations and deposits, filed as of June 30 each year. Not real-time; reflects the most recent annual filing on record.',
+      source: `FDIC Summary of Deposits (SOD) — an annual census of branch locations and deposits, filed as of June 30 each year. Not real-time; these figures are the ${latestYear || 'latest'} filing.`,
       branch_field_availability: usedFullFields ? 'Full field set returned (address, zip, establish date included).' : 'Reduced field set returned — some fields (address, zip, establish date) were not available for this query.',
     },
     profile_url: `https://vaultbot.ai/bank/${cert}`,
@@ -1525,7 +1539,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.16.0',
+        name: 'vault-mcp', version: '1.16.1',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -1572,7 +1586,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.16.0' },
+          serverInfo: { name: 'vault-mcp', version: '1.16.1' },
           capabilities: { tools: {} },
         });
       }
