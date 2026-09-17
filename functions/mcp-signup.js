@@ -101,53 +101,49 @@ function sendWelcomeEmail(user) {
           You're all set. Vault MCP is the first banking intelligence Model Context Protocol server — it gives any AI agent live access to FDIC data on 4,500+ banks.
         </p>
         <p style="font-size:15px;color:#c8cfe6;line-height:1.65;margin:0 0 8px;">
-          Setup takes about 2 minutes. Here's what you need.
+          Setup takes about 30 seconds — there's nothing to install.
         </p>
       </td></tr>
       <!-- Config block -->
       <tr><td style="padding:24px 36px 0;">
-        <div style="font-family:ui-monospace,'SF Mono',Monaco,monospace;font-size:10px;color:#4db8ff;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:10px;font-weight:600;">→ Your config</div>
-        <div style="background:#070926;border:1px solid rgba(77,184,255,0.2);border-radius:10px;padding:18px 20px;font-family:ui-monospace,'SF Mono','JetBrains Mono',Monaco,monospace;font-size:12px;color:#a8c4e8;line-height:1.7;">
-<span style="color:#7e8bb0;">{</span><br>
-&nbsp;&nbsp;<span style="color:#b06ef3;">"mcpServers"</span>: <span style="color:#7e8bb0;">{</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#b06ef3;">"vault-banking"</span>: <span style="color:#7e8bb0;">{</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#4db8ff;">"command"</span>: <span style="color:#a8c4e8;">"npx"</span>,<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#4db8ff;">"args"</span>: <span style="color:#7e8bb0;">[</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#a8c4e8;">"-y"</span>,<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#a8c4e8;">"mcp-remote"</span>,<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#a8c4e8;">"https://vaultbot.ai/.netlify/functions/mcp"</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#7e8bb0;">]</span><br>
-&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#7e8bb0;">}</span><br>
-&nbsp;&nbsp;<span style="color:#7e8bb0;">}</span><br>
-<span style="color:#7e8bb0;">}</span>
+        <div style="font-family:ui-monospace,'SF Mono',Monaco,monospace;font-size:10px;color:#4db8ff;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:10px;font-weight:600;">&rarr; Your connector URL</div>
+        <div style="background:#070926;border:1px solid rgba(77,184,255,0.2);border-radius:10px;padding:18px 20px;font-family:ui-monospace,'SF Mono','JetBrains Mono',Monaco,monospace;font-size:14px;color:#4db8ff;line-height:1.7;word-break:break-all;">
+          https://vaultbot.ai/api/mcp
         </div>
       </td></tr>
       <!-- Prerequisites -->
       <tr><td style="padding:30px 36px 0;">
-        <div style="font-family:ui-monospace,'SF Mono',Monaco,monospace;font-size:10px;color:#b06ef3;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:14px;font-weight:600;">→ Before you start</div>
+        <div style="font-family:ui-monospace,'SF Mono',Monaco,monospace;font-size:10px;color:#b06ef3;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:14px;font-weight:600;">&rarr; Before you start</div>
         <div style="background:rgba(176,110,243,0.06);border:1px solid rgba(176,110,243,0.2);border-radius:8px;padding:14px 18px;color:#c8cfe6;font-size:13px;line-height:1.65;">
-          Vault MCP requires <strong style="color:#fff;">Node.js 18 or higher</strong> on your machine. Most developer Macs already have it.<br>
-          Quick check: open Terminal, run <code style="background:rgba(77,184,255,0.1);padding:2px 6px;border-radius:4px;font-size:12px;color:#4db8ff;">node --version</code>. If you see <code style="background:rgba(77,184,255,0.1);padding:2px 6px;border-radius:4px;font-size:12px;color:#4db8ff;">v18</code> or higher, you're set.<br>
-          Don't have Node? Download it from <a href="https://nodejs.org" style="color:#4db8ff;text-decoration:none;font-weight:600;">nodejs.org</a> (LTS version, 2 min install).
+          Nothing to install. No Node.js, no config file, no terminal. Vault connects straight into
+          Claude on the web, desktop or mobile &mdash; and it's free, with no account to create.
         </div>
       </td></tr>
       <!-- Steps -->
       <tr><td style="padding:30px 36px 0;">
-        <div style="font-family:ui-monospace,'SF Mono',Monaco,monospace;font-size:10px;color:#4db8ff;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:14px;font-weight:600;">→ Quick install</div>
+        <div style="font-family:ui-monospace,'SF Mono',Monaco,monospace;font-size:10px;color:#4db8ff;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:14px;font-weight:600;">&rarr; Quick install (30 seconds)</div>
         <table cellpadding="0" cellspacing="0" border="0" width="100%">
           <tr><td style="padding:8px 0;color:#c8cfe6;font-size:14px;line-height:1.6;">
-            <span style="color:#4db8ff;font-family:ui-monospace,monospace;font-weight:700;">01</span> &nbsp;&nbsp;Open <strong style="color:#fff;">Claude Desktop → Settings → Developer → Edit Config</strong>
+            <span style="color:#4db8ff;font-family:ui-monospace,monospace;font-weight:700;">01</span> &nbsp;&nbsp;In Claude, open <strong style="color:#fff;">Settings &rarr; Connectors</strong>
           </td></tr>
           <tr><td style="padding:8px 0;color:#c8cfe6;font-size:14px;line-height:1.6;">
-            <span style="color:#4db8ff;font-family:ui-monospace,monospace;font-weight:700;">02</span> &nbsp;&nbsp;Add the config above to your <code style="background:rgba(77,184,255,0.1);padding:2px 6px;border-radius:4px;font-size:12px;color:#4db8ff;">mcpServers</code>
+            <span style="color:#4db8ff;font-family:ui-monospace,monospace;font-weight:700;">02</span> &nbsp;&nbsp;Click <strong style="color:#fff;">Add custom connector</strong> and paste the URL above
           </td></tr>
           <tr><td style="padding:8px 0;color:#c8cfe6;font-size:14px;line-height:1.6;">
-            <span style="color:#4db8ff;font-family:ui-monospace,monospace;font-weight:700;">03</span> &nbsp;&nbsp;Quit Claude Desktop completely <span style="color:#7e8bb0;">(⌘Q)</span>, reopen
+            <span style="color:#4db8ff;font-family:ui-monospace,monospace;font-weight:700;">03</span> &nbsp;&nbsp;Set Authentication to <strong style="color:#fff;">No sign-in</strong> &mdash; Vault is public, there's nothing to log into
           </td></tr>
           <tr><td style="padding:8px 0;color:#c8cfe6;font-size:14px;line-height:1.6;">
-            <span style="color:#4db8ff;font-family:ui-monospace,monospace;font-weight:700;">04</span> &nbsp;&nbsp;Click the tools icon — <code style="background:rgba(77,184,255,0.1);padding:2px 6px;border-radius:4px;font-size:12px;color:#4db8ff;">vault-banking</code> appears with 11 tools
+            <span style="color:#4db8ff;font-family:ui-monospace,monospace;font-weight:700;">04</span> &nbsp;&nbsp;Click Add, then enable Vault in the chat's <strong style="color:#fff;">+</strong> menu &mdash; <code style="background:rgba(77,184,255,0.1);padding:2px 6px;border-radius:4px;font-size:12px;color:#4db8ff;">vault-banking</code>, 14 tools
           </td></tr>
         </table>
+        <div style="margin-top:18px;color:#7e8bb0;font-size:13px;line-height:1.65;">
+          <strong style="color:#c8cfe6;">Using Claude Code?</strong> One line instead:<br>
+          <code style="background:rgba(77,184,255,0.1);padding:4px 8px;border-radius:4px;font-size:12px;color:#4db8ff;display:inline-block;margin-top:6px;">claude mcp add --transport http vault https://vaultbot.ai/api/mcp</code>
+        </div>
+        <div style="margin-top:14px;color:#7e8bb0;font-size:12px;line-height:1.6;">
+          On an older Claude Desktop without custom connectors? The config-file method still works &mdash;
+          full steps at <a href="https://vaultbot.ai/mcp/setup" style="color:#4db8ff;text-decoration:none;font-weight:600;">vaultbot.ai/mcp/setup</a>.
+        </div>
       </td></tr>
       <!-- Try prompts -->
       <tr><td style="padding:30px 36px 0;">

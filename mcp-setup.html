@@ -196,49 +196,62 @@ ul.examples { color: var(--muted); font-size: 14px; line-height: 1.9; }
       <div style="display:flex;align-items:center;gap:10px;font-weight:600;font-size:15px;">
         <span class="check">✓</span> You're in. Install guide sent to your email.
       </div>
-      <p style="margin:8px 0 0;font-size:13px;">Check your inbox (or spam folder) for a copy of the config and full setup steps. The instructions below work immediately too.</p>
+      <p style="margin:8px 0 0;font-size:13px;">Check your inbox (or spam folder) for a copy of the setup steps. The instructions below work immediately too.</p>
     </div>
 
-    <h2>Setup — 2 minutes</h2>
+    <h2>Setup — 30 seconds</h2>
+    <p style="font-size:13px;color:rgba(255,255,255,0.6);margin:-6px 0 14px;">
+      Claude connects to Vault directly now — no config file, no terminal, no restart.
+      Works in Claude on the web, desktop and mobile.
+    </p>
     <ul class="steps">
       <li>
-        <strong>Install Claude Desktop</strong> if you haven't already — <a href="https://claude.ai/download" target="_blank" style="color:var(--accent)">claude.ai/download</a>
+        <strong>Open Claude and go to Settings → Connectors.</strong>
+        <br><span style="font-size:12px;color:rgba(255,255,255,0.5);">On Team or Enterprise plans an Owner adds it once under Organization settings → Connectors, then everyone clicks Connect.</span>
       </li>
       <li>
-        <strong>Open your Claude Desktop config file:</strong>
-        <br><br>
-        <strong style="color:var(--accent);font-family:var(--mono);font-size:11px;">Mac:</strong>
-        <code>~/Library/Application Support/Claude/claude_desktop_config.json</code>
-        <br><br>
-        <strong style="color:var(--accent);font-family:var(--mono);font-size:11px;">Windows:</strong>
-        <code>%APPDATA%\Claude\claude_desktop_config.json</code>
-        <br><br>
-        Or in Claude Desktop → <strong>Settings</strong> → <strong>Developer</strong> → <strong>Edit Config</strong>.
+        <strong>Click "Add custom connector" and paste this URL:</strong>
+        <pre><button class="copy-btn" onclick="copyConfig(this)">Copy</button><code id="config-snippet">https://vaultbot.ai/api/mcp</code></pre>
       </li>
       <li>
-        <strong>Add Vault to your <code>mcpServers</code>:</strong>
-        <pre><button class="copy-btn" onclick="copyConfig(this)">Copy</button><code id="config-snippet">{
+        <strong>Set Authentication to "No sign-in."</strong>
+        <br><span style="font-size:12px;color:rgba(255,255,255,0.5);">Vault is free and public — there's no account and nothing to log into. If Claude pre-fills something else, change it to No sign-in, or the connection will fail while it looks for a login that doesn't exist.</span>
+      </li>
+      <li>
+        <strong>Click Add, then turn Vault on in the chat's "+" menu under Connectors.</strong>
+        You should see <code>vault-banking</code> with 14 tools.
+      </li>
+    </ul>
+
+    <h2>Claude Code</h2>
+    <p style="font-size:13px;color:rgba(255,255,255,0.6);margin:-6px 0 10px;">One line in your terminal:</p>
+    <pre><button class="copy-btn" onclick="copyConfig(this)">Copy</button><code>claude mcp add --transport http vault https://vaultbot.ai/api/mcp</code></pre>
+    <p style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:6px;">
+      Add <code>-s user</code> to make it available in every project. Check it with <code>/mcp</code>.
+    </p>
+
+    <h2 style="margin-top:28px;">Older Claude Desktop (config file)</h2>
+    <p style="font-size:13px;color:rgba(255,255,255,0.6);margin:-6px 0 10px;">
+      Only needed if your Claude Desktop predates custom connectors. This route bridges through
+      <code>mcp-remote</code>, which reconnects often — prefer the connector above if you have it.
+    </p>
+    <ul class="steps">
+      <li>
+        <strong>Claude Desktop → Settings → Developer → Edit Config</strong>, then add:
+        <pre><button class="copy-btn" onclick="copyConfig(this)">Copy</button><code>{
   "mcpServers": {
     "vault-banking": {
       "command": "npx",
       "args": [
         "-y",
         "mcp-remote",
-        "https://vaultbot.ai/.netlify/functions/mcp"
+        "https://vaultbot.ai/api/mcp"
       ]
     }
   }
 }</code></pre>
-        <p style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:6px;">
-          If you already have other servers, just add the <code>vault-banking</code> entry inside <code>mcpServers</code>.
-        </p>
       </li>
-      <li>
-        <strong>Quit and reopen Claude Desktop</strong> (⌘Q on Mac). The first run will install <code>mcp-remote</code> automatically (5-10 sec).
-      </li>
-      <li>
-        <strong>Test it.</strong> Click the tools icon below the chat input — you should see <code>vault-banking</code> with 11 tools.
-      </li>
+      <li><strong>Quit and reopen Claude Desktop</strong> (⌘Q on Mac).</li>
     </ul>
 
     <h2>Try these prompts</h2>
@@ -252,7 +265,7 @@ ul.examples { color: var(--muted); font-size: 14px; line-height: 1.9; }
 
     <h2>Available tools</h2>
     <p>
-      Vault MCP exposes 11 tools to your Claude agent:
+      Vault MCP exposes 14 tools to your Claude agent:
       <code>search_institutions</code>, <code>get_bank_profile</code>, <code>get_industry_metrics</code>,
       <code>get_recent_charters</code>, <code>get_ma_activity</code>, <code>get_lender_rankings</code>.
     </p>
@@ -330,7 +343,11 @@ form.addEventListener('submit', async (e) => {
 });
 
 function copyConfig(btn) {
-  const code = document.getElementById('config-snippet').textContent;
+  // There are several copy buttons now (connector URL, Claude Code command,
+  // legacy config). Copy the code block this button actually belongs to.
+  const el = (btn.parentElement && btn.parentElement.querySelector('code'))
+    || document.getElementById('config-snippet');
+  const code = el.textContent.trim();
   navigator.clipboard.writeText(code).then(() => {
     btn.textContent = 'Copied!';
     setTimeout(() => btn.textContent = 'Copy', 2000);

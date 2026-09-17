@@ -1528,7 +1528,9 @@ const TOOL_HANDLERS = {
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  // MCP clients send MCP-Protocol-Version (and Mcp-Session-Id for stateful
+  // servers). Allowing only Content-Type fails their CORS preflight.
+  'Access-Control-Allow-Headers': 'Content-Type, Accept, Authorization, MCP-Protocol-Version, Mcp-Session-Id',
   'Content-Type': 'application/json',
 };
 
@@ -1536,10 +1538,22 @@ exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS_HEADERS };
 
   if (event.httpMethod === 'GET') {
+    // A streamable-HTTP client may GET this endpoint to open a server-initiated
+    // SSE stream. Vault is stateless and offers no such stream, so the correct
+    // answer is 405 — returning the 200 JSON info blob below makes the client
+    // think it opened a stream and then choke on the payload.
+    const accept = event.headers?.accept || event.headers?.Accept || '';
+    if (accept.includes('text/event-stream')) {
+      return {
+        statusCode: 405,
+        headers: { ...CORS_HEADERS, Allow: 'POST, OPTIONS' },
+        body: JSON.stringify({ error: 'This MCP server is stateless and does not offer a GET SSE stream. POST JSON-RPC to this same URL.' }),
+      };
+    }
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.16.2',
+        name: 'vault-mcp', version: '1.17.0',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -1583,10 +1597,18 @@ exports.handler = async (event) => {
       case 'initialize': {
         clientName = params?.clientInfo?.name || 'unknown';
         const clientVersion = params?.clientInfo?.version || 'unknown';
+        // Echo back the version the client asked for when it's one we can
+        // honour. Vault is a stateless tools-only server, so every version in
+        // this list behaves identically here — but replying 2024-11-05 to a
+        // client that opened with 2025-06-18 makes newer clients think the
+        // server is stale.
+        const SUPPORTED_PROTOCOLS = ['2024-11-05', '2025-03-26', '2025-06-18', '2026-07-28'];
+        const requestedProtocol = params?.protocolVersion;
+        const negotiatedProtocol = SUPPORTED_PROTOCOLS.includes(requestedProtocol) ? requestedProtocol : '2024-11-05';
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
-          protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.16.2' },
+          protocolVersion: negotiatedProtocol,
+          serverInfo: { name: 'vault-mcp', version: '1.17.0' },
           capabilities: { tools: {} },
         });
       }

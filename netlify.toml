@@ -60,6 +60,16 @@
   status = 200
 
 
+# Short, pasteable MCP endpoint. The Claude "Add custom connector" flow asks
+# people to type/paste a URL, and /.netlify/functions/mcp is long enough to be
+# mistyped. This is a 200 rewrite, so method and body are preserved and the
+# long URL keeps working for anyone already configured.
+[[redirects]]
+  from = "/api/mcp"
+  to = "/.netlify/functions/mcp"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/mcp"
   to = "/mcp.html"
