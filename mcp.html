@@ -108,18 +108,24 @@ pre code { background: transparent; padding: 0; color: inherit; }
   <div class="endpoint-box" style="background:linear-gradient(135deg,rgba(77,184,255,0.08),rgba(176,110,243,0.08));border:1px solid rgba(77,184,255,0.25);">
     <div class="label" style="color:var(--accent);">→ Get started</div>
     <div style="margin:14px 0 16px;font-size:15px;color:var(--text);line-height:1.5;">
-      Get your install guide, config, and onboarding email delivered to you.
+      Paste one URL into Claude's connector settings. No config file, no terminal, no account.
+      <div style="margin-top:12px;font-family:var(--mono);font-size:14px;color:var(--accent);background:rgba(0,0,0,0.25);border-radius:8px;padding:12px 14px;word-break:break-all;">
+        https://vaultbot.ai/api/mcp
+      </div>
     </div>
-    <a href="/mcp/setup" class="cta" style="margin:0;">Install Vault MCP →</a>
+    <a href="/mcp/setup" class="cta" style="margin:0;">Connect Vault MCP →</a>
     <div style="margin-top:14px;font-family:var(--mono);font-size:10px;color:var(--muted);">
-      Free forever &nbsp;·&nbsp; No API key required &nbsp;·&nbsp; ~2 min setup
+      Free forever &nbsp;·&nbsp; No API key required &nbsp;·&nbsp; ~30 sec setup
     </div>
   </div>
 
-  <h2>Get started in 2 minutes</h2>
+  <h2>Get started in 30 seconds</h2>
   <p>
-    Vault MCP works with Claude Desktop, Cline, Continue, and any Model Context Protocol client.
-    Setup is 3 lines of config — we'll show you exactly how.
+    In Claude, open <strong>Settings → Connectors → Add custom connector</strong>, paste
+    <code>https://vaultbot.ai/api/mcp</code>, and set Authentication to <strong>No sign-in</strong>.
+    That's it — it works in Claude on the web, desktop and mobile. Claude Code users can run
+    <code>claude mcp add --transport http vault https://vaultbot.ai/api/mcp</code> instead.
+    Vault also works with Cline, Continue, and any Model Context Protocol client.
   </p>
 
   <div style="margin: 24px 0 32px;">
