@@ -1539,7 +1539,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.16.1',
+        name: 'vault-mcp', version: '1.16.2',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -1586,7 +1586,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'vault-mcp', version: '1.16.1' },
+          serverInfo: { name: 'vault-mcp', version: '1.16.2' },
           capabilities: { tools: {} },
         });
       }
@@ -1652,6 +1652,11 @@ exports.handler = async (event) => {
   } catch (e) {
     errorMsg = e.message;
     await safeLog({ method, toolName, durationMs: Date.now()-t0, success: false, errorMsg });
-    return err(-32603, 'Internal error', e.message);
+    // Surface the real reason in `message`, not just `data`. Agents relay the
+    // message field to the user, so a bare "Internal error" turns an
+    // actionable problem ("that CERT has no SOD filing") into a dead end —
+    // and hides genuine bugs from us. Every throw in this file is a curated
+    // message, so there's nothing sensitive to leak here.
+    return err(-32603, e.message || 'Internal error', e.message);
   }
 };
