@@ -120,6 +120,16 @@
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
+  /* iOS Safari/Chrome rubber-band fix: on overscroll past the end of the
+     document, WebKit reveals the <html> element underneath, not body's
+     background — even with background-attachment:fixed on body. Without
+     this, html defaults to white, showing a blank flash past the footer.
+     Solid color, not the gradient: html's box can render at a different
+     size than body's during the bounce, so a repeating gradient would
+     tile/misalign. This is the darkest gradient stop, so the seam is
+     no longer visible. */
+  html { background: #1a0a5e; }
+
   body {
     background: linear-gradient(135deg, #0f1240 0%, #1a1060 30%, #2d1080 60%, #1a0a5e 100%);
     background-attachment: fixed;
@@ -2113,8 +2123,10 @@ async function loadHomeNews() {
   const el = document.getElementById('homeNewsGrid');
   if (!el) return;
   const q = 'community bank OR "credit union" fintech regulation';
-  const innerRss = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
-  const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(innerRss)}`;
+  // First-party proxy — api.rss2json.com's anonymous tier stopped working
+  // 2026-09-18 (their own documented no-key example now 422s). See
+  // functions/news-proxy.js for the full story.
+  const apiUrl = `/.netlify/functions/news-proxy?q=${encodeURIComponent(q)}`;
   try {
     const r = await fetch(apiUrl);
     const data = await r.json();
@@ -3496,7 +3508,8 @@ function getOwnershipLabel(inst) {
 
 // ── Recent News ───────────────────────────────────────────────────────────────
 async function fetchNews(institutionName, city, state) {
-  // Google News RSS via rss2json.com proxy (CORS-open, free tier 10k req/day)
+  // Google News RSS via /.netlify/functions/news-proxy (first-party — see
+  // that file for why the old rss2json.com dependency was replaced).
   // Key fixes vs prior version:
   //   1. Inner RSS URL must be double-encoded (encodeURIComponent of full URL)
   //   2. `count` param requires paid key — omit it (free returns 10, we slice 5)
@@ -3511,8 +3524,7 @@ async function fetchNews(institutionName, city, state) {
 
   for (const q of queries) {
     try {
-      const innerRss = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
-      const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(innerRss)}`;
+      const apiUrl = `/.netlify/functions/news-proxy?q=${encodeURIComponent(q)}`; // first-party proxy — see functions/news-proxy.js
       const r = await fetch(apiUrl);
       if (!r.ok) continue;
       const data = await r.json();
@@ -4637,8 +4649,7 @@ async function loadCharterNews(bank) {
   if (!el) return;
   try {
     const q = `"${bank.NAME}" bank charter`;
-    const innerRss = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
-    const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(innerRss)}`;
+    const apiUrl = `/.netlify/functions/news-proxy?q=${encodeURIComponent(q)}`; // first-party proxy — see functions/news-proxy.js
     const r = await fetch(apiUrl);
     if (!r.ok) { el.innerHTML = ''; return; }
     const data = await r.json();
@@ -4782,8 +4793,7 @@ async function loadCUCharterNews(cu) {
   if (!el) return;
   try {
     const q = `"${cu.name}" credit union charter`;
-    const innerRss = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
-    const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(innerRss)}`;
+    const apiUrl = `/.netlify/functions/news-proxy?q=${encodeURIComponent(q)}`; // first-party proxy — see functions/news-proxy.js
     const r = await fetch(apiUrl);
     if (!r.ok) { el.innerHTML = ''; return; }
     const data = await r.json();
