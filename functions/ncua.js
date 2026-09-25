@@ -4,6 +4,7 @@ const zlib = require('zlib');
 let cuCache = null;
 let lastFoicuHeaders = null; // diagnostic: real column names from the most recent FOICU.txt load
 let lastZipFileList = null;  // diagnostic: every file name found in the most recent quarterly ZIP
+let lastEmployeeSource = null; // diagnostic: which file ACCT_564A was actually found in (or null)
 let cacheTimestamp = 0; 
 const CACHE_TTL = 60 * 60 * 1000;
 const BULK_URL = 'https://ncua.gov/files/publications/analysis/call-report-data-2025-12.zip';
@@ -71,6 +72,117 @@ function listZipFiles(buf) {
     offset = dataOffset + compSize;
   }
   return names;
+}
+
+// NCUA 5300 reports employee counts as ACCT_564A (full-time, 26+ hrs/wk) and
+// ACCT_564B (part-time, 25 or fewer) — verified against the NCUA 5300 account
+// descriptions and still present on the March 2025 form. What is NOT knowable
+// without looking is which file inside the quarterly ZIP carries them: the
+// bundle splits the 5300 across FS220.txt, FS220A.txt, FS220B.txt and so on,
+// and NCUA has moved columns between cycles before. Rather than hardcode a
+// guess (this codebase has already been burned twice guessing NCUA column
+// names — see the member-count and charter-date comments), probe the files in
+// order and use whichever one actually has the column.
+//
+// Bounded to MAX_PROBES extractions so a schema change can't turn this into a
+// scan of the whole bundle and blow the function's execution limit. FS220 is
+// checked first and for free, since it's already extracted for financials.
+const EMPLOYEE_FT_FIELD = 'ACCT_564A';
+const EMPLOYEE_PT_FIELD = 'ACCT_564B';
+// Confirmed against the live bundle (2026-09): it ships 17 FS220* files
+// (FS220, A-D, G-N, P-S). Probing all of them means inflating up to 17
+// multi-MB files inside a function that has already downloaded a large ZIP,
+// so the probe is bounded by wall-clock, not file count.
+const PROBE_BUDGET_MS = 4000;
+
+// NCUA's own AcctDesc.txt indexes every 5300 account code to the table/file it
+// lives in. Using it means one small extraction instead of brute-forcing 17
+// large ones. Written defensively — column names in this file are not
+// documented anywhere this code can verify, so anything unexpected falls
+// through to the probe rather than throwing.
+function lookupEmployeeTable(zipBuf) {
+  try {
+    const buf = extractFromZip(zipBuf, 'AcctDesc.txt');
+    if (!buf) return null;
+    const rows = buf.toString('latin1').split('\n').slice(0, 20000);
+    const header = parseCSVLine(rows[0] || '').map(h => h.trim());
+    // Find whichever column holds the account code and whichever holds a
+    // table/file name, by name rather than by position.
+    const acctIdx  = header.findIndex(h => /^acct(_?code|name)?$/i.test(h) || /account/i.test(h));
+    const tableIdx = header.findIndex(h => /table|file|schedule/i.test(h));
+    if (acctIdx === -1 || tableIdx === -1) return null;
+
+    for (const line of rows.slice(1)) {
+      const cells = parseCSVLine(line);
+      const acct = (cells[acctIdx] || '').trim().replace(/^ACCT_/i, '');
+      if (acct.toUpperCase() !== '564A') continue;
+      const table = (cells[tableIdx] || '').trim();
+      if (!table) return null;
+      return table.toLowerCase().endsWith('.txt') ? table : `${table}.txt`;
+    }
+  } catch (e) {
+    console.log('[ncua-employees] AcctDesc lookup failed:', e.message);
+  }
+  return null;
+}
+
+function findEmployeeData(zipBuf, zipFileList, alreadyParsedFS220) {
+  // Case 1: already in FS220.txt, which is parsed for financials anyway.
+  const fs220Sample = Object.values(alreadyParsedFS220 || {})[0];
+  if (fs220Sample && EMPLOYEE_FT_FIELD in fs220Sample) {
+    lastEmployeeSource = 'FS220.txt';
+    return alreadyParsedFS220;
+  }
+
+  const tryFile = (name) => {
+    const buf = extractFromZip(zipBuf, name);
+    if (!buf) return null;
+    const header = buf.toString('latin1').split('\n')[0];
+    if (!header.includes(EMPLOYEE_FT_FIELD)) return null;
+    lastEmployeeSource = name;
+    console.log('[ncua-employees] found', EMPLOYEE_FT_FIELD, 'in', name);
+    return parseCSVtoMap(buf, 'CU_NUMBER');
+  };
+
+  // Case 2: ask NCUA's own index where the account lives, then go straight there.
+  const indexed = lookupEmployeeTable(zipBuf);
+  if (indexed) {
+    try {
+      const hit = tryFile(indexed);
+      if (hit) return hit;
+      console.log('[ncua-employees] AcctDesc pointed at', indexed, 'but column not present there');
+    } catch (e) {
+      console.log('[ncua-employees] indexed read failed for', indexed, e.message);
+    }
+  }
+
+  // Case 3: fall back to probing, newest-schedule-first ordering is meaningless
+  // here so just go in name order, stopping when the time budget is spent.
+  const started = Date.now();
+  const probed = [];
+  const candidates = (zipFileList || [])
+    .filter(n => /^FS220.*\.txt$/i.test(n) && n.toUpperCase() !== 'FS220.TXT' && n !== indexed)
+    .sort();
+
+  for (const name of candidates) {
+    if (Date.now() - started > PROBE_BUDGET_MS) {
+      console.log('[ncua-employees] probe budget exhausted after', probed.join(', '));
+      break;
+    }
+    probed.push(name);
+    try {
+      const hit = tryFile(name);
+      if (hit) return hit;
+    } catch (e) {
+      console.log('[ncua-employees] probe failed for', name, e.message);
+    }
+  }
+
+  // Honest failure: report no employee data rather than silently zero-filling,
+  // which would render as a real "0 employees" on every CU profile.
+  lastEmployeeSource = null;
+  console.log('[ncua-employees] NOT FOUND. Probed:', probed.join(', '));
+  return null;
 }
 
 function parseCSVLine(line) {
@@ -203,11 +315,16 @@ async function loadCUData() {
     if (sample) console.log('FS220 sample:', JSON.stringify(sample).slice(0, 300));
   }
 
+  // Employee counts live on a different 5300 page than the financials and may
+  // be in a different file in the bundle — locate it rather than assume.
+  const employeeData = findEmployeeData(zipBuf, lastZipFileList, financials);
+
   // Join profiles + financials on CU_NUMBER
   cuCache = Object.values(profiles)
     .filter(p => p.CU_NAME)
     .map(p => {
       const fin = financials[p.CU_NUMBER] || {};
+      const emp = employeeData ? (employeeData[p.CU_NUMBER] || {}) : {};
       // ACCT_010 = total assets in $thousands, ACCT_730 = number of members
       const assets = Math.round(parseFloat(fin.ACCT_010 || '0')); // ACCT_010 already in dollars
       // Log full FS220 row for OneAZ on first load to find member field
@@ -226,6 +343,15 @@ async function loadCUData() {
         zip:     p.ZIP_CODE,
         assets,
         members,
+        // `employees` = full-time, to line up with the banks' FDIC NUMEMP,
+        // which is also a full-time count. Part-time is kept separate rather
+        // than summed: blending them would make CUs look overstaffed next to
+        // banks in the compare view. null (not 0) when the field wasn't found,
+        // so the UI can show "—" instead of a fake zero.
+        employees:         emp[EMPLOYEE_FT_FIELD] != null && emp[EMPLOYEE_FT_FIELD] !== ''
+                             ? parseInt(emp[EMPLOYEE_FT_FIELD], 10) : null,
+        employeesPartTime: emp[EMPLOYEE_PT_FIELD] != null && emp[EMPLOYEE_PT_FIELD] !== ''
+                             ? parseInt(emp[EMPLOYEE_PT_FIELD], 10) : null,
         type:    CU_TYPE_MAP[p.CU_TYPE] || p.CU_TYPE,
         charter: p.CU_NUMBER,
         charterDate: charterDate?.iso || null,
@@ -311,6 +437,13 @@ exports.handler = async function(event, context) {
           // actual data rather than guessed a third time.
           foicu_headers: lastFoicuHeaders,
           zip_file_list: lastZipFileList,
+          // Employee-count detection: confirms ACCT_564A was actually located
+          // and in which file, so this can be verified from live data in one
+          // request instead of trusting the probe silently.
+          employee_source_file: lastEmployeeSource,
+          cus_with_employee_count: allCUs.filter(cu => cu.employees != null).length,
+          employee_sample: allCUs.filter(cu => cu.employees != null).slice(0, 5)
+            .map(cu => ({ name: cu.name, employees: cu.employees, partTime: cu.employeesPartTime })),
         }),
       };
     } catch (e) {

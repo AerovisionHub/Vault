@@ -66,6 +66,10 @@
 <meta name="apple-mobile-web-app-title" content="Vault">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<!-- Some mobile browsers color their own chrome/safe-area with this rather
+     than defaulting to white — cheap, harmless if ignored. Matches the
+     darkest stop of the page's own gradient. -->
+<meta name="theme-color" content="#1a0a5e">
 <link rel="apple-touch-icon" href="https://vaultbot.ai/og-image.png">
 
 <!-- Structured Data -->
@@ -120,10 +124,18 @@
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
-  /* iOS Safari/Chrome rubber-band fix: on overscroll past the end of the
-     document, WebKit reveals the <html> element underneath, not body's
-     background — even with background-attachment:fixed on body. Without
-     this, html defaults to white, showing a blank flash past the footer.
+  /* Stops iOS/Chrome rubber-band bounce at the page boundary rather than
+     trying to color-match whatever the browser reveals underneath once it
+     bounces. This is the actual root fix; the html{background} rule below
+     is kept as a fallback for any residual bounce this doesn't fully
+     suppress (older WebKit versions honor this property inconsistently). */
+  html, body { overscroll-behavior-y: none; }
+
+  /* iOS Safari/Chrome rubber-band fallback: on any overscroll past the end
+     of the document that overscroll-behavior above doesn't fully contain,
+     WebKit reveals the <html> element underneath, not body's background —
+     even with background-attachment:fixed on body. Without this, html
+     defaults to white, showing a blank flash past the footer.
      Solid color, not the gradient: html's box can render at a different
      size than body's during the bounce, so a repeating gradient would
      tile/misalign. This is the darkest gradient stop, so the seam is
@@ -2491,6 +2503,9 @@ function renderCUDetail(d) {
   const charter = cu.charter || cu.id || d.id || '—';
   const assets = cu.assets || 0;
   const members = cu.members || 0;
+  // null (not 0) when NCUA's employee field wasn't located — renders "—".
+  const employees = cu.employees ?? null;
+  const employeesPT = cu.employeesPartTime ?? null;
   const cuType = cu.type || '—';
   const website = cu.website || null;
 
@@ -2539,6 +2554,16 @@ function renderCUDetail(d) {
         <div class="kpi-label">Asset Tier</div>
         <div class="kpi-value kpi-neutral" style="font-size:13px">${assetTier}</div>
         <div class="kpi-sub">Peer group sizing</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Employees</div>
+        <div class="kpi-value kpi-neutral">${employees != null ? fmtNum(employees) : '—'}</div>
+        <div class="kpi-sub">Full-time${employeesPT ? ` · ${fmtNum(employeesPT)} part-time` : ''} (NCUA 5300)</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Assets per Employee</div>
+        <div class="kpi-value kpi-neutral">${employees && assets ? fmt$(assets / employees) : '—'}</div>
+        <div class="kpi-sub">Productivity vs. bank peers</div>
       </div>
     </div>
 
