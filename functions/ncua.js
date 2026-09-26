@@ -504,6 +504,27 @@ exports.handler = async function(event, context) {
         .filter(({ score }) => score >= 30);
       scored.sort((a, b) => b.score !== a.score ? b.score - a.score : (b.cu.assets || 0) - (a.cu.assets || 0));
       matched = scored.map(({ cu }) => cu);
+
+      // Charter-number lookup. fuzzyScore only ever compares against cu.name,
+      // so a bare charter number scored 0 against every credit union and came
+      // back empty. That silently broke every /cu/{id} deep link, because the
+      // charter number is the only identifier a URL carries: getNCUADetail
+      // asks for ?q={charter}, got nothing, and the page fell back to its
+      // `{ name: id }` placeholder — rendering every tile as an em-dash while
+      // the exact same CU loaded fine when reached through search.
+      //
+      // Numeric queries are matched against the charter number and hoisted to
+      // the front, rather than replacing the name results: a few credit unions
+      // have digits in their names ("1199 SEIU FCU"), so a digit query is not
+      // always a charter lookup and those name matches must survive.
+      if (/^\d+$/.test(q)) {
+        // Compared numerically as well as literally: CU_NUMBER can carry
+        // leading zeros in NCUA's file ("06871") while the URL does not.
+        const qNum = parseInt(q, 10);
+        const byCharter = pool.find(cu =>
+          String(cu.id) === q || parseInt(cu.id, 10) === qNum);
+        if (byCharter) matched = [byCharter, ...matched.filter(cu => cu.id !== byCharter.id)];
+      }
     } else {
       // Asset range only — sort by assets desc
       matched = pool.sort((a, b) => (b.assets || 0) - (a.assets || 0));
