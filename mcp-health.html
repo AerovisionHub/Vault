@@ -52,10 +52,14 @@ async function run() {
     ['get_brokered_deposits', { cert: '5962', quarters: 2 }],
     ['get_branch_data', { cert: '5962', limit: 5 }],
     ['get_bank_leadership', { cert: '4160' }],
+    // Both modes, since they take completely different code paths:
+    // county leaderboard (single fetch) and bank footprint (fan-out per county).
+    ['get_county_deposit_share', { county: 'Tulsa', state: 'OK', limit: 5 }],
+    ['get_county_deposit_share (cert mode)', { cert: '5962' }],
   ];
   for (const [name, args] of tests) {
     try {
-      const r = await rpc('tools/call', { name, arguments: args });
+      const r = await rpc('tools/call', { name: name.split(' ')[0], arguments: args });
       const text = r.data?.result?.content?.[0]?.text;
       const hasData = text && text.length > 10 && !r.data?.error;
       log(hasData, name, hasData ? `Returned ${text.length} chars of JSON` : `ERROR: ${r.data?.error?.message || r.raw.slice(0,300)}`);
