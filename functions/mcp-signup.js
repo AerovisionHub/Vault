@@ -133,7 +133,7 @@ function sendWelcomeEmail(user) {
             <span style="color:#4db8ff;font-family:ui-monospace,monospace;font-weight:700;">03</span> &nbsp;&nbsp;Set Authentication to <strong style="color:#fff;">No sign-in</strong> &mdash; Vault is public, there's nothing to log into
           </td></tr>
           <tr><td style="padding:8px 0;color:#c8cfe6;font-size:14px;line-height:1.6;">
-            <span style="color:#4db8ff;font-family:ui-monospace,monospace;font-weight:700;">04</span> &nbsp;&nbsp;Click Add, then enable Vault in the chat's <strong style="color:#fff;">+</strong> menu &mdash; <code style="background:rgba(77,184,255,0.1);padding:2px 6px;border-radius:4px;font-size:12px;color:#4db8ff;">vault-banking</code>, 14 tools
+            <span style="color:#4db8ff;font-family:ui-monospace,monospace;font-weight:700;">04</span> &nbsp;&nbsp;Click Add, then enable Vault in the chat's <strong style="color:#fff;">+</strong> menu &mdash; <code style="background:rgba(77,184,255,0.1);padding:2px 6px;border-radius:4px;font-size:12px;color:#4db8ff;">vault-banking</code>, 15 tools
           </td></tr>
         </table>
         <div style="margin-top:18px;color:#7e8bb0;font-size:13px;line-height:1.65;">

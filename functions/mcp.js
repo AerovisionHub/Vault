@@ -170,6 +170,19 @@ const TOOLS = [
     },
   },
   {
+    name: 'get_county_deposit_share',
+    description: 'Get deposit market share and competitive rank by county, from the FDIC Summary of Deposits. Two ways to call it. (1) Pass `cert` to see every county a bank operates in, with its deposits, market share, rank, number of competing banks, and the top competitor in each — answers "where is this bank strong or weak," "which markets does it dominate," and "who is beating it in its own backyard." (2) Pass `county` plus `state` to get the full ranked leaderboard of every bank operating in that county — answers "who holds deposit share in this market" and "who would we compete against if we entered." Use the county name alone, without the word "County" (e.g. "Tulsa", not "Tulsa County"). All deposit figures are in thousands of dollars. Standard uses: Community Reinvestment Act deposit market-share analysis, M&A target screening, branch expansion and market-entry planning, and peer benchmarking within a footprint. Note: SOD is an annual filing as of each June 30, so this reflects the most recent annual snapshot, not real-time deposits. Typically responds in 3-8 seconds; a bank spanning many counties takes longer, since each county is ranked separately.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        cert: { type: 'string', description: 'FDIC certificate number. Returns this bank\'s share and rank in every county it operates in. Get from search_institutions. Provide this OR county+state.' },
+        county: { type: 'string', description: 'County name without the word "County" (e.g. "Tulsa"). Must be paired with state. Returns the full ranked leaderboard for that county.' },
+        state: { type: 'string', description: '2-letter state code (e.g. "OK"). Required when using county.' },
+        limit: { type: 'number', description: 'Max banks returned in county leaderboard mode (default 25, max 200). Ignored in cert mode.' },
+      },
+    },
+  },
+  {
     name: 'get_bank_leadership',
     description: 'Get key decision-makers for a specific bank, prioritized for B2B sales targeting: CEO/President, CIO/CTO (or closest functional equivalent at smaller banks), and COO -- each with name, title, role_category, source URL, and (when found) a LinkedIn profile URL. Useful for building sales target lists: call search_institutions or get_lender_rankings first to find candidate banks matching your criteria, then call this for each one to build out contacts ready for outreach. On an uncached bank, the FIRST call returns almost instantly (1-2 seconds) with status: "pending" -- enrichment runs in the background (can take 30 seconds to a few minutes, longer for banks with generic/common names) rather than blocking the call. Call this same tool again with the same cert a little later to check; it returns the finished result once ready, or another pending status if still running. Repeat calls on an already-resolved bank return in ~150ms (cached 30 days). linkedin_source tells you how a LinkedIn match was confirmed -- "brightdata_verified" (matched by name+company search, verified against real work history) or "ai_search_scrape_verified" (found via an AI web search, then independently confirmed by scraping that exact profile to check its real data) -- both are safe to use for outreach; null means no LinkedIn URL was found. Nothing is ever returned as an unverified guess. Returns an empty people list when no confident public leadership data can be found for the bank at all.',
     inputSchema: {
@@ -1508,6 +1521,186 @@ async function getBranchData(args) {
 }
 
 
+// ── get_county_deposit_share ────────────────────────────────────────────────
+// Built from a real user workflow: an FDIC compliance examiner was using
+// get_branch_data and then assembling deposit market share and rank-within-
+// county by hand in a separate artifact, because Vault returned branches but
+// never aggregated them. Everything here comes from SOD data the server
+// already pulls — this just does the grouping and ranking server-side.
+//
+// Two modes:
+//   cert            -> every county that bank operates in, with its share and rank
+//   county + state  -> the full ranked leaderboard of banks in one county
+//
+// SOD gotchas that apply here exactly as they do in getBranchData: RUNDATE is
+// accepted but never populated and is NOT sortable (sort_by=RUNDATE returns
+// HTTP 400). YEAR is both. Never reintroduce RUNDATE.
+const COUNTY_SOD_FIELDS = 'CERT,NAMEFULL,CNTYNAMB,STCNTYBR,STALPBR,DEPSUMBR,YEAR';
+const COUNTY_FETCH_LIMIT = 2000;  // largest US counties run ~1,500 branches
+const MAX_COUNTIES_PER_BANK = 10; // bounds fan-out: one API call per county
+
+// SOD carries one row per branch per filing year. Collapsing without first
+// isolating a single year silently blends ~20 years of history — the same
+// defect that made get_branch_data wrong before it was fixed.
+function latestYearOf(rows) {
+  const years = rows.map(r => Number(r.YEAR)).filter(y => !isNaN(y));
+  return years.length ? Math.max(...years) : null;
+}
+
+// Aggregate branch rows into one ranked row per bank. Deposits are summed per
+// CERT because a bank books deposits at many branches inside one county.
+function rankBanksInCounty(rows) {
+  const byCert = new Map();
+  for (const r of rows) {
+    const cert = String(r.CERT);
+    const dep = Number(r.DEPSUMBR) || 0;
+    const cur = byCert.get(cert) || { cert, name: r.NAMEFULL, deposits: 0, branches: 0 };
+    cur.deposits += dep;
+    cur.branches += 1;
+    byCert.set(cert, cur);
+  }
+  const banks = [...byCert.values()].sort((a, b) => b.deposits - a.deposits);
+  const total = banks.reduce((s, b) => s + b.deposits, 0);
+  banks.forEach((b, i) => {
+    b.rank = i + 1;
+    // Guard against a county whose rows all report zero deposits, which would
+    // otherwise produce NaN% across the whole leaderboard.
+    b.market_share_pct = total > 0 ? Number((b.deposits / total * 100).toFixed(2)) : null;
+  });
+  return { banks, total_county_deposits: total, bank_count: banks.length };
+}
+
+async function fetchCountyRows(filters) {
+  const r = await fetchFDIC(`${FDIC_SOD_BASE}?filters=${filters}&fields=${COUNTY_SOD_FIELDS}&limit=${COUNTY_FETCH_LIMIT}&sort_by=YEAR&sort_order=DESC`);
+  return {
+    rows: (r.data || []).map(d => d.data).filter(Boolean),
+    reported_total: r.meta?.total ?? null,
+  };
+}
+
+async function getCountyDepositShare(args) {
+  const { cert, county, state, limit = 25 } = args || {};
+  if (!cert && !(county && state)) {
+    throw new Error('Provide either "cert" (to see every county that bank competes in) or both "county" and "state" (to see the ranked leaderboard for one county). Get a CERT from search_institutions.');
+  }
+  const max = Math.min(Math.max(Number(limit) || 25, 1), 200);
+
+  // ── Mode B: one county, full leaderboard ──────────────────────────────────
+  if (!cert) {
+    const st = String(state).toUpperCase();
+    const cacheKey = `county-share-${st}-${String(county).toLowerCase()}-l${max}`;
+    const cached = await cacheGet(cacheKey);
+    if (cached) return { ...cached, _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) } };
+
+    const nameFilter = `CNTYNAMB%3A%22${encodeURIComponent(county)}%22%20AND%20STALPBR%3A${st}`;
+    let probe;
+    try {
+      probe = await fetchCountyRows(nameFilter);
+    } catch (e) {
+      throw new Error(`County lookup for "${county}, ${st}" failed. FDIC said: ${e.message}`);
+    }
+    if (!probe.rows.length) {
+      throw new Error(`No FDIC branch data found for county "${county}" in ${st}. Use the county name only, without the word "County" (e.g. "Tulsa", not "Tulsa County"), and confirm the state code is right.`);
+    }
+    const year = latestYearOf(probe.rows);
+    const rows = probe.rows.filter(r => Number(r.YEAR) === year);
+    const { banks, total_county_deposits, bank_count } = rankBanksInCounty(rows);
+
+    const result = {
+      mode: 'county_leaderboard',
+      county: rows[0].CNTYNAMB,
+      state: st,
+      county_fips: rows[0].STCNTYBR ?? null,
+      as_of_year: year,
+      bank_count,
+      total_county_deposits_thousands: total_county_deposits,
+      banks: banks.slice(0, max),
+      truncated: banks.length > max ? { showing: max, of: banks.length } : null,
+      // Surfaced rather than swallowed: if SOD held more branch rows than one
+      // page returned, the ranking is computed on a partial county and the
+      // caller needs to know rather than trust a silently wrong rank.
+      incomplete_warning: (probe.reported_total && probe.reported_total > probe.rows.length)
+        ? `FDIC reported ${probe.reported_total} branch rows but only ${probe.rows.length} were retrieved; ranking may be incomplete for this county.`
+        : null,
+      source: 'FDIC Summary of Deposits (SOD), annual branch-level filing as of June 30',
+    };
+    await cacheSet(cacheKey, result);
+    return result;
+  }
+
+  // ── Mode A: one bank, its rank in every county it operates in ─────────────
+  const cacheKey = `county-share-cert-${cert}-l${max}`;
+  const cached = await cacheGet(cacheKey);
+  if (cached) return { ...cached, _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) } };
+
+  let bankProbe;
+  try {
+    bankProbe = await fetchCountyRows(`CERT%3A${cert}`);
+  } catch (e) {
+    throw new Error(`Branch lookup for CERT ${cert} failed. FDIC said: ${e.message}`);
+  }
+  if (!bankProbe.rows.length) {
+    throw new Error(`No branch data found for CERT ${cert}. It may be inactive or not FDIC-insured. Verify with search_institutions.`);
+  }
+  const year = latestYearOf(bankProbe.rows);
+  const bankRows = bankProbe.rows.filter(r => Number(r.YEAR) === year);
+
+  // Group the bank's own branches by county first, so we only query the
+  // counties it actually competes in.
+  const own = new Map();
+  for (const r of bankRows) {
+    const fips = String(r.STCNTYBR);
+    const cur = own.get(fips) || { county_fips: r.STCNTYBR, county: r.CNTYNAMB, state: r.STALPBR, deposits: 0, branches: 0 };
+    cur.deposits += Number(r.DEPSUMBR) || 0;
+    cur.branches += 1;
+    own.set(fips, cur);
+  }
+  const ordered = [...own.values()].sort((a, b) => b.deposits - a.deposits);
+  const selected = ordered.slice(0, MAX_COUNTIES_PER_BANK);
+
+  const counties = [];
+  for (const c of selected) {
+    try {
+      const probe = await fetchCountyRows(`STCNTYBR%3A${c.county_fips}%20AND%20YEAR%3A${year}`);
+      const { banks, total_county_deposits, bank_count } = rankBanksInCounty(probe.rows);
+      const me = banks.find(b => String(b.cert) === String(cert));
+      counties.push({
+        county: c.county,
+        state: c.state,
+        county_fips: c.county_fips,
+        bank_deposits_thousands: c.deposits,
+        bank_branches: c.branches,
+        total_county_deposits_thousands: total_county_deposits,
+        market_share_pct: me ? me.market_share_pct : null,
+        rank: me ? me.rank : null,
+        banks_in_county: bank_count,
+        top_competitor: banks[0] && String(banks[0].cert) !== String(cert)
+          ? { cert: banks[0].cert, name: banks[0].name, market_share_pct: banks[0].market_share_pct }
+          : (banks[1] ? { cert: banks[1].cert, name: banks[1].name, market_share_pct: banks[1].market_share_pct } : null),
+      });
+    } catch (e) {
+      // One county failing must not void the whole answer — report it in place.
+      counties.push({ county: c.county, state: c.state, county_fips: c.county_fips,
+        bank_deposits_thousands: c.deposits, bank_branches: c.branches, error: e.message });
+    }
+  }
+
+  const result = {
+    mode: 'bank_county_footprint',
+    cert: String(cert),
+    bank_name: bankRows[0].NAMEFULL,
+    as_of_year: year,
+    county_count: ordered.length,
+    counties,
+    truncated: ordered.length > selected.length
+      ? { showing: selected.length, of: ordered.length, note: `Showing the ${selected.length} counties where this bank holds the most deposits.` }
+      : null,
+    source: 'FDIC Summary of Deposits (SOD), annual branch-level filing as of June 30',
+  };
+  await cacheSet(cacheKey, result);
+  return result;
+}
+
 const TOOL_HANDLERS = {
   search_institutions: searchInstitutions,
   get_bank_profile: getBankProfile,
@@ -1519,6 +1712,7 @@ const TOOL_HANDLERS = {
   get_loan_mix: getLoanMix,
   get_brokered_deposits: getBrokeredDeposits,
   get_branch_data: getBranchData,
+  get_county_deposit_share: getCountyDepositShare,
   get_bank_leadership: getBankLeadership,
   get_bank_leadership_bulk: getBankLeadershipBulk,
   trigger_linkedin_match: triggerLinkedinMatch,
@@ -1553,7 +1747,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.17.0',
+        name: 'vault-mcp', version: '1.18.0',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -1608,7 +1802,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: negotiatedProtocol,
-          serverInfo: { name: 'vault-mcp', version: '1.17.0' },
+          serverInfo: { name: 'vault-mcp', version: '1.18.0' },
           capabilities: { tools: {} },
         });
       }
