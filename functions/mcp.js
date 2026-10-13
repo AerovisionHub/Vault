@@ -183,6 +183,19 @@ const TOOLS = [
     },
   },
   {
+    name: 'get_county_demographics',
+    description: 'Get county-level demographic and housing data from the U.S. Census Bureau American Community Survey (ACS 5-year): population, median household income, median family income, median home value, total/owner-occupied/renter-occupied housing units, poverty rate, and unemployment rate. Three ways to call it: `county` plus `state` for one county, `county_fips` for a direct 5-digit state+county FIPS lookup, or `cert` to get demographics for every county a bank operates in (joined through its FDIC branch footprint). Pair it with get_county_deposit_share to build a full market profile: deposit share and competitive rank from one, the demographics of that market from the other, keyed on the same county. Standard uses: Community Reinvestment Act performance evaluations (median FAMILY income is the basis for low/moderate-income thresholds, and is returned separately from household income), branch expansion and market-entry analysis, and assessing lending opportunity in a market. Use the county name without the word "County" (e.g. "Davidson", not "Davidson County"); Louisiana parishes and Alaska boroughs are handled too. Note: ACS is a rolling 5-year survey estimate, not a point-in-time count, and suppressed values are returned as null rather than Census\'s negative sentinel codes.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        county: { type: 'string', description: 'County name without the word "County" (e.g. "Davidson"). Pair with state.' },
+        state: { type: 'string', description: '2-letter state code (e.g. "TN"). Required when using county.' },
+        county_fips: { type: 'string', description: '5-digit state+county FIPS (e.g. "47037"). Matches STCNTYBR from get_county_deposit_share.' },
+        cert: { type: 'string', description: 'FDIC certificate number. Returns demographics for each county this bank operates in. Get from search_institutions.' },
+      },
+    },
+  },
+  {
     name: 'get_bank_leadership',
     description: 'Get key decision-makers for a specific bank, prioritized for B2B sales targeting: CEO/President, CIO/CTO (or closest functional equivalent at smaller banks), and COO -- each with name, title, role_category, source URL, and (when found) a LinkedIn profile URL. Useful for building sales target lists: call search_institutions or get_lender_rankings first to find candidate banks matching your criteria, then call this for each one to build out contacts ready for outreach. On an uncached bank, the FIRST call returns almost instantly (1-2 seconds) with status: "pending" -- enrichment runs in the background (can take 30 seconds to a few minutes, longer for banks with generic/common names) rather than blocking the call. Call this same tool again with the same cert a little later to check; it returns the finished result once ready, or another pending status if still running. Repeat calls on an already-resolved bank return in ~150ms (cached 30 days). linkedin_source tells you how a LinkedIn match was confirmed -- "brightdata_verified" (matched by name+company search, verified against real work history) or "ai_search_scrape_verified" (found via an AI web search, then independently confirmed by scraping that exact profile to check its real data) -- both are safe to use for outreach; null means no LinkedIn URL was found. Nothing is ever returned as an unverified guess. Returns an empty people list when no confident public leadership data can be found for the bank at all.',
     inputSchema: {
@@ -1716,6 +1729,222 @@ async function getCountyDepositShare(args) {
   return result;
 }
 
+// ── get_county_demographics ─────────────────────────────────────────────────
+// The second item from the FDIC examiner call: every CRA performance
+// evaluation carries standardized demographic tables (median family income,
+// median housing value, unemployment, owner-occupied units, lending
+// opportunity counts), and they all come from Census ACS. Pairing them with
+// the deposit-share tool means one agent can assemble a CRA market profile
+// without leaving the MCP.
+//
+// The join is free: SOD's STCNTYBR is already the 5-digit state+county FIPS
+// that Census keys on (40143 = state 40, county 143), so bank footprint and
+// demographics line up with no crosswalk table.
+//
+// Needs CENSUS_API_KEY. Census dropped its keyless allowance — every data
+// request 302s to a "Missing Key" page without one. Metadata endpoints are
+// still keyless, which is how the variable IDs below were verified.
+const CENSUS_VINTAGE = 2024; // newest ACS 5-year; 2025 returns 404 as of Oct 2026
+const CENSUS_BASE = `https://api.census.gov/data/${CENSUS_VINTAGE}/acs/acs5`;
+
+// Verified against the live variables endpoint before coding — do not swap
+// these for look-alikes. B19113 (FAMILY income) is the one CRA low/moderate
+// income thresholds are built on; B19013 (HOUSEHOLD income) is a different
+// number and is kept alongside it rather than substituted.
+const CENSUS_VARS = {
+  B01003_001E: 'population',
+  B19013_001E: 'median_household_income',
+  B19113_001E: 'median_family_income',
+  B25077_001E: 'median_home_value',
+  B25001_001E: 'housing_units_total',
+  B25003_002E: 'housing_units_owner_occupied',
+  B25003_003E: 'housing_units_renter_occupied',
+  B17001_002E: 'population_below_poverty',
+};
+// Unemployment lives in the SUBJECT table family, a separate endpoint — it
+// cannot be requested in the same call as the detail variables above.
+const CENSUS_SUBJECT_BASE = `https://api.census.gov/data/${CENSUS_VINTAGE}/acs/acs5/subject`;
+const CENSUS_UNEMP_VAR = 'S2301_C04_001E';
+
+// State abbreviation -> FIPS. Static because FIPS codes do not change, and a
+// lookup call per request would be pure overhead.
+const STATE_FIPS = {
+  AL:'01',AK:'02',AZ:'04',AR:'05',CA:'06',CO:'08',CT:'09',DE:'10',DC:'11',FL:'12',GA:'13',
+  HI:'15',ID:'16',IL:'17',IN:'18',IA:'19',KS:'20',KY:'21',LA:'22',ME:'23',MD:'24',MA:'25',
+  MI:'26',MN:'27',MS:'28',MO:'29',MT:'30',NE:'31',NV:'32',NH:'33',NJ:'34',NM:'35',NY:'36',
+  NC:'37',ND:'38',OH:'39',OK:'40',OR:'41',PA:'42',RI:'44',SC:'45',SD:'46',TN:'47',TX:'48',
+  UT:'49',VT:'50',VA:'51',WA:'53',WV:'54',WI:'55',WY:'56',PR:'72',
+};
+
+function censusKey() {
+  const k = process.env.CENSUS_API_KEY;
+  if (!k) throw new Error('Census demographics are unavailable: CENSUS_API_KEY is not configured on the server. Census requires a key on every data request.');
+  return k;
+}
+
+// Census returns [[header...],[row...]] arrays, not objects.
+function censusRowsToObjects(payload) {
+  if (!Array.isArray(payload) || payload.length < 2) return [];
+  const [header, ...rows] = payload;
+  return rows.map(r => Object.fromEntries(header.map((h, i) => [h, r[i]])));
+}
+
+// Census encodes missing/suppressed values as large negatives (-666666666 and
+// friends). Passing those straight through would render as real dollar figures
+// on a profile, so they become null.
+function censusNum(v) {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  if (!isFinite(n)) return null;
+  return n <= -666666666 ? null : n;
+}
+
+// Census-specific, not fetchFDIC: its messages all say "FDIC API", and Census
+// has a failure mode FDIC doesn't — a missing, unactivated or wrong key gets
+// a redirect to an HTML "Missing Key" page served with HTTP 200, which would
+// otherwise surface as an opaque JSON parse error instead of the real cause.
+async function fetchCensusJSON(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+  let response;
+  try {
+    response = await fetch(url, { signal: controller.signal });
+  } catch (e) {
+    clearTimeout(timer);
+    if (e.name === 'AbortError') throw new Error('Census API timeout (>12s). Try again.');
+    throw new Error(`Census API network error: ${e.message}`);
+  }
+  clearTimeout(timer);
+  const text = await response.text();
+
+  if (/missing[_ ]key|valid key must be included/i.test(text)) {
+    throw new Error('Census API rejected the key. CENSUS_API_KEY is set but missing, wrong, or not yet activated — the key email contains an activation link that must be clicked once before the key works.');
+  }
+  if (response.status === 204 || !text.trim()) {
+    throw new Error('Census API returned no data for that geography. Check the state and county codes.');
+  }
+  if (!response.ok) {
+    throw new Error(`Census API returned HTTP ${response.status}: ${text.slice(0, 160)}`);
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`Census API returned a non-JSON response (${text.slice(0, 120)}).`);
+  }
+}
+
+async function fetchCensus(base, varList, stateFips, countyFips) {
+  const url = `${base}?get=NAME,${varList.join(',')}&for=county:${countyFips}&in=state:${stateFips}&key=${censusKey()}`;
+  return censusRowsToObjects(await fetchCensusJSON(url));
+}
+
+async function countyDemographics(stateFips, countyFips) {
+  const detailVars = Object.keys(CENSUS_VARS);
+  const [detail, subject] = await Promise.all([
+    fetchCensus(CENSUS_BASE, detailVars, stateFips, countyFips),
+    fetchCensus(CENSUS_SUBJECT_BASE, [CENSUS_UNEMP_VAR], stateFips, countyFips).catch(() => []),
+  ]);
+  if (!detail.length) return null;
+  const d = detail[0];
+  const out = { name: d.NAME, county_fips: `${stateFips}${countyFips}` };
+  for (const [code, label] of Object.entries(CENSUS_VARS)) out[label] = censusNum(d[code]);
+  out.unemployment_rate_pct = subject.length ? censusNum(subject[0][CENSUS_UNEMP_VAR]) : null;
+  // Derived because every CRA table reports it, and computing it here avoids
+  // each caller re-deriving it slightly differently.
+  out.owner_occupied_pct = (out.housing_units_owner_occupied != null && out.housing_units_total)
+    ? Number((out.housing_units_owner_occupied / out.housing_units_total * 100).toFixed(1)) : null;
+  out.poverty_rate_pct = (out.population_below_poverty != null && out.population)
+    ? Number((out.population_below_poverty / out.population * 100).toFixed(1)) : null;
+  out.vintage = `ACS ${CENSUS_VINTAGE} 5-year`;
+  return out;
+}
+
+async function getCountyDemographics(args) {
+  const { cert, county, state, county_fips } = args || {};
+  if (!cert && !county_fips && !(county && state)) {
+    throw new Error('Provide one of: "cert" (demographics for every county a bank operates in), "county" plus "state", or "county_fips" (5-digit state+county FIPS).');
+  }
+
+  // Direct FIPS
+  if (county_fips && !cert) {
+    const f = String(county_fips).padStart(5, '0');
+    const cacheKey = `demo-fips-${f}`;
+    const cached = await cacheGet(cacheKey);
+    if (cached) return { ...cached, _cache: { hit: true } };
+    const d = await countyDemographics(f.slice(0, 2), f.slice(2));
+    if (!d) throw new Error(`No Census data found for county FIPS ${f}.`);
+    const result = { mode: 'county', ...d, source: 'U.S. Census Bureau American Community Survey' };
+    await cacheSet(cacheKey, result);
+    return result;
+  }
+
+  // County + state name
+  if (county && !cert) {
+    const st = String(state).toUpperCase();
+    const sf = STATE_FIPS[st];
+    if (!sf) throw new Error(`Unrecognized state code "${state}". Use a 2-letter code (e.g. "TN").`);
+    const cacheKey = `demo-name-${st}-${String(county).toLowerCase()}`;
+    const cached = await cacheGet(cacheKey);
+    if (cached) return { ...cached, _cache: { hit: true } };
+
+    // Resolve the county name against Census's own naming rather than guessing
+    // a FIPS code. Census NAME reads "Tulsa County, Oklahoma"; Louisiana uses
+    // "Parish" and Alaska "Borough"/"Census Area", so match the leading
+    // segment instead of appending the word "County".
+    const all = await fetchCensus(CENSUS_BASE, ['B01003_001E'], sf, '*');
+    const want = String(county).toLowerCase().replace(/\s+(county|parish|borough|census area)$/i, '').trim();
+    const hit = all.find(r => String(r.NAME).split(',')[0].toLowerCase()
+      .replace(/\s+(county|parish|borough|city and borough|census area|municipality)$/i, '').trim() === want);
+    if (!hit) throw new Error(`No county matching "${county}" found in ${st}. Use the county name without the word "County" (e.g. "Davidson", not "Davidson County").`);
+
+    const d = await countyDemographics(sf, hit.county);
+    const result = { mode: 'county', ...d, source: 'U.S. Census Bureau American Community Survey' };
+    await cacheSet(cacheKey, result);
+    return result;
+  }
+
+  // Bank footprint: demographics for each county the bank operates in.
+  const cacheKey = `demo-cert-${cert}`;
+  const cached = await cacheGet(cacheKey);
+  if (cached) return { ...cached, _cache: { hit: true } };
+
+  const year = await latestSodYear(`CERT%3A${cert}`);
+  if (year == null) throw new Error(`No branch data found for CERT ${cert}. Verify with search_institutions.`);
+  const probe = await fetchCountyRows(`CERT%3A${cert}%20AND%20YEAR%3A${year}`);
+  if (!probe.rows.length) throw new Error(`No branch data found for CERT ${cert} in filing year ${year}.`);
+
+  const seen = new Map();
+  for (const r of probe.rows) {
+    const f = String(r.STCNTYBR).padStart(5, '0');
+    if (!seen.has(f)) seen.set(f, { county: r.CNTYNAMB, state: r.STALPBR, county_fips: f });
+  }
+  const selected = [...seen.values()].slice(0, MAX_COUNTIES_PER_BANK);
+
+  const counties = [];
+  for (const c of selected) {
+    try {
+      const d = await countyDemographics(c.county_fips.slice(0, 2), c.county_fips.slice(2));
+      counties.push(d ? { ...c, ...d } : { ...c, error: 'No Census data returned for this county.' });
+    } catch (e) {
+      // One county failing must not void the whole answer.
+      counties.push({ ...c, error: e.message });
+    }
+  }
+
+  const result = {
+    mode: 'bank_footprint',
+    cert: String(cert),
+    bank_name: probe.rows[0].NAMEFULL,
+    branch_year: year,
+    county_count: seen.size,
+    counties,
+    truncated: seen.size > selected.length ? { showing: selected.length, of: seen.size } : null,
+    source: 'U.S. Census Bureau American Community Survey, joined to FDIC Summary of Deposits county FIPS',
+  };
+  await cacheSet(cacheKey, result);
+  return result;
+}
+
 const TOOL_HANDLERS = {
   search_institutions: searchInstitutions,
   get_bank_profile: getBankProfile,
@@ -1728,6 +1957,7 @@ const TOOL_HANDLERS = {
   get_brokered_deposits: getBrokeredDeposits,
   get_branch_data: getBranchData,
   get_county_deposit_share: getCountyDepositShare,
+  get_county_demographics: getCountyDemographics,
   get_bank_leadership: getBankLeadership,
   get_bank_leadership_bulk: getBankLeadershipBulk,
   trigger_linkedin_match: triggerLinkedinMatch,
@@ -1762,7 +1992,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.18.0',
+        name: 'vault-mcp', version: '1.19.0',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -1817,7 +2047,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: negotiatedProtocol,
-          serverInfo: { name: 'vault-mcp', version: '1.18.0' },
+          serverInfo: { name: 'vault-mcp', version: '1.19.0' },
           capabilities: { tools: {} },
         });
       }
