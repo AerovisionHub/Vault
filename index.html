@@ -2312,6 +2312,20 @@ function renderBankDetail(d) {
   }
   const latest = history?.[0];
 
+  // Several prospect-signal fields (SC, NONII, NONIX) exist ONLY on the
+  // financials record, not the institutions record. Reading them off `inst`
+  // returned undefined, and a `|| 0` fallback rendered that as a confident
+  // "$0" on every bank profile — a real-looking number that was never true.
+  // ASSET masked the bug, because the institutions endpoint does carry it.
+  // Prefer the financials row, fall back to inst, and return null (not 0)
+  // when the field is genuinely absent so the caller can show an em-dash.
+  const finVal = (field) => {
+    const v = latest?.[field] ?? inst?.[field];
+    if (v == null || v === '') return null;
+    const n = Number(v);
+    return isFinite(n) ? n : null;
+  };
+
   const assets    = thousands(inst.ASSET);
   const deposits  = thousands(inst.DEP);
   const equity    = thousands(inst.EQ);
@@ -2416,7 +2430,7 @@ function renderBankDetail(d) {
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Cash & Securities</div>
-        <div class="kpi-value kpi-neutral">${fmt$(thousands(inst.SC || 0))}</div>
+        <div class="kpi-value kpi-neutral">${finVal('SC') != null ? fmt$(thousands(finVal('SC'))) : '—'}</div>
         <div class="kpi-sub">Investment portfolio</div>
       </div>
       <div class="kpi-card">
@@ -2426,13 +2440,13 @@ function renderBankDetail(d) {
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Non-Interest Income</div>
-        <div class="kpi-value kpi-neutral">${fmt$(thousands(inst.NONII || 0))}</div>
-        <div class="kpi-sub">Fee & tech revenue signal</div>
+        <div class="kpi-value kpi-neutral">${finVal('NONII') != null ? fmt$(thousands(finVal('NONII'))) : '—'}</div>
+        <div class="kpi-sub">Fee & tech revenue signal (YTD)</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Non-Interest Expense</div>
-        <div class="kpi-value kpi-neutral">${fmt$(thousands(inst.NONIX || 0))}</div>
-        <div class="kpi-sub">Ops & tech spend signal</div>
+        <div class="kpi-value kpi-neutral">${finVal('NONIX') != null ? fmt$(thousands(finVal('NONIX'))) : '—'}</div>
+        <div class="kpi-sub">Ops & tech spend signal (YTD)</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Assets per Employee</div>
