@@ -1539,14 +1539,6 @@ const COUNTY_SOD_FIELDS = 'CERT,NAMEFULL,CNTYNAMB,STCNTYBR,STALPBR,DEPSUMBR,YEAR
 const COUNTY_FETCH_LIMIT = 2000;  // largest US counties run ~1,500 branches
 const MAX_COUNTIES_PER_BANK = 10; // bounds fan-out: one API call per county
 
-// SOD carries one row per branch per filing year. Collapsing without first
-// isolating a single year silently blends ~20 years of history — the same
-// defect that made get_branch_data wrong before it was fixed.
-function latestYearOf(rows) {
-  const years = rows.map(r => Number(r.YEAR)).filter(y => !isNaN(y));
-  return years.length ? Math.max(...years) : null;
-}
-
 // Aggregate branch rows into one ranked row per bank. Deposits are summed per
 // CERT because a bank books deposits at many branches inside one county.
 function rankBanksInCounty(rows) {
@@ -1568,6 +1560,19 @@ function rankBanksInCounty(rows) {
     b.market_share_pct = total > 0 ? Number((b.deposits / total * 100).toFixed(2)) : null;
   });
   return { banks, total_county_deposits: total, bank_count: banks.length };
+}
+
+// Resolve the newest filing year with a 1-row probe BEFORE pulling rows.
+// Without this, an unfiltered query drags in every historical year (Tulsa
+// County OK returns ~6,300 rows across ~20 years for ~200 actual branches),
+// burns the page limit on history, and makes the row-count check meaningless.
+// Filtering to one year up front keeps the page small and makes the
+// incomplete_warning mean what it says.
+async function latestSodYear(filters) {
+  const r = await fetchFDIC(`${FDIC_SOD_BASE}?filters=${filters}&fields=YEAR&limit=1&sort_by=YEAR&sort_order=DESC`);
+  const row = (r.data || []).map(d => d.data).filter(Boolean)[0];
+  const y = row ? Number(row.YEAR) : NaN;
+  return isNaN(y) ? null : y;
 }
 
 async function fetchCountyRows(filters) {
@@ -1593,17 +1598,21 @@ async function getCountyDepositShare(args) {
     if (cached) return { ...cached, _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) } };
 
     const nameFilter = `CNTYNAMB%3A%22${encodeURIComponent(county)}%22%20AND%20STALPBR%3A${st}`;
-    let probe;
+    let year, probe;
     try {
-      probe = await fetchCountyRows(nameFilter);
+      year = await latestSodYear(nameFilter);
+      if (year == null) {
+        throw new Error(`No FDIC branch data found for county "${county}" in ${st}. Use the county name only, without the word "County" (e.g. "Tulsa", not "Tulsa County"), and confirm the state code is right.`);
+      }
+      probe = await fetchCountyRows(`${nameFilter}%20AND%20YEAR%3A${year}`);
     } catch (e) {
+      if (e.message.startsWith('No FDIC branch data')) throw e;
       throw new Error(`County lookup for "${county}, ${st}" failed. FDIC said: ${e.message}`);
     }
     if (!probe.rows.length) {
-      throw new Error(`No FDIC branch data found for county "${county}" in ${st}. Use the county name only, without the word "County" (e.g. "Tulsa", not "Tulsa County"), and confirm the state code is right.`);
+      throw new Error(`No FDIC branch data found for county "${county}" in ${st} for filing year ${year}.`);
     }
-    const year = latestYearOf(probe.rows);
-    const rows = probe.rows.filter(r => Number(r.YEAR) === year);
+    const rows = probe.rows;
     const { banks, total_county_deposits, bank_count } = rankBanksInCounty(rows);
 
     const result = {
@@ -1633,17 +1642,23 @@ async function getCountyDepositShare(args) {
   const cached = await cacheGet(cacheKey);
   if (cached) return { ...cached, _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) } };
 
-  let bankProbe;
+  let bankProbe, year;
   try {
-    bankProbe = await fetchCountyRows(`CERT%3A${cert}`);
+    year = await latestSodYear(`CERT%3A${cert}`);
+    if (year == null) {
+      throw new Error(`No branch data found for CERT ${cert}. It may be inactive or not FDIC-insured. Verify with search_institutions.`);
+    }
+    // Year-filtered for the same reason as county mode: a large multi-state
+    // bank has thousands of branch-years on file and would blow the page cap.
+    bankProbe = await fetchCountyRows(`CERT%3A${cert}%20AND%20YEAR%3A${year}`);
   } catch (e) {
+    if (e.message.startsWith('No branch data found')) throw e;
     throw new Error(`Branch lookup for CERT ${cert} failed. FDIC said: ${e.message}`);
   }
   if (!bankProbe.rows.length) {
-    throw new Error(`No branch data found for CERT ${cert}. It may be inactive or not FDIC-insured. Verify with search_institutions.`);
+    throw new Error(`No branch data found for CERT ${cert} in filing year ${year}.`);
   }
-  const year = latestYearOf(bankProbe.rows);
-  const bankRows = bankProbe.rows.filter(r => Number(r.YEAR) === year);
+  const bankRows = bankProbe.rows;
 
   // Group the bank's own branches by county first, so we only query the
   // counties it actually competes in.
