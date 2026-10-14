@@ -243,7 +243,11 @@ async function buildCounty(countySlug, abbr) {
   const year = Math.max(...rows.map(r => Number(r.YEAR) || 0));
   const cur = rows.filter(r => Number(r.YEAR) === year);
   const countyName = cur[0].CNTYNAMB;
-  const fips = cur[0].STCNTYBR;
+  // FDIC returns STCNTYBR as a NUMBER, not a string. Beyond the obvious
+  // crash on .slice(), the numeric form silently drops the leading zero for
+  // states with a FIPS below 10 — Alabama's 01003 arrives as 1003 — so this
+  // must be padded back to five digits, not merely coerced.
+  const fips = String(cur[0].STCNTYBR ?? '').padStart(5, '0');
 
   const byCert = new Map();
   for (const r of cur) {
