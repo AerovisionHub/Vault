@@ -353,16 +353,37 @@ exports.handler = async (event) => {
     } catch { /* fall through to live build */ }
   }
 
-  let html = null;
+  let html = null, failure = null;
   const countyMatch = slug.match(/^(.+)-county-([a-z]{2})$/);
   try {
     if (countyMatch && STATES[countyMatch[2].toUpperCase()]) {
       html = await buildCounty(countyMatch[1], countyMatch[2].toUpperCase());
+      if (!html) failure = 'buildCounty returned null (no SOD rows matched)';
     } else if (NAME_TO_ABBR[slug]) {
       html = await buildState(NAME_TO_ABBR[slug], origin);
+    } else {
+      failure = 'slug matched neither a county pattern nor a state name';
     }
   } catch (e) {
-    console.log('[hub] build failed for', slug, e.message);
+    failure = `threw: ${e.message}`;
+    console.log('[hub] build failed for', slug, e.stack || e.message);
+  }
+
+  // ?debug=1 reports why a hub failed instead of leaving a bare 404 to guess
+  // at. Diagnosing this from the outside otherwise means redeploying with
+  // log statements and waiting for a build each time.
+  if ((event.queryStringParameters || {}).debug === '1') {
+    return {
+      statusCode: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        raw_event_path: event.path, slug,
+        county_match: countyMatch ? { county: countyMatch[1], state: countyMatch[2] } : null,
+        state_match: NAME_TO_ABBR[slug] || null,
+        built: !!html, failure,
+        census_key_present: !!(process.env.CENSUS_API_KEY || '').trim(),
+      }),
+    };
   }
 
   if (!html) {
