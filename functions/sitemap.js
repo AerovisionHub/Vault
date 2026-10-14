@@ -20,6 +20,17 @@ const SITEMAP_URL_CAP = 45000;
 
 const STATIC_PATHS = ['/', '/mcp', '/mcp/setup', '/industry', '/lenders', '/compare', '/ma', '/charters', '/about'];
 
+// State hubs are listed explicitly. County hubs are not: there are ~3,100 of
+// them, they are linked from their state hub, and letting crawlers discover
+// them by following links is both cheaper and a better signal of site
+// structure than dumping every one into the sitemap.
+const STATE_SLUGS = ['alabama','alaska','arizona','arkansas','california','colorado','connecticut','delaware',
+'district-of-columbia','florida','georgia','hawaii','idaho','illinois','indiana','iowa','kansas','kentucky',
+'louisiana','maine','maryland','massachusetts','michigan','minnesota','mississippi','missouri','montana',
+'nebraska','nevada','new-hampshire','new-jersey','new-mexico','new-york','north-carolina','north-dakota','ohio',
+'oklahoma','oregon','pennsylvania','rhode-island','south-carolina','south-dakota','tennessee','texas','utah',
+'vermont','virginia','washington','west-virginia','wisconsin','wyoming','puerto-rico'];
+
 // Byte-identical to slugify() in index.html. Deliberately duplicated rather
 // than approximated: if these drift, every URL in this sitemap resolves via a
 // client-side rewrite to a different canonical path, which burns crawl budget
@@ -100,6 +111,9 @@ exports.handler = async (event) => {
 
   const today = new Date().toISOString().slice(0, 10);
   const urls = STATIC_PATHS.map(p => ({ loc: `${SITE}${p}`, priority: p === '/' ? '1.0' : '0.8', changefreq: 'weekly' }));
+  for (const st of STATE_SLUGS) {
+    urls.push({ loc: `${SITE}/banks-in-${st}`, priority: '0.7', changefreq: 'monthly' });
+  }
 
   let banks = [], cus = [];
   try { banks = await fetchAllBanks(); } catch (e) { console.log('[sitemap] bank fetch failed:', e.message); }

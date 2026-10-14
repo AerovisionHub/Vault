@@ -61,6 +61,19 @@ function titleCaseName(s) {
   }).join(' ');
 }
 
+const STATE_NAMES = {AL:'Alabama',AK:'Alaska',AZ:'Arizona',AR:'Arkansas',CA:'California',CO:'Colorado',
+CT:'Connecticut',DE:'Delaware',DC:'District of Columbia',FL:'Florida',GA:'Georgia',HI:'Hawaii',ID:'Idaho',
+IL:'Illinois',IN:'Indiana',IA:'Iowa',KS:'Kansas',KY:'Kentucky',LA:'Louisiana',ME:'Maine',MD:'Maryland',
+MA:'Massachusetts',MI:'Michigan',MN:'Minnesota',MS:'Mississippi',MO:'Missouri',MT:'Montana',NE:'Nebraska',
+NV:'Nevada',NH:'New Hampshire',NJ:'New Jersey',NM:'New Mexico',NY:'New York',NC:'North Carolina',
+ND:'North Dakota',OH:'Ohio',OK:'Oklahoma',OR:'Oregon',PA:'Pennsylvania',RI:'Rhode Island',SC:'South Carolina',
+SD:'South Dakota',TN:'Tennessee',TX:'Texas',UT:'Utah',VT:'Vermont',VA:'Virginia',WA:'Washington',
+WV:'West Virginia',WI:'Wisconsin',WY:'Wyoming',PR:'Puerto Rico'};
+function stateHub(abbr) {
+  const n = STATE_NAMES[String(abbr || '').toUpperCase()];
+  return n ? { name: n, href: `/banks-in-${n.toLowerCase().replace(/\s+/g, '-')}` } : null;
+}
+
 function fmtUSD(thousands) {
   const n = Number(thousands);
   if (!isFinite(n) || n === 0) return null;
@@ -154,6 +167,7 @@ function buildBank(b) {
 
   return { title, desc, h1: b.NAME, lead, detail, where, jsonld, kind: 'bank',
            canonicalPath: `/bank/${slugify(b.NAME, b.CITY, b.STALP)}-${b.CERT}`,
+           stateLink: stateHub(b.STALP),
            facts: [
              ['Total assets', assets], ['Deposits', deps], ['Net loans & leases', loans],
              ['Return on assets', pct(l.ROA)], ['Return on equity', pct(l.ROE)],
@@ -199,6 +213,7 @@ function buildCU(c) {
 
   return { title, desc, h1: c.name, lead, detail, where, jsonld, kind: 'cu',
            canonicalPath: `/cu/${slugify(c.name, c.city, c.state)}-${c.id}`,
+           stateLink: stateHub(c.state),
            facts: [
              ['Total assets', assets],
              ['Members', c.members ? Number(c.members).toLocaleString() : null],
@@ -301,6 +316,15 @@ export default async (request, context) => {
   swing from a sustained trend. ${model.kind === 'bank'
     ? 'Deposit market share and competitive rank by county are available from the FDIC Summary of Deposits, so concentration is measurable against the actual competitors in each market rather than against a national average. County demographics from the Census American Community Survey and mortgage lending activity from CFPB HMDA filings complete the picture of the markets this bank serves.'
     : 'Member counts, assets per member and employee productivity are benchmarked against credit unions in the same asset tier, which is the comparison that reveals whether a credit union is deepening relationships with existing members or primarily adding new ones.'}</p>
+
+  ${model.stateLink ? `<h2>Other institutions in ${esc(model.stateLink.name)}</h2>
+  <p>Every FDIC-insured bank and NCUA-insured credit union headquartered in
+  ${esc(model.stateLink.name)} is listed and ranked by total assets on the
+  <a href="${esc(model.stateLink.href)}">banks in ${esc(model.stateLink.name)}</a> page, along with
+  deposit market share by county. Comparing an institution against others in its own state shows
+  local competitive position, while comparing against its asset-range peers nationally shows
+  whether its performance is typical for its size — the two questions are different and both are
+  worth asking.</p>` : ''}
 
   <h2>Where this data comes from</h2>
   <p>Every figure on this page traces to a public regulatory filing. ${esc(srcName)} data is free

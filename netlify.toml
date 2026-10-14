@@ -70,6 +70,15 @@
   status = 200
   force = true
 
+# State and county hub pages. Server-rendered rather than SPA routes on
+# purpose: their whole value is content that exists without JavaScript, and
+# routing them through index.html would reintroduce the problem the
+# institution edge function exists to fix.
+[[redirects]]
+  from = "/banks-in-*"
+  to = "/.netlify/functions/hub"
+  status = 200
+
 # Dynamic sitemap. The committed sitemap.xml listed 9 URLs; the generated one
 # covers every active bank and credit union (~9,400 pages) so crawlers have a
 # path to them that does not depend on executing JavaScript. force = true so
@@ -106,6 +115,9 @@
   timeout = 26
 
 [functions."sitemap"]
+  timeout = 26
+
+[functions."hub"]
   timeout = 26
 
 # leadership-background: no timeout config needed/settable here — the
