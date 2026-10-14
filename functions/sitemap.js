@@ -81,7 +81,13 @@ exports.handler = async (event) => {
   const origin = `https://${event.headers.host || 'vaultbot.ai'}`;
   const store = await getStore();
 
-  if (store) {
+  // ?refresh=1 forces a rebuild. Without it, a bad generation stays served
+  // for a full day with no way to correct it short of waiting out the TTL —
+  // which is exactly what happened when the credit-union fetch came back
+  // empty and the result was cached anyway.
+  const refresh = (event.queryStringParameters || {}).refresh === '1';
+
+  if (store && !refresh) {
     try {
       const cached = await store.get('sitemap-xml', { type: 'json' });
       if (cached && cached._at && Date.now() - cached._at < CACHE_TTL_MS) {
@@ -119,8 +125,12 @@ exports.handler = async (event) => {
 
   console.log(`[sitemap] generated ${urls.length} urls (${banks.length} banks, ${cus.length} CUs)`);
 
-  if (store) {
+  // Only cache a generation that actually pulled both rosters. Caching a
+  // partial result pins the failure in place for 24 hours.
+  if (store && banks.length > 1000 && cus.length > 1000) {
     store.setJSON('sitemap-xml', { xml, _at: Date.now() }).catch(e => console.log('[sitemap] cache write failed:', e.message));
+  } else {
+    console.log(`[sitemap] NOT caching partial result (banks=${banks.length}, cus=${cus.length})`);
   }
 
   return { statusCode: 200, headers: { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=3600' }, body: xml };
