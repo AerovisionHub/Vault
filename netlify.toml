@@ -70,6 +70,16 @@
   status = 200
   force = true
 
+# Dynamic sitemap. The committed sitemap.xml listed 9 URLs; the generated one
+# covers every active bank and credit union (~9,400 pages) so crawlers have a
+# path to them that does not depend on executing JavaScript. force = true so
+# this wins over the static file still in the repo.
+[[redirects]]
+  from = "/sitemap.xml"
+  to = "/.netlify/functions/sitemap"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/mcp"
   to = "/mcp.html"
@@ -93,6 +103,9 @@
   timeout = 26
 
 [functions."leadership"]
+  timeout = 26
+
+[functions."sitemap"]
   timeout = 26
 
 # leadership-background: no timeout config needed/settable here — the

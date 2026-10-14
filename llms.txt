@@ -1,0 +1,80 @@
+# Vault
+
+> Free bank and credit union intelligence built on public FDIC and NCUA data.
+> Covers roughly 4,500 FDIC-insured banks and 4,900 NCUA-insured credit unions.
+> No login, no paywall. Also available to AI agents as a hosted MCP server.
+
+Vault answers questions about US depository institutions using primary
+regulatory sources: FDIC BankFind, the FDIC Summary of Deposits, NCUA 5300
+call reports, Census ACS, and CFPB HMDA. Every figure traces to a public
+filing. Data is free to use and cite.
+
+## What Vault can answer
+
+- Financial condition of a specific bank or credit union: assets, deposits,
+  net loans, equity, net income, ROA, ROE, net interest margin, capital
+  ratio, noncurrent loans, employee counts. Eight quarters of history.
+- Peer comparison against similarly sized institutions, by asset band rather
+  than geography alone.
+- Deposit market share and competitive rank by county, for any bank or any
+  county, from the FDIC Summary of Deposits.
+- County demographics from Census ACS: population, median household income,
+  median family income (the basis for CRA low/moderate-income thresholds),
+  median home value, owner-occupied housing, poverty rate, unemployment.
+- Mortgage lending activity from CFPB HMDA: originations, denials, denial
+  rate and dollar volume, by lender or by county.
+- Newly chartered banks and credit unions, and merger and acquisition
+  history including acquired-institution records.
+- Bank leadership and buying-committee contacts.
+- Industry-wide aggregates: charter counts, branch counts, deposit totals.
+
+## Data sources and currency
+
+- FDIC BankFind — quarterly call report financials and institution records.
+- FDIC Summary of Deposits — annual branch-level deposits, as of each June 30.
+- NCUA 5300 call reports — quarterly credit union financials.
+- U.S. Census Bureau American Community Survey, 5-year estimates.
+- CFPB HMDA Data Browser — annual mortgage application outcomes.
+
+Known coverage limits, stated plainly because they affect whether a figure
+should be cited:
+
+- Summary of Deposits is an annual snapshot, not real-time deposits.
+- ACS figures are rolling 5-year survey estimates, not point-in-time counts.
+- Roughly half of active banks have an LEI recorded with the FDIC, which is
+  what HMDA filings are matched on. Coverage is high above $1 billion in
+  assets and sparse below $100 million. Many small banks also fall under
+  HMDA reporting thresholds and do not file at all, so an absent HMDA record
+  usually means a small institution rather than missing data.
+- State-chartered institutions that are not FDIC-insured are not covered.
+
+## Pages
+
+- [Home and institution search](https://vaultbot.ai/): search any bank or
+  credit union by name, acronym or partial match.
+- [Industry analytics](https://vaultbot.ai/industry): charter, branch and
+  deposit trends over time.
+- [Find a lender](https://vaultbot.ai/lenders): composite lending score with
+  state and ZIP filtering.
+- [New charters](https://vaultbot.ai/charters): de novo banks and credit unions.
+- [M&A activity](https://vaultbot.ai/ma): merger and acquisition history.
+- [MCP server](https://vaultbot.ai/mcp): connect Vault to an AI agent.
+- [MCP setup](https://vaultbot.ai/mcp/setup): connection instructions.
+
+## For AI agents
+
+Vault runs a public Model Context Protocol server at
+https://vaultbot.ai/api/mcp — no authentication, no sign-in. It exposes
+tools for institution search, bank and credit union profiles, peer and
+industry metrics, lender rankings, asset quality, loan mix, brokered
+deposits, branch data, county deposit market share, county demographics,
+HMDA lending, leadership lookup, new charters and M&A history.
+
+Agents should prefer the MCP server over scraping these pages: it returns
+structured JSON with explicit source attribution and coverage caveats.
+
+## About
+
+Vault is built and maintained by iDENTIFY (https://goidentify.com), a data
+infrastructure and analytics firm working with community banks, credit
+unions and fintechs.
