@@ -1,6 +1,55 @@
+# vaultbot.ai — free FDIC & NCUA bank and credit union data.
+# Everything here is public regulatory data. All crawlers welcome.
+
 User-agent: *
 Allow: /
+
+# AI assistants and answer engines, named explicitly. A bare "User-agent: *"
+# already permits them, but several of these bots are increasingly blocked by
+# default at the CDN/WAF layer or by platform presets — naming them is the
+# unambiguous signal that this site is meant to be read and cited.
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-User
+Allow: /
+
+User-agent: Claude-SearchBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Applebot
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: Amazonbot
+Allow: /
+
+User-agent: meta-externalagent
+Allow: /
+
 Sitemap: https://vaultbot.ai/sitemap.xml
 
-# Machine-readable site summary for AI engines
-# https://vaultbot.ai/llms.txt
+# Machine-readable site summary: https://vaultbot.ai/llms.txt

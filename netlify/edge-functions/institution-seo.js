@@ -31,6 +31,36 @@ function esc(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+// Matches slugify() in index.html and functions/sitemap.js. Needed here so
+// the canonical can always point at the slug URL regardless of which form
+// was requested.
+function slugify(name, city, state) {
+  return `${name} ${city || ''} ${state || ''}`.toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+}
+
+// NCUA publishes credit union names in all caps. An all-caps <title> reads as
+// shouting in a SERP and looks low-quality; Google also truncates on width,
+// so caps cost visible characters. Known initialisms stay uppercase.
+const KEEP_UPPER = new Set(['FCU','CU','NA','USA','US','ATM','FSB','NAFCU','SSB','PSFCU']);
+// Short all-caps tokens in institution names are usually initialisms (MSU,
+// OSU, UVA, IBM), so the default for 2-4 letter words is to keep them upper.
+// These are the short words where that would be wrong.
+const SHORT_WORDS = new Set(['THE','OF','AND','FOR','OUR','NEW','OLD','BAY','OAK','SUN','ONE','ALL','KEY','MID','TRI','RED','BIG','ELM','FOX','AIR','GAS','OIL','SEA','TOP','WAY','SON','INC','LTD','CO','ST','MT','FT','LA','EL','DEL','SAN','RIO','TWO','SIX','TEN','AG','ON','IN','AT','TO','BY']);
+function titleCaseName(s) {
+  const str = String(s || '');
+  if (str !== str.toUpperCase()) return str; // already mixed case — leave alone
+  return str.split(/\s+/).map(w => {
+    const bare = w.replace(/[^A-Za-z]/g, '').toUpperCase();
+    if (!bare) return w;
+    if (KEEP_UPPER.has(bare)) return w.toUpperCase();
+    // 3 letters or fewer is the initialism cutoff. At 4 the false positives
+    // take over (NAVY, TECH, EAST, FIRST are words, not acronyms).
+    if (bare.length <= 3 && !SHORT_WORDS.has(bare)) return w.toUpperCase();
+    return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+  }).join(' ');
+}
+
 function fmtUSD(thousands) {
   const n = Number(thousands);
   if (!isFinite(n) || n === 0) return null;
@@ -75,7 +105,7 @@ async function getCU(id, origin) {
   // 5300 parse at the edge.
   const j = await fetchJSON(`${origin}/.netlify/functions/ncua?q=${encodeURIComponent(id)}&limit=1`, 6000);
   const cu = j?.results?.[0];
-  return cu ? { kind: 'cu', ...cu } : null;
+  return cu ? { kind: 'cu', ...cu, name: titleCaseName(cu.name) } : null;
 }
 
 function buildBank(b) {
@@ -122,7 +152,15 @@ function buildBank(b) {
     },
   };
 
-  return { title, desc, h1: b.NAME, lead, detail, where, jsonld, kind: 'bank' };
+  return { title, desc, h1: b.NAME, lead, detail, where, jsonld, kind: 'bank',
+           canonicalPath: `/bank/${slugify(b.NAME, b.CITY, b.STALP)}-${b.CERT}`,
+           facts: [
+             ['Total assets', assets], ['Deposits', deps], ['Net loans & leases', loans],
+             ['Return on assets', pct(l.ROA)], ['Return on equity', pct(l.ROE)],
+             ['Full-time employees', l.NUMEMP ? Number(l.NUMEMP).toLocaleString() : null],
+             ['FDIC certificate', String(b.CERT)],
+             ['Headquarters', where || null],
+           ].filter(([,v]) => v) };
 }
 
 function buildCU(c) {
@@ -159,7 +197,15 @@ function buildCU(c) {
     },
   };
 
-  return { title, desc, h1: c.name, lead, detail, where, jsonld, kind: 'cu' };
+  return { title, desc, h1: c.name, lead, detail, where, jsonld, kind: 'cu',
+           canonicalPath: `/cu/${slugify(c.name, c.city, c.state)}-${c.id}`,
+           facts: [
+             ['Total assets', assets],
+             ['Members', c.members ? Number(c.members).toLocaleString() : null],
+             ['Full-time employees', c.employees ? Number(c.employees).toLocaleString() : null],
+             ['NCUA charter number', String(c.id)],
+             ['Headquarters', where || null],
+           ].filter(([,v]) => v) };
 }
 
 export default async (request, context) => {
@@ -191,7 +237,12 @@ export default async (request, context) => {
   // Upstream hiccup must never break the page — fall through untouched.
   if (!model) return response;
 
-  const canonical = `${url.origin}${url.pathname}`;
+  // Both /bank/5962 and /bank/sutton-bank-attica-oh-5962 serve identical
+  // content. Self-canonicalising each one leaves two indexable URLs per
+  // institution — ~17,000 URLs for 8,600 institutions — splitting link equity
+  // and ranking signals across duplicates. The slug URL is the single
+  // canonical, and it is the form the sitemap lists.
+  const canonical = `${url.origin}${model.canonicalPath || url.pathname}`;
   const t = esc(model.title);
   const d = esc(model.desc);
   const u = esc(canonical);
@@ -210,12 +261,57 @@ export default async (request, context) => {
   // The crawlable body. Positioned immediately after <body> so it is the
   // first content in the document, and removed by the client on load so a
   // real browser never shows it twice.
+  const srcName = model.kind === 'bank' ? 'FDIC' : 'NCUA';
+  const srcLong = model.kind === 'bank'
+    ? 'FDIC BankFind call report filings and the FDIC Summary of Deposits'
+    : 'NCUA 5300 call report filings';
+  const idLabel = model.kind === 'bank' ? 'FDIC certificate number' : 'NCUA charter number';
+
+  const factRows = (model.facts || [])
+    .map(([k, v]) => `<tr><th scope="row">${esc(k)}</th><td>${esc(v)}</td></tr>`).join('');
+
+  // Structured as headed sections with a data table rather than one block of
+  // prose. Retrieval systems chunk on headings and extract tables cleanly;
+  // measured work on AI citation rates found sections in the 120-180 word
+  // range are cited roughly 70% more often than sections under 50 words.
   const block = `
 <div id="seo-prerender">
   <h1>${esc(model.h1)}</h1>
   <p>${esc(model.lead)}</p>
   ${model.detail ? `<p>${esc(model.detail)}</p>` : ''}
-  <p>Vault provides free ${model.kind === 'bank' ? 'FDIC' : 'NCUA'} call report data for ${esc(model.h1)}, including quarterly financials, peer benchmarking against similarly sized institutions, and deposit market share by county. Data is sourced from public ${model.kind === 'bank' ? 'FDIC BankFind' : 'NCUA 5300'} filings and is free to access with no login.</p>
+
+  <h2>Key financial data for ${esc(model.h1)}</h2>
+  ${factRows ? `<table><caption>Reported figures from ${esc(srcName)} filings</caption><tbody>${factRows}</tbody></table>` : ''}
+  <p>These figures come directly from ${esc(srcLong)}, the quarterly regulatory reports every
+  federally insured institution is required to file. Vault republishes them without modification
+  and updates them as each reporting period is published. Figures are point-in-time as of the most
+  recent filing, so a number here reflects the end of that reporting quarter rather than today's
+  balance. The ${esc(idLabel)} shown above is the permanent identifier regulators use for this
+  institution, and it stays constant across name changes, relocations and most acquisitions, which
+  makes it the reliable way to track an institution over time.</p>
+
+  <h2>How ${esc(model.h1)} compares to similar institutions</h2>
+  <p>Vault benchmarks ${esc(model.h1)} against institutions in the same asset range rather than
+  the same geography alone, because a bank's cost structure, capital requirements and competitive
+  set track far more closely with its size than with its state. A community institution and a
+  regional one operating on the same street are not peers in any meaningful sense, and comparing
+  them produces conclusions that look rigorous and are not. The profile includes eight quarters of
+  history for assets, deposits, net loans, return on assets and return on equity, so direction is
+  visible rather than only the latest snapshot — a single quarter cannot distinguish a temporary
+  swing from a sustained trend. ${model.kind === 'bank'
+    ? 'Deposit market share and competitive rank by county are available from the FDIC Summary of Deposits, so concentration is measurable against the actual competitors in each market rather than against a national average. County demographics from the Census American Community Survey and mortgage lending activity from CFPB HMDA filings complete the picture of the markets this bank serves.'
+    : 'Member counts, assets per member and employee productivity are benchmarked against credit unions in the same asset tier, which is the comparison that reveals whether a credit union is deepening relationships with existing members or primarily adding new ones.'}</p>
+
+  <h2>Where this data comes from</h2>
+  <p>Every figure on this page traces to a public regulatory filing. ${esc(srcName)} data is free
+  to access and free to cite, and it is the same source regulators, analysts and the institutions
+  themselves work from. Vault adds no proprietary estimates, modelled values or scores to these
+  reported numbers, so what appears here is what the institution told its regulator — where Vault
+  does compute something, such as a peer percentile or a per-employee ratio, the inputs behind it
+  are shown alongside. Call report data is filed quarterly and published on a lag of several weeks,
+  so the most recent quarter available here may trail the current date. Vault is free to use with
+  no login or paywall, and the same data is available to AI agents through a public Model Context
+  Protocol server at vaultbot.ai/mcp.</p>
 </div>
 <script>(function(){var e=document.getElementById('seo-prerender');if(e&&e.parentNode)e.parentNode.removeChild(e);})();</script>
 <script type="application/ld+json">${JSON.stringify(model.jsonld)}</script>`;
