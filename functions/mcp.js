@@ -1777,9 +1777,28 @@ const STATE_FIPS = {
 };
 
 function censusKey() {
-  const k = process.env.CENSUS_API_KEY;
-  if (!k) throw new Error('Census demographics are unavailable: CENSUS_API_KEY is not configured on the server. Census requires a key on every data request.');
+  const raw = process.env.CENSUS_API_KEY;
+  if (!raw) throw new Error('Census demographics are unavailable: CENSUS_API_KEY is not configured on the server. Census requires a key on every data request.');
+  // Trim before use. A key pasted into a dashboard field commonly carries a
+  // trailing newline or space; Census then answers with an HTML error page
+  // instead of JSON, which surfaces as an opaque parse failure rather than
+  // anything pointing at the key.
+  const k = String(raw).trim();
+  if (!/^[0-9a-f]{40}$/i.test(k)) {
+    // Never echo the value, not even a prefix — length and shape are enough
+    // to tell a truncated paste from a wrong-field paste.
+    throw new Error(`CENSUS_API_KEY is malformed: expected 40 hex characters, got ${k.length}. Re-copy it from the Census key email.`);
+  }
   return k;
+}
+
+// Errors from upstream can quote the request back, and the request carries the
+// key in its query string. Everything thrown from the Census path goes through
+// this first so a credential can never reach a tool response or a log line.
+function scrubSecret(text) {
+  return String(text)
+    .replace(/\b[0-9A-Fa-f]{40}\b/g, '<redacted>')
+    .replace(/([?&]key=)[^&\s"']+/gi, '$1<redacted>');
 }
 
 // Census returns [[header...],[row...]] arrays, not objects.
@@ -1817,19 +1836,21 @@ async function fetchCensusJSON(url) {
   clearTimeout(timer);
   const text = await response.text();
 
-  if (/missing[_ ]key|valid key must be included/i.test(text)) {
-    throw new Error('Census API rejected the key. CENSUS_API_KEY is set but missing, wrong, or not yet activated — the key email contains an activation link that must be clicked once before the key works.');
+  if (/missing[_ ]key|valid key must be included|invalid key/i.test(text)) {
+    throw new Error('Census API rejected the key. CENSUS_API_KEY is set but wrong, or not yet activated — the key email contains an activation link that must be clicked once before the key works.');
   }
   if (response.status === 204 || !text.trim()) {
     throw new Error('Census API returned no data for that geography. Check the state and county codes.');
   }
   if (!response.ok) {
-    throw new Error(`Census API returned HTTP ${response.status}: ${text.slice(0, 160)}`);
+    throw new Error(`Census API returned HTTP ${response.status}: ${scrubSecret(text.slice(0, 200))}`);
   }
   try {
     return JSON.parse(text);
   } catch {
-    throw new Error(`Census API returned a non-JSON response (${text.slice(0, 120)}).`);
+    // Scrubbed, and longer than before: the previous 120-char window was too
+    // short to show what an HTML error page was actually complaining about.
+    throw new Error(`Census API returned a non-JSON response: ${scrubSecret(text.slice(0, 220))}`);
   }
 }
 
