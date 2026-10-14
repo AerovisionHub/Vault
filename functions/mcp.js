@@ -196,6 +196,20 @@ const TOOLS = [
     },
   },
   {
+    name: 'get_hmda_lending',
+    description: 'Get mortgage lending activity from CFPB HMDA data: originations, denials, withdrawals, dollar volume and denial rate. Two ways to call it: `cert` for one bank\'s lending record (the FDIC certificate is resolved to the lender\'s LEI automatically — you never need an LEI), or `county` plus `state` / `county_fips` for all lending in a market. Pair with get_county_deposit_share and get_county_demographics to build a full Community Reinvestment Act picture: who holds deposits, who the market is, and who is actually lending in it. Also a credit-appetite and growth signal for M&A screening and vendor targeting. Defaults to the most recent published year. IMPORTANT coverage note to pass on when a bank returns nothing: roughly half of active banks have an LEI recorded with the FDIC (around 94% above \$5B in assets, about 10% under \$100M), and smaller banks often fall under HMDA reporting thresholds and legitimately do not file — an empty result usually means the bank is small, not that the data is broken. Denial rate is computed against decisioned applications only and excludes purchased loans, which are bought from other lenders rather than decided by this bank.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        cert: { type: 'string', description: 'FDIC certificate number. Resolved to the lender LEI internally. Get from search_institutions.' },
+        county: { type: 'string', description: 'County name without the word "County" (e.g. "Davidson"). Pair with state.' },
+        state: { type: 'string', description: '2-letter state code (e.g. "TN"). Required when using county.' },
+        county_fips: { type: 'string', description: '5-digit state+county FIPS (e.g. "47037").' },
+        year: { type: 'number', description: 'HMDA filing year. Defaults to the most recent published year.' },
+      },
+    },
+  },
+  {
     name: 'get_bank_leadership',
     description: 'Get key decision-makers for a specific bank, prioritized for B2B sales targeting: CEO/President, CIO/CTO (or closest functional equivalent at smaller banks), and COO -- each with name, title, role_category, source URL, and (when found) a LinkedIn profile URL. Useful for building sales target lists: call search_institutions or get_lender_rankings first to find candidate banks matching your criteria, then call this for each one to build out contacts ready for outreach. On an uncached bank, the FIRST call returns almost instantly (1-2 seconds) with status: "pending" -- enrichment runs in the background (can take 30 seconds to a few minutes, longer for banks with generic/common names) rather than blocking the call. Call this same tool again with the same cert a little later to check; it returns the finished result once ready, or another pending status if still running. Repeat calls on an already-resolved bank return in ~150ms (cached 30 days). linkedin_source tells you how a LinkedIn match was confirmed -- "brightdata_verified" (matched by name+company search, verified against real work history) or "ai_search_scrape_verified" (found via an AI web search, then independently confirmed by scraping that exact profile to check its real data) -- both are safe to use for outreach; null means no LinkedIn URL was found. Nothing is ever returned as an unverified guess. Returns an empty people list when no confident public leadership data can be found for the bank at all.',
     inputSchema: {
@@ -1966,6 +1980,148 @@ async function getCountyDemographics(args) {
   return result;
 }
 
+// ── get_hmda_lending ────────────────────────────────────────────────────────
+// Third item from the FDIC examiner call, and the one with real reach: HMDA
+// is mortgage application outcomes — originations, denials, withdrawals —
+// per lender and per county, free and unauthenticated.
+//
+// The join is the find: FDIC's institutions endpoint carries an LEI field,
+// which is HMDA's primary key. CERT -> LEI -> HMDA, no crosswalk file and no
+// name matching. Callers pass a CERT like everywhere else in this server and
+// never see an LEI.
+//
+// Coverage caveat worth stating plainly in responses: roughly half of active
+// banks have an LEI recorded with FDIC (94% above $5B, ~10% under $100M), and
+// small banks fall under HMDA reporting thresholds and legitimately do not
+// file at all. A bank with no result here is usually not a bug.
+const HMDA_BASE = 'https://ffiec.cfpb.gov/v2/data-browser-api/view/aggregations';
+const HMDA_LATEST_YEAR = 2024;
+// The API requires at least one filter beyond geography/lender, so actions are
+// always requested explicitly. Codes per the HMDA filing spec.
+const HMDA_ACTIONS = {
+  1: 'originated',
+  2: 'approved_not_accepted',
+  3: 'denied',
+  4: 'withdrawn_by_applicant',
+  5: 'closed_for_incompleteness',
+  6: 'purchased_loan',
+  7: 'preapproval_denied',
+  8: 'preapproval_approved_not_accepted',
+};
+
+async function hmdaFetch(params) {
+  const url = `${HMDA_BASE}?${params}&actions_taken=1,2,3,4,5,6,7,8`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  let r;
+  try {
+    r = await fetch(url, { signal: controller.signal });
+  } catch (e) {
+    clearTimeout(timer);
+    if (e.name === 'AbortError') throw new Error('HMDA API timeout (>15s). Try again.');
+    throw new Error(`HMDA API network error: ${e.message}`);
+  }
+  clearTimeout(timer);
+  const text = await r.text();
+  if (!r.ok) throw new Error(`HMDA API returned HTTP ${r.status}: ${text.slice(0, 180)}`);
+  let j;
+  try { j = JSON.parse(text); } catch { throw new Error(`HMDA API returned a non-JSON response: ${text.slice(0, 180)}`); }
+  if (j.errorType) throw new Error(`HMDA API error: ${j.message || j.errorType}`);
+  return j.aggregations || [];
+}
+
+// Collapse the per-action rows into named counts plus the ratios that are the
+// actual point of the dataset.
+function summarizeHmda(aggs) {
+  const by = {};
+  let totalCount = 0, totalSum = 0;
+  for (const a of aggs) {
+    const code = Number(a.actions_taken);
+    const name = HMDA_ACTIONS[code] || `action_${code}`;
+    by[name] = { count: a.count || 0, dollars_thousands: Math.round((a.sum || 0) / 1000) };
+    totalCount += a.count || 0;
+    totalSum += a.sum || 0;
+  }
+  const orig = by.originated?.count || 0;
+  const denied = by.denied?.count || 0;
+  // Denial rate is computed against decisioned applications only. Including
+  // withdrawals and incomplete files would understate it, and including
+  // purchased loans (code 6) would be flatly wrong — those are loans bought
+  // from another lender, not applications this bank ever decided on.
+  const decisioned = orig + denied + (by.approved_not_accepted?.count || 0);
+  return {
+    by_action: by,
+    total_applications: totalCount - (by.purchased_loan?.count || 0),
+    total_dollars_thousands: Math.round(totalSum / 1000),
+    originated_count: orig,
+    denied_count: denied,
+    denial_rate_pct: decisioned > 0 ? Number((denied / decisioned * 100).toFixed(1)) : null,
+    denial_rate_basis: 'denied / (originated + denied + approved-not-accepted); excludes withdrawn, incomplete and purchased loans',
+  };
+}
+
+async function certToLEI(cert) {
+  const r = await fetchFDIC(`${FDIC_BASE}/institutions?filters=CERT%3A${cert}&fields=CERT,NAME,LEI&limit=1`);
+  const row = (r.data || []).map(d => d.data)[0];
+  if (!row) throw new Error(`No FDIC institution found for CERT ${cert}. Verify with search_institutions.`);
+  const lei = (row.LEI || '').trim();
+  if (!lei) {
+    throw new Error(`${row.NAME} (CERT ${cert}) has no LEI recorded with the FDIC, so its HMDA filings cannot be matched. About half of active banks have one — coverage is high above $1B in assets and sparse below $100M. Smaller banks may also fall under HMDA reporting thresholds and not file at all.`);
+  }
+  return { lei, name: row.NAME };
+}
+
+async function getHmdaLending(args) {
+  const { cert, county, state, county_fips, year } = args || {};
+  const yr = Number(year) || HMDA_LATEST_YEAR;
+  if (!cert && !county_fips && !(county && state)) {
+    throw new Error('Provide either "cert" (a bank\'s lending record) or "county" plus "state" / "county_fips" (all lending in a market).');
+  }
+
+  if (cert) {
+    const cacheKey = `hmda-cert-${cert}-${yr}`;
+    const cached = await cacheGet(cacheKey);
+    if (cached) return { ...cached, _cache: { hit: true } };
+    const { lei, name } = await certToLEI(cert);
+    const aggs = await hmdaFetch(`years=${yr}&leis=${encodeURIComponent(lei)}`);
+    const result = {
+      mode: 'bank',
+      cert: String(cert),
+      bank_name: name,
+      year: yr,
+      ...summarizeHmda(aggs),
+      source: 'CFPB HMDA Data Browser, joined via the FDIC-recorded LEI',
+      note: 'Mortgage applications only. A bank with no record here may simply fall under HMDA reporting thresholds.',
+    };
+    await cacheSet(cacheKey, result);
+    return result;
+  }
+
+  // County mode. Resolve a name to FIPS through the demographics path so the
+  // two tools cannot disagree about what "Davidson, TN" means.
+  let fips = county_fips ? String(county_fips).padStart(5, '0') : null;
+  let label = fips;
+  if (!fips) {
+    const demo = await getCountyDemographics({ county, state });
+    fips = demo.county_fips;
+    label = demo.name || `${county}, ${state}`;
+  }
+  const cacheKey = `hmda-county-${fips}-${yr}`;
+  const cached = await cacheGet(cacheKey);
+  if (cached) return { ...cached, _cache: { hit: true } };
+  const aggs = await hmdaFetch(`years=${yr}&counties=${fips}`);
+  const result = {
+    mode: 'county',
+    county_fips: fips,
+    county: label,
+    year: yr,
+    ...summarizeHmda(aggs),
+    source: 'CFPB HMDA Data Browser',
+  };
+  await cacheSet(cacheKey, result);
+  return result;
+}
+
 const TOOL_HANDLERS = {
   search_institutions: searchInstitutions,
   get_bank_profile: getBankProfile,
@@ -1979,6 +2135,7 @@ const TOOL_HANDLERS = {
   get_branch_data: getBranchData,
   get_county_deposit_share: getCountyDepositShare,
   get_county_demographics: getCountyDemographics,
+  get_hmda_lending: getHmdaLending,
   get_bank_leadership: getBankLeadership,
   get_bank_leadership_bulk: getBankLeadershipBulk,
   trigger_linkedin_match: triggerLinkedinMatch,
@@ -2013,7 +2170,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.19.0',
+        name: 'vault-mcp', version: '1.20.0',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -2068,7 +2225,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: negotiatedProtocol,
-          serverInfo: { name: 'vault-mcp', version: '1.19.0' },
+          serverInfo: { name: 'vault-mcp', version: '1.20.0' },
           capabilities: { tools: {} },
         });
       }
