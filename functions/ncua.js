@@ -490,7 +490,11 @@ exports.handler = async function(event, context) {
     }
   }
 
-  if (!q && !minAssets && !state) {
+  // Guard against an unfiltered browse returning the whole roster to the
+  // public search UI. all=1 is the deliberate exception — the sitemap needs
+  // exactly that full roster, which is why it gets its own flag rather than
+  // the caller just omitting filters.
+  if (!q && !minAssets && !state && !allMode) {
     return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ results: [], totalResultCount: 0 }) };
   }
 
