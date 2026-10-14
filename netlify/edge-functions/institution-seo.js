@@ -220,7 +220,18 @@ export default async (request, context) => {
 <script>(function(){var e=document.getElementById('seo-prerender');if(e&&e.parentNode)e.parentNode.removeChild(e);})();</script>
 <script type="application/ld+json">${JSON.stringify(model.jsonld)}</script>`;
 
-  html = html.replace(/<body([^>]*)>/, `<body$1>${block}`);
+  // index.html has <head> but NO </head> and NO opening <body> tag — the
+  // browser auto-closes them. A /<body[^>]*>/ anchor silently no-ops here,
+  // which is exactly what it did on the first deploy: meta tags updated,
+  // content block never injected. <header> is the first structural element
+  // in the document, so inserting before it puts the crawlable block at the
+  // top of the body where it belongs. Falls back to </body> if the markup
+  // is ever restructured, so this can degrade in position but not vanish.
+  if (html.includes('<header>')) {
+    html = html.replace('<header>', `${block}\n<header>`);
+  } else {
+    html = html.replace('</body>', `${block}\n</body>`);
+  }
 
   const headers = new Headers(response.headers);
   // Cache at the CDN so the extra upstream calls are paid once per bank per

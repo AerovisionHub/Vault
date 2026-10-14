@@ -71,7 +71,7 @@ async function fetchAllBanks() {
 
 async function fetchAllCUs(origin) {
   // Reuse the site's own NCUA proxy rather than re-parsing the bulk 5300 zip.
-  const r = await fetch(`${origin}/.netlify/functions/ncua?limit=6000`);
+  const r = await fetch(`${origin}/.netlify/functions/ncua?all=1&limit=6000`);
   if (!r.ok) return [];
   const j = await r.json();
   return j.results || [];

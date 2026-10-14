@@ -407,7 +407,13 @@ exports.handler = async function(event, context) {
 
   const params = event.queryStringParameters || {};
   const q = (params.q || '').toLowerCase().trim();
-  const limit = Math.min(parseInt(params.limit || '20', 10), 200);
+  // The 200 cap protects the public search endpoint. The sitemap needs the
+  // full roster, so `all=1` lifts it and (below) returns only the fields a
+  // sitemap URL needs, keeping the payload small.
+  const allMode = params.all === '1';
+  const limit = allMode
+    ? Math.min(parseInt(params.limit || '6000', 10), 10000)
+    : Math.min(parseInt(params.limit || '20', 10), 200);
   const minAssets = params.minAssets ? parseInt(params.minAssets, 10) : null;
   const maxAssets = params.maxAssets ? parseInt(params.maxAssets, 10) : null;
   const state = params.state ? params.state.toUpperCase() : null;
@@ -533,7 +539,12 @@ exports.handler = async function(event, context) {
     return {
       statusCode: 200,
       headers: corsHeaders,
-      body: JSON.stringify({ results: matched.slice(0, limit), totalResultCount: matched.length })
+      // all=1 returns only what a sitemap URL needs. The full CU record is
+      // ~20 fields; across ~4,900 credit unions that payload is large enough
+      // to matter, and none of it is used for building a slug.
+      body: JSON.stringify(allMode
+        ? { results: matched.slice(0, limit).map(c => ({ id: c.id, name: c.name, city: c.city, state: c.state })), totalResultCount: matched.length }
+        : { results: matched.slice(0, limit), totalResultCount: matched.length })
     };
   } catch(e) {
     console.error('NCUA error:', e.message);
