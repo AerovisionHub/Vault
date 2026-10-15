@@ -350,7 +350,13 @@ exports.handler = async (event) => {
   const slug = m[1].toLowerCase();
   const cacheKey = `hub-${slug}`;
   const store = await getStore();
-  if (store) {
+  // ?refresh=1 bypasses the cache. Without it a fix to page markup stays
+  // invisible for up to 12 hours with no way to force it through — which is
+  // precisely what happened when a structured-data fix shipped and the hub
+  // kept serving the pre-fix cached HTML. The sitemap function already
+  // learned this lesson; the hub had not.
+  const refresh = (event.queryStringParameters || {}).refresh === '1';
+  if (store && !refresh) {
     try {
       const c = await store.get(cacheKey, { type: 'json' });
       // 12h: call report data moves quarterly, SOD annually.
