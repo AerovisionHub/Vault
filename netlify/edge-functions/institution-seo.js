@@ -25,6 +25,16 @@
 
 const FDIC_BASE = 'https://banks.data.fdic.gov/api';
 
+// Google flagged these Dataset nodes: missing "description" (critical,
+// suppresses the rich result entirely) and missing "license" (non-critical
+// today, and Google's own notice warns non-critical issues can be
+// reclassified).
+//
+// FDIC, NCUA, Census and CFPB filings are works of the US federal government
+// and are in the public domain, so this is the accurate license rather than a
+// placeholder picked to satisfy a validator.
+const PUBLIC_DOMAIN_LICENSE = 'https://www.usa.gov/government-works';
+
 function esc(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -159,7 +169,9 @@ function buildBank(b) {
     subjectOf: {
       '@type': 'Dataset',
       name: `${b.NAME} quarterly financial data`,
+      description: `Quarterly financial data for ${b.NAME}, FDIC certificate ${b.CERT}${where ? `, headquartered in ${where}` : ''}. Includes total assets, deposits, net loans and leases, equity capital, net income, return on assets, return on equity and employee counts, drawn from FDIC call report filings and updated each reporting quarter. Free to access and free to cite.`,
       creator: { '@type': 'Organization', name: 'Federal Deposit Insurance Corporation' },
+      license: PUBLIC_DOMAIN_LICENSE,
       isAccessibleForFree: true,
       temporalCoverage: l.REPDTE ? String(l.REPDTE) : undefined,
     },
@@ -206,7 +218,9 @@ function buildCU(c) {
     subjectOf: {
       '@type': 'Dataset',
       name: `${c.name} NCUA 5300 call report data`,
+      description: `Financial and membership data for ${c.name}, NCUA charter number ${c.id}${where ? `, based in ${where}` : ''}. Includes total assets, member counts, employee counts and assets per member, drawn from NCUA 5300 call report filings. Free to access and free to cite.`,
       creator: { '@type': 'Organization', name: 'National Credit Union Administration' },
+      license: PUBLIC_DOMAIN_LICENSE,
       isAccessibleForFree: true,
     },
   };

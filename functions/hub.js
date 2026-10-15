@@ -330,6 +330,9 @@ it without modification, free to access and free to cite. Available to AI agents
     name: `Deposit market share, ${countyName} County, ${stateName}`,
     description: desc,
     creator: { '@type': 'Organization', name: 'Federal Deposit Insurance Corporation' },
+    // FDIC filings are US federal government works and therefore public
+    // domain. Google flagged this field as missing site-wide.
+    license: 'https://www.usa.gov/government-works',
     isAccessibleForFree: true,
     temporalCoverage: String(year),
     spatialCoverage: { '@type': 'Place', name: `${countyName} County, ${stateName}` },
