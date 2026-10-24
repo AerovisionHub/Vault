@@ -3111,7 +3111,7 @@ async function fetchOfficers(cert) {
 const VAULT_IS_BOT = (() => {
   try {
     return navigator.webdriver === true ||
-      /bot\b|bot\/|crawl|spider|slurp|headless|lighthouse|bingpreview|facebookexternalhit|gptbot|claudebot|perplexitybot|ahrefs|semrush|mj12|bytespider|petalbot|yandex|baiduspider|duckduckbot|applebot/i.test(navigator.userAgent || '');
+      /bot\b|bot\/|crawl|spider|slurp|headless|lighthouse|bingpreview|facebookexternalhit|gptbot|claudebot|perplexitybot|ahrefs|semrush|mj12|bytespider|petalbot|yandex|baiduspider|duckduckbot|applebot|googleother|google-notebooklm|google-extended|chatgpt-user|claude-user|perplexity-user|oai-searchbot/i.test(navigator.userAgent || '');
   } catch (e) { return false; }
 })();
 

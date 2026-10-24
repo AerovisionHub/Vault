@@ -727,7 +727,7 @@ async function getBankLeadership(args) {
       cert,
       people: cached.people || [],
       company_linkedin_url: cached.company_linkedin_url || null,
-      _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) },
+      _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000), model: cached._model || null },
     };
   }
 
@@ -2216,7 +2216,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.21.0',
+        name: 'vault-mcp', version: '1.21.1',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -2271,7 +2271,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: negotiatedProtocol,
-          serverInfo: { name: 'vault-mcp', version: '1.21.0' },
+          serverInfo: { name: 'vault-mcp', version: '1.21.1' },
           capabilities: { tools: {} },
         });
       }

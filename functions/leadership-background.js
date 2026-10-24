@@ -37,6 +37,7 @@ const BRIGHTDATA_SERP_ZONE = 'serp_api1vault_serp';
 const BRIGHTDATA_LINKEDIN_DATASET_ID = 'gd_m8d03he47z8nwb5xc';
 const PRIORITY_ROLES = new Set(['ceo', 'president', 'cio_cto', 'coo']);
 
+let lastModelUsed = null; // instrumentation: surfaced as _cache.model
 function vaultInternalToken() {
   return require('crypto').createHash('sha256').update('vault-bg:' + (process.env.ANTHROPIC_API_KEY || '')).digest('hex');
 }
@@ -404,10 +405,12 @@ Max 4 people, one per role above. Only include people you are highly confident a
       signal: claudeController.signal,
     });
     resp = await callModel('claude-haiku-5-5');
+    lastModelUsed = 'claude-haiku-5-5';
     if (resp.status === 400 || resp.status === 404) {
       const errText = await resp.text().catch(() => '');
       console.log('[leadership-background] haiku-5-5 rejected request (HTTP', resp.status, ') — falling back to 4.5:', errText.slice(0, 200));
       resp = await callModel('claude-haiku-4-5-20251001');
+      lastModelUsed = 'claude-haiku-4-5-20251001';
     }
   } catch (e) {
     if (e.name === 'AbortError') throw new Error('Claude API timeout (>90s) — even the generous background budget wasn\'t enough for this search.');
@@ -517,7 +520,7 @@ exports.handler = async (event) => {
       people[i].linkedin_source = outcome.source;
     });
 
-    await cacheSet(cacheKey, { people, company_linkedin_url: companyLinkedInUrl });
+    await cacheSet(cacheKey, { people, company_linkedin_url: companyLinkedInUrl, _model: lastModelUsed });
     await cacheDelete(pendingKey);
     console.log('[leadership-background] DONE for', cert, 'in', Math.round((Date.now() - started) / 1000), 's —', people.length, 'people,',
       people.filter(p => p.linkedin_source === 'brightdata_verified').length, 'brightdata_verified,',

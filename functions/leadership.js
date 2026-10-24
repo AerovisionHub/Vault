@@ -54,7 +54,7 @@ async function claimEnrichmentSlot(store) {
     return true;
   }
 }
-const CRAWLER_UA = /bot\b|bot\/|crawl|spider|slurp|headless|lighthouse|bingpreview|facebookexternalhit|gptbot|claudebot|perplexitybot|ahrefs|semrush|mj12|bytespider|petalbot|yandex|baiduspider|duckduckbot|applebot/i;
+const CRAWLER_UA = /bot\b|bot\/|crawl|spider|slurp|headless|lighthouse|bingpreview|facebookexternalhit|gptbot|claudebot|perplexitybot|ahrefs|semrush|mj12|bytespider|petalbot|yandex|baiduspider|duckduckbot|applebot|googleother|google-notebooklm|google-extended|chatgpt-user|claude-user|perplexity-user|oai-searchbot/i;
 
 // Same proven pattern as functions/mcp.js — dynamic import (not require()) because
 // @netlify/blobs' CJS entry internally requires @netlify/runtime-utils, which is
