@@ -38,20 +38,24 @@ function vaultInternalToken() {
   return require('crypto').createHash('sha256').update('vault-bg:' + (process.env.ANTHROPIC_API_KEY || '')).digest('hex');
 }
 async function claimEnrichmentSlot(store) {
-  // Approximate (no atomic increment in Blobs) — fine for a spend ceiling.
-  if (!store) return true; // fail open: a Blobs outage shouldn't kill the feature
+  // Returns 'ok' | 'cap' | 'unavailable'. Approximate (no atomic increment in
+  // Blobs) — fine for a spend ceiling.
+  // FAILS CLOSED (v1.21.2): if Blobs is unreachable (e.g. NETLIFY_BLOBS_TOKEN
+  // expired), pending markers can't be written either, so every poll would
+  // start a NEW paid run. No Blobs = no paid enrichment.
+  if (!store) return 'unavailable';
   try {
     const key = `enrich-budget-${new Date().toISOString().slice(0, 10)}`;
     const cur = (await store.get(key, { type: 'json' })) || { count: 0 };
     if (cur.count >= LEADERSHIP_DAILY_CAP) {
       console.log('[vault-budget] daily enrichment cap reached:', cur.count, '/', LEADERSHIP_DAILY_CAP);
-      return false;
+      return 'cap';
     }
     await store.setJSON(key, { count: cur.count + 1 });
-    return true;
+    return 'ok';
   } catch (e) {
-    console.log('[vault-budget] counter error (failing open):', e.message);
-    return true;
+    console.log('[vault-budget] Blobs unavailable — blocking paid enrichment (check NETLIFY_BLOBS_TOKEN):', e.message);
+    return 'unavailable';
   }
 }
 const CRAWLER_UA = /bot\b|bot\/|crawl|spider|slurp|headless|lighthouse|bingpreview|facebookexternalhit|gptbot|claudebot|perplexitybot|ahrefs|semrush|mj12|bytespider|petalbot|yandex|baiduspider|duckduckbot|applebot|googleother|google-notebooklm|google-extended|chatgpt-user|claude-user|perplexity-user|oai-searchbot/i;
@@ -643,7 +647,15 @@ exports.handler = async function (event) {
       };
     }
 
-    if (!(await claimEnrichmentSlot(await getBlobStore()))) {
+    const slot = await claimEnrichmentSlot(await getBlobStore());
+    if (slot === 'unavailable') {
+      return {
+        statusCode: 200,
+        headers: corsHeaders,
+        body: JSON.stringify({ people: [], status: 'unavailable', error: 'Leadership lookups are temporarily unavailable. Please try again later.' }),
+      };
+    }
+    if (slot === 'cap') {
       return {
         statusCode: 200,
         headers: corsHeaders,

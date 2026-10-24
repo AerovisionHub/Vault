@@ -341,20 +341,24 @@ function vaultInternalToken() {
   return require('crypto').createHash('sha256').update('vault-bg:' + (process.env.ANTHROPIC_API_KEY || '')).digest('hex');
 }
 async function claimEnrichmentSlot(store) {
-  // Approximate (no atomic increment in Blobs) — fine for a spend ceiling.
-  if (!store) return true; // fail open: a Blobs outage shouldn't kill the feature
+  // Returns 'ok' | 'cap' | 'unavailable'. Approximate (no atomic increment in
+  // Blobs) — fine for a spend ceiling.
+  // FAILS CLOSED (v1.21.2): if Blobs is unreachable (e.g. NETLIFY_BLOBS_TOKEN
+  // expired), pending markers can't be written either, so every poll would
+  // start a NEW paid run. No Blobs = no paid enrichment.
+  if (!store) return 'unavailable';
   try {
     const key = `enrich-budget-${new Date().toISOString().slice(0, 10)}`;
     const cur = (await store.get(key, { type: 'json' })) || { count: 0 };
     if (cur.count >= LEADERSHIP_DAILY_CAP) {
       console.log('[vault-budget] daily enrichment cap reached:', cur.count, '/', LEADERSHIP_DAILY_CAP);
-      return false;
+      return 'cap';
     }
     await store.setJSON(key, { count: cur.count + 1 });
-    return true;
+    return 'ok';
   } catch (e) {
-    console.log('[vault-budget] counter error (failing open):', e.message);
-    return true;
+    console.log('[vault-budget] Blobs unavailable — blocking paid enrichment (check NETLIFY_BLOBS_TOKEN):', e.message);
+    return 'unavailable';
   }
 }
 
@@ -754,7 +758,11 @@ async function getBankLeadership(args) {
   const inst = iR.data?.[0]?.data;
   if (!inst) throw new Error(`No institution found for CERT ${cert}.`);
 
-  if (!(await claimEnrichmentSlot(await getLeadershipBlobStore()))) {
+  const slot = await claimEnrichmentSlot(await getLeadershipBlobStore());
+  if (slot === 'unavailable') {
+    return { cert, name: inst.NAME, people: [], status: 'unavailable', message: 'Leadership lookups are temporarily unavailable (cache storage unreachable). Please try again later.' };
+  }
+  if (slot === 'cap') {
     return {
       cert,
       name: inst.NAME,
@@ -2216,7 +2224,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.21.1',
+        name: 'vault-mcp', version: '1.21.2',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -2271,7 +2279,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: negotiatedProtocol,
-          serverInfo: { name: 'vault-mcp', version: '1.21.1' },
+          serverInfo: { name: 'vault-mcp', version: '1.21.2' },
           capabilities: { tools: {} },
         });
       }
