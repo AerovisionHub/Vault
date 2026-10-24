@@ -27,11 +27,19 @@
 // copies to keep in sync, not two; any future fix to the matching/search
 // logic needs to be applied here too.
 
-const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+// 90 days (was 30). Bank executive teams rarely turn over, and every cache
+// miss is a paid Claude + web_search + Bright Data run. Failed lookups
+// (entries carrying an `error`) expire after 7 days so a transient failure
+// doesn't block a retry for a whole quarter. Cost-reduction pass, 2026-10-22.
+const CACHE_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 const PENDING_TTL_MS = 10 * 60 * 1000; // 10 min — if a background run crashes without cleaning up, don't let a stale pending marker block retries forever
 const BRIGHTDATA_SERP_ZONE = 'serp_api1vault_serp';
 const BRIGHTDATA_LINKEDIN_DATASET_ID = 'gd_m8d03he47z8nwb5xc';
 const PRIORITY_ROLES = new Set(['ceo', 'president', 'cio_cto', 'coo']);
+
+function vaultInternalToken() {
+  return require('crypto').createHash('sha256').update('vault-bg:' + (process.env.ANTHROPIC_API_KEY || '')).digest('hex');
+}
 
 async function getBlobStore() {
   try {
@@ -378,17 +386,29 @@ Max 4 people, one per role above. Only include people you are highly confident a
 
   let resp;
   try {
-    resp = await fetch('https://api.anthropic.com/v1/messages', {
+    // Haiku 5.5 (2026-10-22): ~90% cheaper per token than 4.5. max_tokens
+    // raised 600 → 1500 (5.5 tokenizes ~30% heavier and may emit a thinking
+    // block). web_search capped at 3 uses per lookup — searches are billed
+    // per use AND their results come back as input tokens, so an uncapped
+    // search loop was the biggest per-lookup cost. If 5.5 ever rejects the
+    // request shape (HTTP 400/404), fall back to 4.5 once rather than fail.
+    const callModel = (model) => fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 600,
-        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+        model,
+        max_tokens: 1500,
+        tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
         messages: [{ role: 'user', content: prompt }],
       }),
       signal: claudeController.signal,
     });
+    resp = await callModel('claude-haiku-5-5');
+    if (resp.status === 400 || resp.status === 404) {
+      const errText = await resp.text().catch(() => '');
+      console.log('[leadership-background] haiku-5-5 rejected request (HTTP', resp.status, ') — falling back to 4.5:', errText.slice(0, 200));
+      resp = await callModel('claude-haiku-4-5-20251001');
+    }
   } catch (e) {
     if (e.name === 'AbortError') throw new Error('Claude API timeout (>90s) — even the generous background budget wasn\'t enough for this search.');
     throw new Error(`Claude API network error: ${e.message}`);
@@ -453,6 +473,14 @@ exports.handler = async (event) => {
     const { name, city, state, webAddr } = body;
     if (!cert || !name) {
       console.log('[leadership-background] missing cert/name in trigger payload — aborting');
+      return { statusCode: 202, body: '' };
+    }
+    const hdrs = event.headers || {};
+    if ((hdrs['x-vault-internal'] || hdrs['X-Vault-Internal']) !== vaultInternalToken()) {
+      // Only leadership.js / mcp.js may start a paid run (they enforce the
+      // daily cap). Clear any pending marker so callers don't hang.
+      console.log('[leadership-background] rejected untrusted trigger for', cert);
+      await cacheDelete(`leadership-pending-${cert}`).catch(() => {});
       return { statusCode: 202, body: '' };
     }
 

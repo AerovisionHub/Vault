@@ -13,11 +13,48 @@
 //      (same store name, same cache key pattern) — a lookup via either the website
 //      or the MCP tool warms the cache for the other.
 
-const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+// 90 days (was 30). Bank executive teams rarely turn over, and every cache
+// miss is a paid Claude + web_search + Bright Data run. Failed lookups
+// (entries carrying an `error`) expire after 7 days so a transient failure
+// doesn't block a retry for a whole quarter. Cost-reduction pass, 2026-10-22.
+const CACHE_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 const PENDING_TTL_MS = 10 * 60 * 1000; // 10 min — guards against a crashed background run leaving a stale pending marker that blocks retries forever
 const BRIGHTDATA_SERP_ZONE = 'serp_api1vault_serp';
 const BRIGHTDATA_LINKEDIN_DATASET_ID = 'gd_m8d03he47z8nwb5xc';
 const PRIORITY_ROLES = new Set(['ceo', 'president', 'cio_cto', 'coo']);
+
+// ── Cost controls (2026-10-22) ────────────────────────────────────────────
+// Oct 14 SEO push (sitemap of ~9,400 institution pages + hub pages) let JS-
+// rendering crawlers trigger paid leadership enrichment on every uncached
+// bank page they rendered. Three guards, duplicated in leadership.js and
+// mcp.js per this codebase's no-shared-module pattern:
+//   1. Daily cap on NEW (uncached) enrichments, counted in Blobs.
+//   2. Internal token on the leadership-background trigger, so the background
+//      function can't be POSTed directly to bypass the cap.
+//   3. (leadership.js only) crawler user-agents get cache reads, never a run.
+const LEADERSHIP_DAILY_CAP = parseInt(process.env.LEADERSHIP_DAILY_CAP || '50', 10);
+const ERROR_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+function vaultInternalToken() {
+  return require('crypto').createHash('sha256').update('vault-bg:' + (process.env.ANTHROPIC_API_KEY || '')).digest('hex');
+}
+async function claimEnrichmentSlot(store) {
+  // Approximate (no atomic increment in Blobs) — fine for a spend ceiling.
+  if (!store) return true; // fail open: a Blobs outage shouldn't kill the feature
+  try {
+    const key = `enrich-budget-${new Date().toISOString().slice(0, 10)}`;
+    const cur = (await store.get(key, { type: 'json' })) || { count: 0 };
+    if (cur.count >= LEADERSHIP_DAILY_CAP) {
+      console.log('[vault-budget] daily enrichment cap reached:', cur.count, '/', LEADERSHIP_DAILY_CAP);
+      return false;
+    }
+    await store.setJSON(key, { count: cur.count + 1 });
+    return true;
+  } catch (e) {
+    console.log('[vault-budget] counter error (failing open):', e.message);
+    return true;
+  }
+}
+const CRAWLER_UA = /bot\b|bot\/|crawl|spider|slurp|headless|lighthouse|bingpreview|facebookexternalhit|gptbot|claudebot|perplexitybot|ahrefs|semrush|mj12|bytespider|petalbot|yandex|baiduspider|duckduckbot|applebot/i;
 
 // Same proven pattern as functions/mcp.js — dynamic import (not require()) because
 // @netlify/blobs' CJS entry internally requires @netlify/runtime-utils, which is
@@ -44,7 +81,7 @@ async function cacheGet(key) {
     if (!store) return null;
     const raw = await store.get(key, { type: 'json' });
     if (!raw) return null;
-    if (raw._cached_at && (Date.now() - raw._cached_at) > CACHE_TTL_MS) {
+    if (raw._cached_at && (Date.now() - raw._cached_at) > (raw.error ? ERROR_TTL_MS : CACHE_TTL_MS)) {
       await store.delete(key).catch(() => {});
       return null;
     }
@@ -311,9 +348,9 @@ Max 4 people, one per role above. Only include people you are highly confident a
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 600,
-      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+      model: 'claude-haiku-5-5',
+      max_tokens: 1500,
+      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
       messages: [{ role: 'user', content: prompt }],
     }),
     signal: claudeController.signal,
@@ -578,7 +615,10 @@ exports.handler = async function (event) {
       }
     }
 
-    if (peekOnly) {
+    // Crawlers (Googlebot/Bingbot render JS) get cache reads only — never a
+    // paid enrichment run. Treated exactly like a peek.
+    const ua = (event.headers && (event.headers['user-agent'] || event.headers['User-Agent'])) || '';
+    if (peekOnly || CRAWLER_UA.test(ua)) {
       return {
         statusCode: 200,
         headers: corsHeaders,
@@ -603,13 +643,21 @@ exports.handler = async function (event) {
       };
     }
 
+    if (!(await claimEnrichmentSlot(await getBlobStore()))) {
+      return {
+        statusCode: 200,
+        headers: corsHeaders,
+        body: JSON.stringify({ people: [], status: 'daily_limit', message: 'Daily limit for new leadership lookups reached. Already-researched banks still return instantly; try this one again tomorrow.' }),
+      };
+    }
+
     await cacheSet(pendingKey, { started: true });
 
     const siteUrl = process.env.URL || 'https://vaultbot.ai';
     try {
       await fetch(`${siteUrl}/.netlify/functions/leadership-background`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-vault-internal': vaultInternalToken() },
         body: JSON.stringify({ cert, name, city, state, webAddr }),
       });
     } catch (e) {

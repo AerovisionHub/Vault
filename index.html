@@ -3104,6 +3104,17 @@ async function fetchOfficers(cert) {
   } catch(e) { return null; }
 }
 
+// Crawlers that render JS (Googlebot, Bingbot, etc.) and automation get
+// cache-only reads — they still index any leadership already researched, but
+// never start a paid Claude + Bright Data run. Server enforces the same rule
+// (functions/leadership.js); this just saves the round trips. 2026-10-22.
+const VAULT_IS_BOT = (() => {
+  try {
+    return navigator.webdriver === true ||
+      /bot\b|bot\/|crawl|spider|slurp|headless|lighthouse|bingpreview|facebookexternalhit|gptbot|claudebot|perplexitybot|ahrefs|semrush|mj12|bytespider|petalbot|yandex|baiduspider|duckduckbot|applebot/i.test(navigator.userAgent || '');
+  } catch (e) { return false; }
+})();
+
 async function fetchLeadershipFromClaude(cert, bankName, city, state, webAddr) {
   try {
     const params = new URLSearchParams({
@@ -3113,6 +3124,7 @@ async function fetchLeadershipFromClaude(cert, bankName, city, state, webAddr) {
       state: state || '',
       webAddr: webAddr || '',
     });
+    if (VAULT_IS_BOT) params.set('peek', '1');
     const resp = await fetch(`/.netlify/functions/leadership?${params.toString()}`);
     if (!resp.ok) {
       console.warn('[vault-leadership] function returned HTTP', resp.status);
@@ -3219,6 +3231,7 @@ async function warmLeadershipForResults(results) {
     if (hit && people.length) renderLeadershipPeek(r.id, people[0]);
   });
 
+  if (VAULT_IS_BOT) return; // crawlers: cache peek only, no background enrichment
   const misses = peeked.filter(p => !p.hit).map(p => p.r).slice(0, 20);
   const CONCURRENCY = 5;
   for (let i = 0; i < misses.length; i += CONCURRENCY) {
@@ -3462,6 +3475,11 @@ function renderLeadershipSection(inst, officers, stock) {
     // public web presence — multiple related entities/divisions to sift through),
     // and the old message made that look identical to a small bank with no
     // online presence at all.
+    if (status === 'daily_limit') {
+      el.innerHTML = `<p style="color:var(--muted);font-size:13px;font-family:var(--mono);padding:8px 0;">Leadership lookups for new banks are at today’s limit. Check back tomorrow.</p>${webLinkHtml}`;
+      return;
+    }
+
     if (lookupError && (!people || !people.length)) {
       el.innerHTML = `
         <p style="color:#fbbf24;font-size:13px;font-family:var(--mono);padding:8px 0;">
