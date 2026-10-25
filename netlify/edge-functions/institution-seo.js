@@ -434,6 +434,7 @@ export default async (request, context) => {
         const x = await enrichBank(found);
         model.extraHtml = bankExtraHtml(found, x);
         model.enrichComplete = x.complete;
+        console.log(`[vault-seo] bank ${id} history=${(found.history || []).length} peers=${x.peers ? x.peers.list.length : 'fail'} counties=${x.footprint ? x.footprint.counties.length : 'fail'} hqShare=${x.hqShare ? x.hqShare.share.toFixed(1) : 'none'} insights=${bankInsights(found, x).length} complete=${x.complete}`);
       } catch { model.enrichComplete = false; }
     }
   } catch {
