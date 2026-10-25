@@ -2288,6 +2288,21 @@ function renderDetail() {
   if (!d) return '<div class="state-msg"><div class="spinner"></div><br>Loading…</div>';
 
   if (d.type === 'error') {
+    // Soft-404 fix (2026-10-25): if the edge prerender already delivered this
+    // institution's filed figures, show those instead of an error screen.
+    // Live FDIC calls can fail (rate limits — including when Google renders
+    // thousands of pages), and an error screen on a 200 page is a soft 404.
+    const pre = window.__vaultPrerender;
+    if (pre && pre.html && pre.path === location.pathname) {
+      return `
+      <div class="seo-fallback" style="max-width:860px;margin:0 auto;padding:32px 20px;line-height:1.6;">
+        <div style="background:rgba(77,184,255,0.08);border:1px solid rgba(77,184,255,0.3);border-radius:10px;padding:12px 16px;margin-bottom:24px;font-family:var(--mono);font-size:12px;color:var(--muted);display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+          <span>Live data is temporarily unavailable. Showing the most recent filed figures.</span>
+          <button onclick="location.reload()" style="padding:6px 14px;background:var(--accent);color:#0f1240;border:none;border-radius:6px;font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer;">↻ Try again</button>
+        </div>
+        ${pre.html}
+      </div>`;
+    }
     return `
       <div class="state-msg" style="text-align:center;padding:60px 20px;">
         <div style="font-size:48px;margin-bottom:16px;">⚠</div>
@@ -2924,6 +2939,12 @@ async function loadDetail(id, type) {
     }
   } catch(e) {
     state.detail = { type: 'error', msg: e.message };
+    // No prerendered figures for this path means the edge couldn't find the
+    // institution either: tell crawlers not to index the error screen.
+    const pre = window.__vaultPrerender;
+    if (!(pre && pre.path === location.pathname)) {
+      document.querySelector('meta[name="robots"]')?.setAttribute('content', 'noindex, follow');
+    }
   }
   render();
   // Update URL to full slug + set page meta once institution is loaded

@@ -109,7 +109,12 @@ exports.handler = async (event) => {
     }
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  // lastmod = first day of the current quarter. Call report data changes
+  // quarterly; stamping every URL with today's date told Google all ~12,500
+  // pages changed daily, inviting constant re-crawls and re-renders (each
+  // render hits FDIC from Google's renderer, which can rate-limit → errors).
+  const _d = new Date();
+  const today = `${_d.getUTCFullYear()}-${String(Math.floor(_d.getUTCMonth() / 3) * 3 + 1).padStart(2, '0')}-01`;
   const urls = STATIC_PATHS.map(p => ({ loc: `${SITE}${p}`, priority: p === '/' ? '1.0' : '0.8', changefreq: 'weekly' }));
   for (const st of STATE_SLUGS) {
     urls.push({ loc: `${SITE}/banks-in-${st}`, priority: '0.7', changefreq: 'monthly' });

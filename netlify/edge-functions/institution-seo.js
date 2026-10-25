@@ -25,6 +25,13 @@
 
 const FDIC_BASE = 'https://banks.data.fdic.gov/api';
 
+// Soft-404 fix (2026-10-25). Search Console flagged "Soft 404": every
+// /bank/* and /cu/* URL answered 200 even when the institution doesn't exist
+// or the prerender couldn't reach FDIC/NCUA, so Google saw an error screen
+// with a success status. Now: confirmed-missing → 404 + noindex; upstream
+// failure → 503 + Retry-After (Google retries instead of judging the page).
+const MISSING = Symbol('missing');
+
 // Google flagged these Dataset nodes: missing "description" (critical,
 // suppresses the rich result entirely) and missing "license" (non-critical
 // today, and Google's own notice warns non-critical issues can be
@@ -118,8 +125,11 @@ async function getBank(cert) {
     fetchJSON(`${FDIC_BASE}/institutions?filters=CERT%3A${cert}&fields=CERT,NAME,CITY,STALP,STNAME,ACTIVE,ESTYMD,WEBADDR,OFFDOM&limit=1`),
     fetchJSON(`${FDIC_BASE}/financials?filters=CERT%3A${cert}&fields=REPDTE,ASSET,DEP,LNLSNET,EQ,NETINC,ROA,ROE,NUMEMP&sort_by=REPDTE&sort_order=DESC&limit=1`),
   ]);
-  const i = inst?.data?.[0]?.data;
-  if (!i) return null;
+  // null  = FDIC unreachable/slow (we don't know) → caller answers 503
+  // MISSING = FDIC answered and this CERT does not exist → caller answers 404
+  if (!inst || !Array.isArray(inst.data)) return null;
+  const i = inst.data[0]?.data;
+  if (!i) return MISSING;
   return { kind: 'bank', ...i, latest: fin?.data?.[0]?.data || {} };
 }
 
@@ -127,8 +137,9 @@ async function getCU(id, origin) {
   // Reuses the site's own NCUA proxy rather than re-implementing the bulk
   // 5300 parse at the edge.
   const j = await fetchJSON(`${origin}/.netlify/functions/ncua?q=${encodeURIComponent(id)}&limit=1`, 6000);
-  const cu = j?.results?.[0];
-  return cu ? { kind: 'cu', ...cu, name: titleCaseName(cu.name) } : null;
+  if (!j || !Array.isArray(j.results)) return null; // NCUA proxy failed → 503
+  const cu = j.results[0];
+  return cu ? { kind: 'cu', ...cu, name: titleCaseName(cu.name) } : MISSING;
 }
 
 function buildBank(b) {
@@ -252,19 +263,35 @@ export default async (request, context) => {
   const [, kind, id] = m;
 
   let model = null;
+  let found = null;
   try {
-    if (kind === 'bank') {
-      const b = await getBank(id);
-      if (b) model = buildBank(b);
-    } else {
-      const c = await getCU(id, url.origin);
-      if (c) model = buildCU(c);
-    }
+    found = kind === 'bank' ? await getBank(id) : await getCU(id, url.origin);
+    if (found && found !== MISSING) model = kind === 'bank' ? buildBank(found) : buildCU(found);
   } catch {
     model = null;
   }
-  // Upstream hiccup must never break the page — fall through untouched.
-  if (!model) return response;
+
+  if (found === MISSING) {
+    // Real 404. Body is still the SPA, so a human sees the normal
+    // "Couldn't load that institution" screen with search/back buttons.
+    let body = await response.text();
+    body = body.replace(/<meta name="robots" content="[^"]*">/, '<meta name="robots" content="noindex, follow">');
+    const h = new Headers(response.headers);
+    h.set('cache-control', 'public, max-age=0, must-revalidate');
+    h.set('netlify-cdn-cache-control', 'public, s-maxage=3600');
+    return new Response(body, { status: 404, headers: h });
+  }
+
+  if (!model) {
+    // Upstream hiccup: we can't tell whether the page is good, so say so.
+    // Browsers render the body regardless of status (the SPA still loads its
+    // own data); crawlers get a retryable 503 instead of an empty 200.
+    const h = new Headers(response.headers);
+    h.set('retry-after', '3600');
+    h.set('cache-control', 'no-store');
+    h.set('netlify-cdn-cache-control', 'no-store');
+    return new Response(response.body, { status: 503, headers: h });
+  }
 
   // Both /bank/5962 and /bank/sutton-bank-attica-oh-5962 serve identical
   // content. Self-canonicalising each one leaves two indexable URLs per
@@ -351,7 +378,7 @@ export default async (request, context) => {
   no login or paywall, and the same data is available to AI agents through a public Model Context
   Protocol server at vaultbot.ai/mcp.</p>
 </div>
-<script>(function(){var e=document.getElementById('seo-prerender');if(e&&e.parentNode)e.parentNode.removeChild(e);})();</script>
+<script>(function(){var e=document.getElementById('seo-prerender');if(e&&e.parentNode){window.__vaultPrerender={path:location.pathname,html:e.innerHTML};e.parentNode.removeChild(e);}})();</script>
 <script type="application/ld+json">${JSON.stringify(model.jsonld)}</script>`;
 
   // index.html has <head> but NO </head> and NO opening <body> tag — the
