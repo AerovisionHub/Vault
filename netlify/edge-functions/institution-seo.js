@@ -123,14 +123,176 @@ async function fetchJSON(url, ms = 4000) {
 async function getBank(cert) {
   const [inst, fin] = await Promise.all([
     fetchJSON(`${FDIC_BASE}/institutions?filters=CERT%3A${cert}&fields=CERT,NAME,CITY,STALP,STNAME,ACTIVE,ESTYMD,WEBADDR,OFFDOM&limit=1`),
-    fetchJSON(`${FDIC_BASE}/financials?filters=CERT%3A${cert}&fields=REPDTE,ASSET,DEP,LNLSNET,EQ,NETINC,ROA,ROE,NUMEMP&sort_by=REPDTE&sort_order=DESC&limit=1`),
+    fetchJSON(`${FDIC_BASE}/financials?filters=CERT%3A${cert}&fields=REPDTE,ASSET,DEP,LNLSNET,EQ,NETINC,ROA,ROE,NIMY,RBC1AAJ,NCLNLSR,LNLSDEPR,NUMEMP&sort_by=REPDTE&sort_order=DESC&limit=8`),
   ]);
   // null  = FDIC unreachable/slow (we don't know) → caller answers 503
   // MISSING = FDIC answered and this CERT does not exist → caller answers 404
   if (!inst || !Array.isArray(inst.data)) return null;
   const i = inst.data[0]?.data;
   if (!i) return MISSING;
-  return { kind: 'bank', ...i, latest: fin?.data?.[0]?.data || {} };
+  const history = (fin?.data || []).map(r => r.data).filter(Boolean);
+  return { kind: 'bank', ...i, latest: history[0] || {}, history };
+}
+
+
+// ── Server-rendered enrichment (2026-10-25) ──────────────────────────────
+// Search Console: soft 404 + "crawled, currently not indexed" on bank pages.
+// The prerender was one paragraph of figures plus boilerplate, so pages read
+// as near-duplicates. This adds per-bank content no other page has: 8-quarter
+// history, a same-state size-band peer comparison with plain-English
+// insights, the bank's deposit footprint by county, and links to peer, state
+// and county pages. Query shapes are copied from proven MCP tools
+// (getLenderRankings, getBranchData, county SOD). Every block is optional:
+// a failed call drops that block, never the page.
+const FDIC_SOD = 'https://banks.data.fdic.gov/api/sod';
+
+function median(xs) {
+  const a = xs.filter(v => v != null && isFinite(v)).sort((x, y) => x - y);
+  if (!a.length) return null;
+  const m = Math.floor(a.length / 2);
+  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+}
+function qLabel(repdte) {
+  const s = String(repdte || '');
+  if (s.length !== 8) return s || '—';
+  return `Q${Math.ceil(Number(s.slice(4, 6)) / 3)} ${s.slice(0, 4)}`;
+}
+function countySlug(county, st) {
+  return `/banks-in-${String(county).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-county-${String(st).toLowerCase()}`;
+}
+function cmpWord(v, med, higherIsBetter = true) {
+  if (v == null || med == null || !isFinite(v) || !isFinite(med)) return null;
+  const diff = v - med;
+  if (Math.abs(diff) <= Math.max(Math.abs(med) * 0.05, 0.02)) return 'in line with';
+  return (diff > 0) === higherIsBetter ? 'above' : 'below';
+}
+
+async function enrichBank(b) {
+  const out = { complete: true };
+  const asset = Number(b.latest?.ASSET);
+  const st = String(b.STALP || '').toUpperCase();
+  const tasks = [];
+
+  // Peers: same state, 0.5x–2x total assets.
+  if (asset > 0 && st) {
+    const lo = Math.max(0, Math.floor(asset * 0.5)), hi = Math.ceil(asset * 2);
+    const f = `ACTIVE%3A1%20AND%20STALP%3A${st}%20AND%20ASSET%3A%5B${lo}%20TO%20${hi}%5D`;
+    tasks.push(Promise.all([
+      fetchJSON(`${FDIC_BASE}/institutions?filters=${f}&fields=NAME,CERT,CITY,STALP,ASSET&limit=100&sort_by=ASSET&sort_order=DESC`),
+      fetchJSON(`${FDIC_BASE}/financials?filters=${f}&fields=CERT,REPDTE,ROA,RBC1AAJ,NCLNLSR,NIMY,LNLSDEPR&limit=500&sort_by=REPDTE&sort_order=DESC`),
+    ]).then(([pi, pf]) => {
+      if (!pi?.data || !pf?.data) { out.complete = false; return; }
+      const latestByCert = new Map();
+      for (const r of pf.data) { const d = r.data; if (d && !latestByCert.has(String(d.CERT))) latestByCert.set(String(d.CERT), d); }
+      const peers = pi.data.map(r => r.data).filter(p => p && String(p.CERT) !== String(b.CERT))
+        .map(p => ({ ...p, fin: latestByCert.get(String(p.CERT)) || {} }));
+      out.peers = { lo, hi, list: peers };
+    }));
+  }
+
+  // Branch deposit footprint by county (latest SOD year), then HQ-county share.
+  tasks.push(fetchJSON(`${FDIC_SOD}?filters=CERT%3A${b.CERT}&fields=CERT,CNTYNAMB,STALPBR,DEPSUMBR,MAINOFF,YEAR&limit=500&sort_by=YEAR&sort_order=DESC`)
+    .then(async (sod) => {
+      if (!sod?.data) { out.complete = false; return; }
+      const rows = sod.data.map(r => r.data).filter(Boolean);
+      if (!rows.length) return;
+      const year = rows[0].YEAR;
+      const cur = rows.filter(r => r.YEAR === year);
+      const byCounty = new Map();
+      for (const r of cur) {
+        const k = `${r.CNTYNAMB}|${r.STALPBR}`;
+        const e = byCounty.get(k) || { county: r.CNTYNAMB, st: r.STALPBR, dep: 0, branches: 0, hq: false };
+        e.dep += Number(r.DEPSUMBR) || 0; e.branches += 1; if (Number(r.MAINOFF) === 1) e.hq = true;
+        byCounty.set(k, e);
+      }
+      const counties = [...byCounty.values()].filter(c => c.county).sort((a, b2) => b2.dep - a.dep);
+      out.footprint = { year, counties, branches: cur.length };
+      const hq = counties.find(c => c.hq) || counties[0];
+      if (!hq) return;
+      const cs = await fetchJSON(`${FDIC_SOD}?filters=CNTYNAMB%3A%22${encodeURIComponent(hq.county)}%22%20AND%20STALPBR%3A${hq.st}&fields=CERT,CNTYNAMB,STALPBR,DEPSUMBR,YEAR&limit=2000&sort_by=YEAR&sort_order=DESC`);
+      if (!cs?.data) { out.complete = false; return; }
+      const all = cs.data.map(r => r.data).filter(r => r && r.YEAR === year);
+      const tot = new Map();
+      for (const r of all) tot.set(String(r.CERT), (tot.get(String(r.CERT)) || 0) + (Number(r.DEPSUMBR) || 0));
+      const ranked = [...tot.entries()].sort((a, b2) => b2[1] - a[1]);
+      const sum = ranked.reduce((s, [, v]) => s + v, 0);
+      const idx = ranked.findIndex(([c]) => c === String(b.CERT));
+      if (sum > 0 && idx >= 0) out.hqShare = { county: hq.county, st: hq.st, year, share: ranked[idx][1] / sum * 100, rank: idx + 1, of: ranked.length };
+    }));
+
+  await Promise.all(tasks.map(t => t.catch(() => { out.complete = false; })));
+  return out;
+}
+
+function bankInsights(b, x) {
+  const L = b.latest || {}, H = b.history || [];
+  const name = b.NAME, q = qLabel(L.REPDTE), stName = STATE_NAMES[String(b.STALP || '').toUpperCase()] || b.STALP;
+  const ins = [];
+  const p = x.peers;
+  if (p && p.list.length >= 5) {
+    const band = `${p.list.length} ${stName} banks with ${fmtUSD(p.lo)}–${fmtUSD(p.hi)} in assets`;
+    const metrics = [
+      ['ROA', 'Return on assets', Number(L.ROA), true],
+      ['RBC1AAJ', 'The core capital (leverage) ratio', Number(L.RBC1AAJ), true],
+      ['NCLNLSR', 'Noncurrent loans as a share of total loans', Number(L.NCLNLSR), false],
+      ['NIMY', 'Net interest margin', Number(L.NIMY), true],
+    ];
+    for (const [k, label, v, hib] of metrics) {
+      if (L[k] == null || !isFinite(v)) continue;
+      const med = median(p.list.map(r => Number(r.fin?.[k])));
+      const w = cmpWord(v, med, hib);
+      if (!w) continue;
+      ins.push(`${label} was ${pct(v)} in ${q}, ${w} the ${pct(med)} median of ${band}.`);
+    }
+  }
+  if (H.length >= 5 && Number(H[4].ASSET) > 0 && Number(L.ASSET) > 0) {
+    const g = (Number(L.ASSET) / Number(H[4].ASSET) - 1) * 100;
+    ins.push(`Total assets ${g >= 0 ? 'grew' : 'declined'} ${Math.abs(g).toFixed(1)}% over the past year, from ${fmtUSD(H[4].ASSET)} in ${qLabel(H[4].REPDTE)} to ${fmtUSD(L.ASSET)} in ${q}.`);
+  }
+  if (H.length >= 5 && Number(H[4].DEP) > 0 && Number(L.DEP) > 0) {
+    const g = (Number(L.DEP) / Number(H[4].DEP) - 1) * 100;
+    ins.push(`Deposits ${g >= 0 ? 'grew' : 'declined'} ${Math.abs(g).toFixed(1)}% year over year to ${fmtUSD(L.DEP)}.`);
+  }
+  if (isFinite(Number(L.LNLSDEPR)) && L.LNLSDEPR != null) {
+    ins.push(`${name} lends out ${Number(L.LNLSDEPR).toFixed(1)} cents in loans for every dollar of deposits (loan-to-deposit ratio).`);
+  }
+  if (x.hqShare) {
+    const s = x.hqShare;
+    ins.push(`In ${s.county} County, ${s.st}, ${name} holds ${s.share.toFixed(1)}% of deposits, ranking #${s.rank} of ${s.of} institutions (FDIC Summary of Deposits, ${s.year}).`);
+  }
+  return ins;
+}
+
+function bankExtraHtml(b, x) {
+  const H = b.history || [];
+  const parts = [];
+  const ins = bankInsights(b, x);
+  if (ins.length) {
+    parts.push(`<section id="seo-insights"><h2>Key insights for ${esc(b.NAME)}</h2><ul>${ins.map(t => `<li>${esc(t)}</li>`).join('')}</ul></section>`);
+  }
+  if (H.length) {
+    const rows = H.map(r => `<tr><th scope="row">${esc(qLabel(r.REPDTE))}</th><td>${esc(fmtUSD(r.ASSET) || '—')}</td><td>${esc(fmtUSD(r.DEP) || '—')}</td><td>${esc(fmtUSD(r.NETINC) || '—')}</td><td>${esc(pct(r.ROA) || '—')}</td><td>${esc(pct(r.ROE) || '—')}</td></tr>`).join('');
+    parts.push(`<h2>Quarterly financial history</h2><table><caption>Last ${H.length} quarters, FDIC call reports (net income is year-to-date)</caption><thead><tr><th>Quarter</th><th>Total assets</th><th>Deposits</th><th>Net income (YTD)</th><th>ROA</th><th>ROE</th></tr></thead><tbody>${rows}</tbody></table>`);
+  }
+  const p = x.peers;
+  if (p && p.list.length) {
+    const L = b.latest || {};
+    const mrow = (label, k, fmt) => {
+      const med = median(p.list.map(r => Number(r.fin?.[k])));
+      return `<tr><th scope="row">${esc(label)}</th><td>${esc(fmt(L[k]) || '—')}</td><td>${esc(med == null ? '—' : fmt(med))}</td></tr>`;
+    };
+    const near = [...p.list].sort((a, c) => Math.abs(Number(a.ASSET) - Number(L.ASSET)) - Math.abs(Number(c.ASSET) - Number(L.ASSET))).slice(0, 8);
+    parts.push(`<h2>Peer comparison</h2><table><caption>${esc(b.NAME)} vs. the median of ${p.list.length} ${esc(STATE_NAMES[String(b.STALP).toUpperCase()] || b.STALP)} banks with ${esc(fmtUSD(p.lo))}–${esc(fmtUSD(p.hi))} in assets</caption><thead><tr><th>Metric</th><th>${esc(b.NAME)}</th><th>Peer median</th></tr></thead><tbody>${
+      mrow('Return on assets', 'ROA', pct) + mrow('Core capital (leverage) ratio', 'RBC1AAJ', pct) + mrow('Noncurrent loans / loans', 'NCLNLSR', pct) + mrow('Net interest margin', 'NIMY', pct) + mrow('Loans / deposits', 'LNLSDEPR', pct)
+    }</tbody></table>
+    <h3>Similar-sized banks in ${esc(STATE_NAMES[String(b.STALP).toUpperCase()] || b.STALP)}</h3><ul>${near.map(n => `<li><a href="/bank/${esc(slugify(n.NAME, n.CITY, n.STALP))}-${esc(n.CERT)}">${esc(n.NAME)}</a> — ${esc(n.CITY)}, ${esc(n.STALP)}, ${esc(fmtUSD(n.ASSET))} in assets</li>`).join('')}</ul>`);
+  }
+  const f = x.footprint;
+  if (f && f.counties.length) {
+    const rows = f.counties.slice(0, 10).map(c => `<tr><th scope="row"><a href="${esc(countySlug(c.county, c.st))}">${esc(c.county)} County, ${esc(c.st)}</a>${c.hq ? ' (headquarters)' : ''}</th><td>${c.branches}</td><td>${esc(fmtUSD(c.dep) || '—')}</td></tr>`).join('');
+    parts.push(`<h2>Deposit footprint by county</h2><p>${esc(b.NAME)} reported ${f.branches} office${f.branches === 1 ? '' : 's'} across ${f.counties.length} count${f.counties.length === 1 ? 'y' : 'ies'} in the ${esc(f.year)} FDIC Summary of Deposits.</p><table><caption>Deposits by county, FDIC Summary of Deposits ${esc(f.year)}</caption><thead><tr><th>County</th><th>Offices</th><th>Deposits</th></tr></thead><tbody>${rows}</tbody></table>`);
+  }
+  return parts.join('\n  ');
 }
 
 async function getCU(id, origin) {
@@ -267,6 +429,13 @@ export default async (request, context) => {
   try {
     found = kind === 'bank' ? await getBank(id) : await getCU(id, url.origin);
     if (found && found !== MISSING) model = kind === 'bank' ? buildBank(found) : buildCU(found);
+    if (model && kind === 'bank') {
+      try {
+        const x = await enrichBank(found);
+        model.extraHtml = bankExtraHtml(found, x);
+        model.enrichComplete = x.complete;
+      } catch { model.enrichComplete = false; }
+    }
   } catch {
     model = null;
   }
@@ -338,6 +507,7 @@ export default async (request, context) => {
 
   <h2>Key financial data for ${esc(model.h1)}</h2>
   ${factRows ? `<table><caption>Reported figures from ${esc(srcName)} filings</caption><tbody>${factRows}</tbody></table>` : ''}
+  ${model.extraHtml || ''}
   <p>These figures come directly from ${esc(srcLong)}, the quarterly regulatory reports every
   federally insured institution is required to file. Vault republishes them without modification
   and updates them as each reporting period is published. Figures are point-in-time as of the most
@@ -378,7 +548,7 @@ export default async (request, context) => {
   no login or paywall, and the same data is available to AI agents through a public Model Context
   Protocol server at vaultbot.ai/mcp.</p>
 </div>
-<script>(function(){var e=document.getElementById('seo-prerender');if(e&&e.parentNode){window.__vaultPrerender={path:location.pathname,html:e.innerHTML};e.parentNode.removeChild(e);}})();</script>
+<script>(function(){var e=document.getElementById('seo-prerender');if(e&&e.parentNode){var i=document.getElementById('seo-insights');window.__vaultPrerender={path:location.pathname,id:${JSON.stringify(String(id))},html:e.innerHTML,insights:i?i.innerHTML:''};e.parentNode.removeChild(e);}})();</script>
 <script type="application/ld+json">${JSON.stringify(model.jsonld)}</script>`;
 
   // index.html has <head> but NO </head> and NO opening <body> tag — the
@@ -398,7 +568,9 @@ export default async (request, context) => {
   // Cache at the CDN so the extra upstream calls are paid once per bank per
   // hour, not on every crawl. Call report data changes quarterly.
   headers.set('cache-control', 'public, max-age=0, must-revalidate');
-  headers.set('netlify-cdn-cache-control', 'public, s-maxage=3600, stale-while-revalidate=86400');
+  headers.set('netlify-cdn-cache-control', model.enrichComplete === false
+    ? 'public, s-maxage=3600, stale-while-revalidate=86400'
+    : 'public, durable, s-maxage=604800, stale-while-revalidate=604800');
 
   return new Response(html, { status: response.status, headers });
 };

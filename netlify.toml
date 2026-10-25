@@ -89,6 +89,13 @@
   status = 200
   force = true
 
+# Per-state child sitemaps listed by the /sitemap.xml index (2026-10-25).
+[[redirects]]
+  from = "/sitemaps/:part"
+  to = "/.netlify/functions/sitemap?part=:part"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/mcp"
   to = "/mcp.html"

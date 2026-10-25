@@ -2283,6 +2283,15 @@ function renderResults() {
     </div>`;
 }
 
+// Server-rendered "Key insights" (peer medians, growth, county share) from
+// the edge prerender — shown on the live page so users and Google's rendered
+// DOM both get them. 2026-10-25.
+function renderSeoInsights(inst) {
+  const pre = window.__vaultPrerender;
+  if (!pre || !pre.insights || String(pre.id) !== String(inst?.CERT)) return '';
+  return `<div class="section"><div class="section-title">Key Insights</div><div class="seo-insights" style="line-height:1.7;font-size:14px;">${pre.insights.replace(/<h2>[\s\S]*?<\/h2>/, '')}</div></div>`;
+}
+
 function renderDetail() {
   const d = state.detail;
   if (!d) return '<div class="state-msg"><div class="spinner"></div><br>Loading…</div>';
@@ -2479,6 +2488,8 @@ function renderBankDetail(d) {
         <div class="kpi-sub">Efficiency indicator</div>
       </div>
     </div>
+
+    ${renderSeoInsights(inst)}
 
     <div class="section">
       <div class="section-title">Institution Details</div>

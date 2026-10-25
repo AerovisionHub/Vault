@@ -69,7 +69,7 @@ async function fetchAllBanks() {
   const out = [];
   const pageSize = 1000;
   for (let offset = 0; offset < 8000; offset += pageSize) {
-    const url = `${FDIC_BASE}/institutions?filters=ACTIVE%3A1&fields=CERT,NAME,CITY,STALP&limit=${pageSize}&offset=${offset}&sort_by=CERT&sort_order=ASC`;
+    const url = `${FDIC_BASE}/institutions?filters=ACTIVE%3A1&fields=CERT,NAME,CITY,STALP,REPDTE&limit=${pageSize}&offset=${offset}&sort_by=CERT&sort_order=ASC`;
     const r = await fetch(url);
     if (!r.ok) break;
     const j = await r.json();
@@ -88,69 +88,82 @@ async function fetchAllCUs(origin) {
   return j.results || [];
 }
 
+// ── Sitemap index (2026-10-25) ────────────────────────────────────────────
+// /sitemap.xml is now a <sitemapindex>: /sitemaps/core.xml (static pages)
+// plus one /sitemaps/{st}.xml per state (state hub + every bank and CU HQ'd
+// there). Per-state files let Search Console report indexing by state, and
+// each bank's <lastmod> is its own latest call-report date (REPDTE) instead
+// of one date stamped on everything. Search Console flagged ~1,379 URLs as
+// "discovered, currently not indexed".
+const ABBR = {AL:'alabama',AK:'alaska',AZ:'arizona',AR:'arkansas',CA:'california',CO:'colorado',CT:'connecticut',DE:'delaware',DC:'district-of-columbia',FL:'florida',GA:'georgia',HI:'hawaii',ID:'idaho',IL:'illinois',IN:'indiana',IA:'iowa',KS:'kansas',KY:'kentucky',LA:'louisiana',ME:'maine',MD:'maryland',MA:'massachusetts',MI:'michigan',MN:'minnesota',MS:'mississippi',MO:'missouri',MT:'montana',NE:'nebraska',NV:'nevada',NH:'new-hampshire',NJ:'new-jersey',NM:'new-mexico',NY:'new-york',NC:'north-carolina',ND:'north-dakota',OH:'ohio',OK:'oklahoma',OR:'oregon',PA:'pennsylvania',RI:'rhode-island',SC:'south-carolina',SD:'south-dakota',TN:'tennessee',TX:'texas',UT:'utah',VT:'vermont',VA:'virginia',WA:'washington',WV:'west-virginia',WI:'wisconsin',WY:'wyoming',PR:'puerto-rico'};
+
+function isoDate(v) {
+  const s = String(v || '').trim();
+  let m;
+  if ((m = s.match(/^(\d{4})(\d{2})(\d{2})$/))) return `${m[1]}-${m[2]}-${m[3]}`;
+  if ((m = s.match(/^(\d{4})-(\d{2})-(\d{2})/))) return `${m[1]}-${m[2]}-${m[3]}`;
+  if ((m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/))) return `${m[3]}-${m[1]}-${m[2]}`;
+  return null;
+}
+function quarterStart() {
+  const d = new Date();
+  return `${d.getUTCFullYear()}-${String(Math.floor(d.getUTCMonth() / 3) * 3 + 1).padStart(2, '0')}-01`;
+}
+const XML_HDR = { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=3600' };
+function urlset(rows) {
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
+    rows.map(([loc, lm]) => `  <url><loc>${xmlEscape(loc)}</loc>${lm ? `<lastmod>${lm}</lastmod>` : ''}</url>`).join('\n') + `\n</urlset>\n`;
+}
+
+async function buildParts(origin) {
+  const banks = await fetchAllBanks().catch(e => { console.log('[sitemap] bank fetch failed:', e.message); return []; });
+  const cus = await fetchAllCUs(origin).catch(e => { console.log('[sitemap] cu fetch failed:', e.message); return []; });
+  const bankDates = banks.map(b => isoDate(b.REPDTE)).filter(Boolean).sort();
+  const latest = bankDates[bankDates.length - 1] || quarterStart();
+  const parts = { core: STATIC_PATHS.map(p => [`${SITE}${p}`, latest]) };
+  const add = (st, row) => { const k = String(st || '').toUpperCase(); if (!/^[A-Z]{2}$/.test(k)) return; (parts[k] = parts[k] || []).push(row); };
+  for (const [ab, slug] of Object.entries(ABBR)) add(ab, [`${SITE}/banks-in-${slug}`, latest]);
+  for (const b of banks) add(b.STALP, [`${SITE}/bank/${slugify(b.NAME, b.CITY, b.STALP)}-${b.CERT}`, isoDate(b.REPDTE) || latest]);
+  // NCUA's bulk file has no per-CU period field; CUs file on the same quarterly cycle.
+  for (const c of cus) add(c.state, [`${SITE}/cu/${slugify(c.name, c.city, c.state)}-${c.id}`, latest]);
+  console.log(`[sitemap] built ${Object.keys(parts).length} parts (${banks.length} banks, ${cus.length} CUs), latest ${latest}`);
+  return { parts, banks: banks.length, cus: cus.length };
+}
+
 exports.handler = async (event) => {
   const origin = `https://${event.headers.host || 'vaultbot.ai'}`;
+  const qs = event.queryStringParameters || {};
+  const src = `${qs.part || ''} ${event.rawUrl || ''} ${event.path || ''}`;
+  const pm = src.match(/(?:^|\/|\s)(core|[a-z]{2})(?:\.xml)?(?:\s|$|\?)/i);
+  const part = qs.part ? String(qs.part).replace(/\.xml$/i, '') : (/\/sitemaps\//.test(src) && pm ? pm[1] : null);
+
   const store = await getStore();
-
-  // ?refresh=1 forces a rebuild. Without it, a bad generation stays served
-  // for a full day with no way to correct it short of waiting out the TTL —
-  // which is exactly what happened when the credit-union fetch came back
-  // empty and the result was cached anyway.
-  const refresh = (event.queryStringParameters || {}).refresh === '1';
-
-  if (store && !refresh) {
+  let data = null;
+  if (store && qs.refresh !== '1') {
     try {
-      const cached = await store.get('sitemap-xml', { type: 'json' });
-      if (cached && cached._at && Date.now() - cached._at < CACHE_TTL_MS) {
-        return { statusCode: 200, headers: { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=3600' }, body: cached.xml };
-      }
-    } catch (e) {
-      console.log('[sitemap] cache read failed:', e.message);
+      const c = await store.get('sitemap-v2', { type: 'json' });
+      if (c && c._at && Date.now() - c._at < CACHE_TTL_MS) data = c;
+    } catch (e) { console.log('[sitemap] cache read failed:', e.message); }
+  }
+  if (!data) {
+    data = await buildParts(origin);
+    if (store && data.banks > 1000 && data.cus > 1000) {
+      store.setJSON('sitemap-v2', { ...data, _at: Date.now() }).catch(e => console.log('[sitemap] cache write failed:', e.message));
     }
   }
 
-  // lastmod = first day of the current quarter. Call report data changes
-  // quarterly; stamping every URL with today's date told Google all ~12,500
-  // pages changed daily, inviting constant re-crawls and re-renders (each
-  // render hits FDIC from Google's renderer, which can rate-limit → errors).
-  const _d = new Date();
-  const today = `${_d.getUTCFullYear()}-${String(Math.floor(_d.getUTCMonth() / 3) * 3 + 1).padStart(2, '0')}-01`;
-  const urls = STATIC_PATHS.map(p => ({ loc: `${SITE}${p}`, priority: p === '/' ? '1.0' : '0.8', changefreq: 'weekly' }));
-  for (const st of STATE_SLUGS) {
-    urls.push({ loc: `${SITE}/banks-in-${st}`, priority: '0.7', changefreq: 'monthly' });
+  if (part) {
+    const key = part.toLowerCase() === 'core' ? 'core' : part.toUpperCase();
+    const rows = data.parts[key];
+    if (!rows) return { statusCode: 404, headers: { 'Content-Type': 'text/plain' }, body: 'Not found' };
+    return { statusCode: 200, headers: XML_HDR, body: urlset(rows.slice(0, SITEMAP_URL_CAP)) };
   }
 
-  let banks = [], cus = [];
-  try { banks = await fetchAllBanks(); } catch (e) { console.log('[sitemap] bank fetch failed:', e.message); }
-  try { cus = await fetchAllCUs(origin); } catch (e) { console.log('[sitemap] cu fetch failed:', e.message); }
-
-  for (const b of banks) {
-    const slug = slugify(b.NAME, b.CITY, b.STALP);
-    urls.push({ loc: `${SITE}/bank/${slug}-${b.CERT}`, priority: '0.6', changefreq: 'monthly' });
-  }
-  for (const c of cus) {
-    const slug = slugify(c.name, c.city, c.state);
-    urls.push({ loc: `${SITE}/cu/${slug}-${c.id}`, priority: '0.6', changefreq: 'monthly' });
-  }
-
-  if (urls.length > SITEMAP_URL_CAP) {
-    console.log(`[sitemap] WARNING ${urls.length} urls exceeds cap ${SITEMAP_URL_CAP}; truncating. Split into a sitemap index.`);
-    urls.length = SITEMAP_URL_CAP;
-  }
-
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
-    urls.map(u => `  <url><loc>${xmlEscape(u.loc)}</loc><lastmod>${today}</lastmod><changefreq>${u.changefreq}</changefreq><priority>${u.priority}</priority></url>`).join('\n') +
-    `\n</urlset>\n`;
-
-  console.log(`[sitemap] generated ${urls.length} urls (${banks.length} banks, ${cus.length} CUs)`);
-
-  // Only cache a generation that actually pulled both rosters. Caching a
-  // partial result pins the failure in place for 24 hours.
-  if (store && banks.length > 1000 && cus.length > 1000) {
-    store.setJSON('sitemap-xml', { xml, _at: Date.now() }).catch(e => console.log('[sitemap] cache write failed:', e.message));
-  } else {
-    console.log(`[sitemap] NOT caching partial result (banks=${banks.length}, cus=${cus.length})`);
-  }
-
-  return { statusCode: 200, headers: { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=3600' }, body: xml };
+  const keys = Object.keys(data.parts).sort((a, b) => (a === 'core' ? -1 : b === 'core' ? 1 : a.localeCompare(b)));
+  const body = `<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
+    keys.map(k => {
+      const lm = data.parts[k].map(r => r[1]).filter(Boolean).sort().pop();
+      return `  <sitemap><loc>${SITE}/sitemaps/${k === 'core' ? 'core' : k.toLowerCase()}.xml</loc>${lm ? `<lastmod>${lm}</lastmod>` : ''}</sitemap>`;
+    }).join('\n') + `\n</sitemapindex>\n`;
+  return { statusCode: 200, headers: XML_HDR, body };
 };
