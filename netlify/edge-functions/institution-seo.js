@@ -176,7 +176,7 @@ async function enrichBank(b) {
   // Peers: same state, 0.5x–2x total assets.
   if (asset > 0 && st) {
     const lo = Math.max(0, Math.floor(asset * 0.5)), hi = Math.ceil(asset * 2);
-    const f = `ACTIVE%3A1%20AND%20STALP%3A${st}%20AND%20ASSET%3A%5B${lo}%20TO%20${hi}%5D`;
+    const f = `ACTIVE%3A1%20AND%20STALP%3A%22${st}%22%20AND%20ASSET%3A%5B${lo}%20TO%20${hi}%5D`;
     tasks.push(Promise.all([
       fetchJSON(`${FDIC_BASE}/institutions?filters=${f}&fields=NAME,CERT,CITY,STALP,ASSET&limit=100&sort_by=ASSET&sort_order=DESC`),
       fetchJSON(`${FDIC_BASE}/financials?filters=${f}&fields=CERT,REPDTE,ROA,RBC1AAJ,NCLNLSR,NIMY,LNLSDEPR&limit=500&sort_by=REPDTE&sort_order=DESC`),
@@ -209,7 +209,7 @@ async function enrichBank(b) {
       out.footprint = { year, counties, branches: cur.length };
       const hq = counties.find(c => c.hq) || counties[0];
       if (!hq) return;
-      const cs = await fetchJSON(`${FDIC_SOD}?filters=CNTYNAMB%3A%22${encodeURIComponent(hq.county)}%22%20AND%20STALPBR%3A${hq.st}&fields=CERT,CNTYNAMB,STALPBR,DEPSUMBR,YEAR&limit=2000&sort_by=YEAR&sort_order=DESC`);
+      const cs = await fetchJSON(`${FDIC_SOD}?filters=CNTYNAMB%3A%22${encodeURIComponent(hq.county)}%22%20AND%20STALPBR%3A%22${hq.st}%22&fields=CERT,CNTYNAMB,STALPBR,DEPSUMBR,YEAR&limit=2000&sort_by=YEAR&sort_order=DESC`);
       if (!cs?.data) { out.complete = false; return; }
       const all = cs.data.map(r => r.data).filter(r => r && r.YEAR === year);
       const tot = new Map();
@@ -289,7 +289,10 @@ function bankExtraHtml(b, x) {
   }
   const f = x.footprint;
   if (f && f.counties.length) {
-    const rows = f.counties.slice(0, 10).map(c => `<tr><th scope="row"><a href="${esc(countySlug(c.county, c.st))}">${esc(c.county)} County, ${esc(c.st)}</a>${c.hq ? ' (headquarters)' : ''}</th><td>${c.branches}</td><td>${esc(fmtUSD(c.dep) || '—')}</td></tr>`).join('');
+    // Territories (GU, MP, FM, PW…) have no county hub pages — plain text there.
+    const cLabel = c => `${esc(c.county)} County, ${esc(c.st)}`;
+    const cCell = c => STATE_NAMES[String(c.st).toUpperCase()] ? `<a href="${esc(countySlug(c.county, c.st))}">${cLabel(c)}</a>` : cLabel(c);
+    const rows = f.counties.slice(0, 10).map(c => `<tr><th scope="row">${cCell(c)}${c.hq ? ' (headquarters)' : ''}</th><td>${c.branches}</td><td>${esc(fmtUSD(c.dep) || '—')}</td></tr>`).join('');
     parts.push(`<h2>Deposit footprint by county</h2><p>${esc(b.NAME)} reported ${f.branches} office${f.branches === 1 ? '' : 's'} across ${f.counties.length} count${f.counties.length === 1 ? 'y' : 'ies'} in the ${esc(f.year)} FDIC Summary of Deposits.</p><table><caption>Deposits by county, FDIC Summary of Deposits ${esc(f.year)}</caption><thead><tr><th>County</th><th>Offices</th><th>Deposits</th></tr></thead><tbody>${rows}</tbody></table>`);
   }
   return parts.join('\n  ');

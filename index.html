@@ -1303,7 +1303,7 @@ async function fetchPeers(inst, history) {
 
   try {
     // First try: same state, similar assets
-    let url = `${FDIC_BASE}/institutions?filters=STALP%3A${state}%20AND%20ACTIVE%3A1%20AND%20ASSET%3A%5B${minAssets}%20TO%20${maxAssets}%5D&fields=${fields}&limit=30&sort_by=ASSET&sort_order=DESC`;
+    let url = `${FDIC_BASE}/institutions?filters=STALP%3A%22${state}%22%20AND%20ACTIVE%3A1%20AND%20ASSET%3A%5B${minAssets}%20TO%20${maxAssets}%5D&fields=${fields}&limit=30&sort_by=ASSET&sort_order=DESC`;
     let data = await fetchFDIC(url).catch(() => ({ data: [] }));
     let peers = (data.data || [])
       .map(d => d.data)
@@ -2721,7 +2721,7 @@ function bindEvents() {
 async function searchByState(stateCode) {
   const fields = 'NAME,CERT,CITY,STALP,ASSET,REPDTE,ACTIVE,WEBADDR';
 
-  const bankPromise = fetch(`${FDIC_BASE}/institutions?filters=STALP%3A${stateCode}%20AND%20ACTIVE%3A1&fields=${fields}&limit=200&sort_by=ASSET&sort_order=DESC`)
+  const bankPromise = fetch(`${FDIC_BASE}/institutions?filters=STALP%3A%22${stateCode}%22%20AND%20ACTIVE%3A1&fields=${fields}&limit=200&sort_by=ASSET&sort_order=DESC`)
     .then(r => r.json())
     .then(data => (data.data || []).map(d => d.data).filter(Boolean).map(d => ({
       type: 'bank',
@@ -4226,7 +4226,7 @@ async function runLenderSearch() {
       // further (e.g. ZIP prefix for the metro area + city to disambiguate
       // a metro that spans multiple cities).
       const instFields = 'NAME,CERT,CITY,STALP,ZIP,ASSET,ACTIVE';
-      const stateFilter = stateVal ? `%20AND%20STALP%3A${stateVal}` : '';
+      const stateFilter = stateVal ? `%20AND%20STALP%3A%22${stateVal}%22` : '';
       const cityFilter = cityTerm ? `%20AND%20CITY%3A${encodeURIComponent(cityTerm)}*` : '';
       const zipFilter = zipPrefix ? `%20AND%20ZIP%3A${encodeURIComponent(zipPrefix)}*` : '';
       // Need at least one real filter term to anchor the query -- if only
@@ -4256,7 +4256,7 @@ async function runLenderSearch() {
       filters = `(${certFilter})`;
     } else {
       filters = `ACTIVE%3A1%20AND%20ASSET%3A%5B${minA}%20TO%20${maxA}%5D`;
-      if (stateVal) filters += `%20AND%20STALP%3A${stateVal}`;
+      if (stateVal) filters += `%20AND%20STALP%3A%22${stateVal}%22`;
     }
 
     const url = `${FDIC_BASE}/financials?filters=${filters}&fields=${finFields}&limit=500&sort_by=REPDTE&sort_order=DESC`;

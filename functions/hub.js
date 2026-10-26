@@ -138,7 +138,7 @@ footer a{color:#4db8ff;}
 
 async function buildState(abbr, origin) {
   const [name, fips] = STATES[abbr];
-  const banksRaw = await j(`${FDIC_BASE}/institutions?filters=STALP%3A${abbr}%20AND%20ACTIVE%3A1&fields=CERT,NAME,CITY,STALP,ASSET,DEP,OFFDOM&limit=250&sort_by=ASSET&sort_order=DESC`);
+  const banksRaw = await j(`${FDIC_BASE}/institutions?filters=STALP%3A%22${abbr}%22%20AND%20ACTIVE%3A1&fields=CERT,NAME,CITY,STALP,ASSET,DEP,OFFDOM&limit=250&sort_by=ASSET&sort_order=DESC`);
   const banks = (banksRaw?.data || []).map(d => d.data).filter(Boolean);
   const total = banksRaw?.meta?.total ?? banks.length;
 
@@ -150,7 +150,7 @@ async function buildState(abbr, origin) {
 
   // Counties the state's banks actually operate in, from the branch file —
   // this is what creates the crawl path down to county hubs.
-  const sod = await j(`${FDIC_BASE}/sod?filters=STALPBR%3A${abbr}&fields=CNTYNAMB,STCNTYBR,YEAR&limit=2000&sort_by=YEAR&sort_order=DESC`);
+  const sod = await j(`${FDIC_BASE}/sod?filters=STALPBR%3A%22${abbr}%22&fields=CNTYNAMB,STCNTYBR,YEAR&limit=10000&sort_by=YEAR&sort_order=DESC`);
   const sodRows = (sod?.data || []).map(d => d.data).filter(Boolean);
   const latestYr = sodRows.length ? Math.max(...sodRows.map(r => Number(r.YEAR) || 0)) : null;
   const counties = [...new Map(sodRows.filter(r => Number(r.YEAR) === latestYr)
@@ -232,11 +232,27 @@ paywall. The same data is available to AI agents through a public Model Context 
   return shell({ title, desc, canonical: `https://vaultbot.ai/banks-in-${name.toLowerCase().replace(/\s+/g, '-')}`, body, jsonld });
 }
 
+// County links are built by slugifying the FDIC's own CNTYNAMB, so resolve a
+// slug back by slugifying the state's real county names and matching — never
+// by guessing. Guessing broke every name with punctuation: "st-charles" →
+// "St Charles" ≠ "St. Charles"; also Ste. Genevieve, O'Brien, Miami-Dade,
+// Prince of Wales-Hyder and Virginia's independent cities (Search Console
+// "Not found (404)", 2026-10-26).
+function countySlugOf(c) {
+  return String(c || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+async function resolveCountyName(countySlug, abbr) {
+  const r = await j(`${FDIC_BASE}/sod?filters=STALPBR%3A%22${abbr}%22&fields=CNTYNAMB,YEAR&limit=10000&sort_by=YEAR&sort_order=DESC`);
+  const hit = (r?.data || []).map(d => d.data).find(x => x && x.CNTYNAMB && countySlugOf(x.CNTYNAMB) === countySlug);
+  return hit ? hit.CNTYNAMB : null;
+}
+
 async function buildCounty(countySlug, abbr) {
   const [stateName] = STATES[abbr];
-  const countyGuess = countySlug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  const countyGuess = (await resolveCountyName(countySlug, abbr))
+    || countySlug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
-  const sod = await j(`${FDIC_BASE}/sod?filters=CNTYNAMB%3A%22${encodeURIComponent(countyGuess)}%22%20AND%20STALPBR%3A${abbr}&fields=CERT,NAMEFULL,CNTYNAMB,STCNTYBR,DEPSUMBR,YEAR&limit=2000&sort_by=YEAR&sort_order=DESC`);
+  const sod = await j(`${FDIC_BASE}/sod?filters=CNTYNAMB%3A%22${encodeURIComponent(countyGuess)}%22%20AND%20STALPBR%3A%22${abbr}%22&fields=CERT,NAMEFULL,CNTYNAMB,STCNTYBR,DEPSUMBR,YEAR&limit=2000&sort_by=YEAR&sort_order=DESC`);
   const rows = (sod?.data || []).map(d => d.data).filter(Boolean);
   if (!rows.length) return null;
 

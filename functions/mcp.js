@@ -950,7 +950,7 @@ async function searchInstitutions(args) {
   const stopWords = new Set(['of','the','and','a','an','at','in','for','by','to','&']);
   const words = query.replace(/^the\s+/i,'').split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w.toLowerCase()));
 
-  const stateFilter = state ? `%20AND%20STALP%3A${state.toUpperCase()}` : '';
+  const stateFilter = state ? `%20AND%20STALP%3A%22${state.toUpperCase()}%22` : '';
   const urls = [
     `${FDIC_BASE}/institutions?search=${encodeURIComponent(query)}&fields=${fields}&limit=${max}&sort_by=ASSET&sort_order=DESC&filters=ACTIVE%3A1${stateFilter}`,
   ];
@@ -1173,7 +1173,7 @@ async function getLenderRankings(args) {
   };
   const range = sizeRanges[asset_size] || sizeRanges.community;
   let instFilters = `ACTIVE%3A1%20AND%20ASSET%3A%5B${range}%5D`;
-  if (state) instFilters += `%20AND%20STALP%3A${state.toUpperCase()}`;
+  if (state) instFilters += `%20AND%20STALP%3A%22${state.toUpperCase()}%22`;
   if (city)  instFilters += `%20AND%20CITY%3A${encodeURIComponent(city)}*`;
 
   const fields    = 'NAME,CERT,CITY,STALP,ASSET,WEBADDR';
@@ -1521,7 +1521,7 @@ async function getBranchData(args) {
   const fieldsSafe = 'CERT,NAMEFULL,CITYBR,STALPBR,DEPSUMBR,MAINOFF,YEAR';
 
   let branchFilters = `CERT%3A${cert}`;
-  if (state) branchFilters += `%20AND%20STALPBR%3A${state.toUpperCase()}`;
+  if (state) branchFilters += `%20AND%20STALPBR%3A%22${state.toUpperCase()}%22`;
 
   let rows;
   let usedFullFields = true;
@@ -1678,7 +1678,7 @@ async function getCountyDepositShare(args) {
     const cached = await cacheGet(cacheKey);
     if (cached) return { ...cached, _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) } };
 
-    const nameFilter = `CNTYNAMB%3A%22${encodeURIComponent(county)}%22%20AND%20STALPBR%3A${st}`;
+    const nameFilter = `CNTYNAMB%3A%22${encodeURIComponent(county)}%22%20AND%20STALPBR%3A%22${st}%22`;
     let year, probe;
     try {
       year = await latestSodYear(nameFilter);
@@ -2224,7 +2224,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.21.2',
+        name: 'vault-mcp', version: '1.21.3',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -2279,7 +2279,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: negotiatedProtocol,
-          serverInfo: { name: 'vault-mcp', version: '1.21.2' },
+          serverInfo: { name: 'vault-mcp', version: '1.21.3' },
           capabilities: { tools: {} },
         });
       }
