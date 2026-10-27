@@ -2224,7 +2224,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.21.3',
+        name: 'vault-mcp', version: '1.22.0',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -2279,14 +2279,14 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: negotiatedProtocol,
-          serverInfo: { name: 'vault-mcp', version: '1.21.3' },
+          serverInfo: { name: 'vault-mcp', version: '1.22.0' },
           capabilities: { tools: {} },
         });
       }
 
       case 'tools/list':
         await safeLog({ method, durationMs: Date.now()-t0, success: true });
-        return reply({ tools: TOOLS });
+        return reply({ tools: TOOLS.map(t => ({ ...t, annotations: t.name === 'trigger_linkedin_match' ? { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true } : { readOnlyHint: true, idempotentHint: true, openWorldHint: true } })) });
 
       case 'tools/call': {
         const { name, arguments: args } = params || {};
