@@ -121,10 +121,16 @@ async function fetchJSON(url, ms = 4000) {
 }
 
 async function getBank(cert) {
-  const [inst, fin] = await Promise.all([
-    fetchJSON(`${FDIC_BASE}/institutions?filters=CERT%3A${cert}&fields=CERT,NAME,CITY,STALP,STNAME,ACTIVE,ESTYMD,WEBADDR,OFFDOM&limit=1`),
-    fetchJSON(`${FDIC_BASE}/financials?filters=CERT%3A${cert}&fields=REPDTE,ASSET,DEP,LNLSNET,EQ,NETINC,ROA,ROE,NIMY,RBC1AAJ,NCLNLSR,LNLSDEPR,NUMEMP&sort_by=REPDTE&sort_order=DESC&limit=8`),
-  ]);
+  const instURL = `${FDIC_BASE}/institutions?filters=CERT%3A${cert}&fields=CERT,NAME,CITY,STALP,STNAME,ACTIVE,ESTYMD,WEBADDR,OFFDOM&limit=1`;
+  const finURL = `${FDIC_BASE}/financials?filters=CERT%3A${cert}&fields=REPDTE,ASSET,DEP,LNLSNET,EQ,NETINC,ROA,ROE,NIMY,RBC1AAJ,NCLNLSR,LNLSDEPR,NUMEMP&sort_by=REPDTE&sort_order=DESC&limit=8`;
+  let [inst, fin] = await Promise.all([fetchJSON(instURL), fetchJSON(finURL)]);
+  // FDIC throttling is bursty: two short backoffs clear most of it before we
+  // fall back to a 503 (2026-11-02; 503s were ~1.5% of crawler traffic).
+  for (const wait of [400, 1200]) {
+    if (inst && fin) break;
+    await new Promise(r => setTimeout(r, wait));
+    [inst, fin] = await Promise.all([inst || fetchJSON(instURL), fin || fetchJSON(finURL)]);
+  }
   // null  = FDIC unreachable/slow (we don't know) → caller answers 503
   // MISSING = FDIC answered and this CERT does not exist → caller answers 404
   if (!inst || !Array.isArray(inst.data)) return null;
@@ -145,6 +151,32 @@ async function getBank(cert) {
 // (getLenderRankings, getBranchData, county SOD). Every block is optional:
 // a failed call drops that block, never the page.
 const FDIC_SOD = 'https://banks.data.fdic.gov/api/sod';
+
+// Peer bands are fixed asset buckets (in $ thousands, as FDIC reports) rather
+// than a per-bank 0.5x–2x window, so every bank in the same state + bucket
+// asks FDIC the identical question and the memo below can answer it once.
+const ASSET_BUCKETS = [0, 50e3, 100e3, 250e3, 500e3, 1e6, 3e6, 10e6, 50e6, 1e10];
+function assetBucket(asset) {
+  for (let i = 0; i < ASSET_BUCKETS.length - 1; i++) {
+    if (asset < ASSET_BUCKETS[i + 1]) return { lo: ASSET_BUCKETS[i], hi: ASSET_BUCKETS[i + 1] };
+  }
+  return { lo: ASSET_BUCKETS[ASSET_BUCKETS.length - 2], hi: ASSET_BUCKETS[ASSET_BUCKETS.length - 1] };
+}
+// Per-isolate memo (edge isolates are reused across requests for a while).
+// Crawlers walk the per-state sitemaps, so consecutive requests share a state
+// and often a bucket/county. Only successful responses are stored.
+const MEMO = new Map();
+const MEMO_TTL_MS = 6 * 60 * 60 * 1000;
+async function memoJSON(url, ms) {
+  const hit = MEMO.get(url);
+  if (hit && Date.now() - hit.at < MEMO_TTL_MS) return hit.v;
+  const v = await fetchJSON(url, ms);
+  if (v) {
+    if (MEMO.size >= 300) MEMO.delete(MEMO.keys().next().value);
+    MEMO.set(url, { at: Date.now(), v });
+  }
+  return v;
+}
 
 function median(xs) {
   const a = xs.filter(v => v != null && isFinite(v)).sort((x, y) => x - y);
@@ -175,18 +207,18 @@ async function enrichBank(b) {
 
   // Peers: same state, 0.5x–2x total assets.
   if (asset > 0 && st) {
-    const lo = Math.max(0, Math.floor(asset * 0.5)), hi = Math.ceil(asset * 2);
+    const { lo, hi } = assetBucket(asset);
     const f = `ACTIVE%3A1%20AND%20STALP%3A%22${st}%22%20AND%20ASSET%3A%5B${lo}%20TO%20${hi}%5D`;
     tasks.push(Promise.all([
-      fetchJSON(`${FDIC_BASE}/institutions?filters=${f}&fields=NAME,CERT,CITY,STALP,ASSET&limit=100&sort_by=ASSET&sort_order=DESC`),
-      fetchJSON(`${FDIC_BASE}/financials?filters=${f}&fields=CERT,REPDTE,ROA,RBC1AAJ,NCLNLSR,NIMY,LNLSDEPR&limit=500&sort_by=REPDTE&sort_order=DESC`),
+      memoJSON(`${FDIC_BASE}/institutions?filters=${f}&fields=NAME,CERT,CITY,STALP,ASSET&limit=100&sort_by=ASSET&sort_order=DESC`),
+      memoJSON(`${FDIC_BASE}/financials?filters=${f}&fields=CERT,REPDTE,ROA,RBC1AAJ,NCLNLSR,NIMY,LNLSDEPR&limit=500&sort_by=REPDTE&sort_order=DESC`),
     ]).then(([pi, pf]) => {
       if (!pi?.data || !pf?.data) { out.complete = false; return; }
       const latestByCert = new Map();
       for (const r of pf.data) { const d = r.data; if (d && !latestByCert.has(String(d.CERT))) latestByCert.set(String(d.CERT), d); }
       const peers = pi.data.map(r => r.data).filter(p => p && String(p.CERT) !== String(b.CERT))
         .map(p => ({ ...p, fin: latestByCert.get(String(p.CERT)) || {} }));
-      out.peers = { lo, hi, list: peers };
+      out.peers = { lo, hi, list: peers, band: hi >= 1e10 ? `over ${fmtUSD(lo)}` : lo === 0 ? `under ${fmtUSD(hi)}` : `${fmtUSD(lo)}–${fmtUSD(hi)}` };
     }));
   }
 
@@ -209,7 +241,7 @@ async function enrichBank(b) {
       out.footprint = { year, counties, branches: cur.length };
       const hq = counties.find(c => c.hq) || counties[0];
       if (!hq) return;
-      const cs = await fetchJSON(`${FDIC_SOD}?filters=CNTYNAMB%3A%22${encodeURIComponent(hq.county)}%22%20AND%20STALPBR%3A%22${hq.st}%22&fields=CERT,CNTYNAMB,STALPBR,DEPSUMBR,YEAR&limit=2000&sort_by=YEAR&sort_order=DESC`);
+      const cs = await memoJSON(`${FDIC_SOD}?filters=CNTYNAMB%3A%22${encodeURIComponent(hq.county)}%22%20AND%20STALPBR%3A%22${hq.st}%22&fields=CERT,CNTYNAMB,STALPBR,DEPSUMBR,YEAR&limit=2000&sort_by=YEAR&sort_order=DESC`);
       if (!cs?.data) { out.complete = false; return; }
       const all = cs.data.map(r => r.data).filter(r => r && r.YEAR === year);
       const tot = new Map();
@@ -230,7 +262,7 @@ function bankInsights(b, x) {
   const ins = [];
   const p = x.peers;
   if (p && p.list.length >= 5) {
-    const band = `${p.list.length} ${stName} banks with ${fmtUSD(p.lo)}–${fmtUSD(p.hi)} in assets`;
+    const band = `${p.list.length} ${stName} banks with ${p.band} in assets`;
     const metrics = [
       ['ROA', 'Return on assets', Number(L.ROA), true],
       ['RBC1AAJ', 'The core capital (leverage) ratio', Number(L.RBC1AAJ), true],
@@ -282,7 +314,7 @@ function bankExtraHtml(b, x) {
       return `<tr><th scope="row">${esc(label)}</th><td>${esc(fmt(L[k]) || '—')}</td><td>${esc(med == null ? '—' : fmt(med))}</td></tr>`;
     };
     const near = [...p.list].sort((a, c) => Math.abs(Number(a.ASSET) - Number(L.ASSET)) - Math.abs(Number(c.ASSET) - Number(L.ASSET))).slice(0, 8);
-    parts.push(`<h2>Peer comparison</h2><table><caption>${esc(b.NAME)} vs. the median of ${p.list.length} ${esc(STATE_NAMES[String(b.STALP).toUpperCase()] || b.STALP)} banks with ${esc(fmtUSD(p.lo))}–${esc(fmtUSD(p.hi))} in assets</caption><thead><tr><th>Metric</th><th>${esc(b.NAME)}</th><th>Peer median</th></tr></thead><tbody>${
+    parts.push(`<h2>Peer comparison</h2><table><caption>${esc(b.NAME)} vs. the median of ${p.list.length} ${esc(STATE_NAMES[String(b.STALP).toUpperCase()] || b.STALP)} banks with ${esc(p.band)} in assets</caption><thead><tr><th>Metric</th><th>${esc(b.NAME)}</th><th>Peer median</th></tr></thead><tbody>${
       mrow('Return on assets', 'ROA', pct) + mrow('Core capital (leverage) ratio', 'RBC1AAJ', pct) + mrow('Noncurrent loans / loans', 'NCLNLSR', pct) + mrow('Net interest margin', 'NIMY', pct) + mrow('Loans / deposits', 'LNLSDEPR', pct)
     }</tbody></table>
     <h3>Similar-sized banks in ${esc(STATE_NAMES[String(b.STALP).toUpperCase()] || b.STALP)}</h3><ul>${near.map(n => `<li><a href="/bank/${esc(slugify(n.NAME, n.CITY, n.STALP))}-${esc(n.CERT)}">${esc(n.NAME)}</a> — ${esc(n.CITY)}, ${esc(n.STALP)}, ${esc(fmtUSD(n.ASSET))} in assets</li>`).join('')}</ul>`);
@@ -581,4 +613,8 @@ export default async (request, context) => {
 
 export const config = {
   path: ['/bank/*', '/cu/*'],
+  // Required for the netlify-cdn-cache-control headers below to take effect.
+  // Without it every request re-ran the function (~6 FDIC calls per crawler
+  // hit), FDIC throttled us, and pages fell back to 503. 2026-11-02.
+  cache: 'manual',
 };
