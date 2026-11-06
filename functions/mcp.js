@@ -2,7 +2,7 @@
 // Implements MCP (Model Context Protocol) over HTTP using JSON-RPC 2.0
 // Spec: https://modelcontextprotocol.io/
 
-const VAULT_MCP_VERSION = '1.24.2';
+const VAULT_MCP_VERSION = '1.24.3';
 const FDIC_BASE = 'https://api.fdic.gov/banks';
 // Summary of Deposits — separate FDIC dataset (annual branch-level census, as of each June 30).
 // Same query syntax as FDIC_BASE (filters=field%3Avalue&fields=...&limit=...&sort_by=...&sort_order=...).
@@ -54,6 +54,8 @@ async function fetchFDIC(url, opts = {}) {
 const TOOLS = [
   {
     name: 'search_institutions',
+    title: 'Search banks & credit unions',
+    annotations: { title: 'Search banks & credit unions', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     description: 'Search FDIC-insured banks and credit unions by name, city, or partial match. Returns up to 20 results ranked by relevance and asset size. Typically responds in 2-4 seconds. Use this first to get a CERT number before calling other tools.',
     inputSchema: {
       type: 'object',
@@ -67,6 +69,8 @@ const TOOLS = [
   },
   {
     name: 'get_bank_profile',
+    title: 'Bank profile & financial history',
+    annotations: { title: 'Bank profile & financial history', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     description: 'Get detailed profile for a single FDIC-insured bank by certificate number (CERT). Returns institution details, latest financials (assets, deposits, ROA, ROE, NIM, capital ratio), and by default the latest 8 quarters. For long-run trends, pass start_year (back to 1992) to rebuild history from that year — with frequency:"annual" you get one Dec-31 row per year (period_label "FY2019") plus the latest partial quarter flagged is_partial_year, or frequency:"quarterly" for every quarter (capped at the most recent 40). Note: call-report net income is year-to-date as of each report_date (net_income_ytd), so compare full years to full years; ROA/ROE are FDIC-annualized. Grain notes: call reports are quarterly — no public source has monthly deposits or loans; announced acquisitions do not appear in FDIC data until they close. Typically responds in 3-6 seconds. Always run search_institutions first to get the CERT.',
     inputSchema: {
       type: 'object',
@@ -80,6 +84,8 @@ const TOOLS = [
   },
   {
     name: 'get_industry_metrics',
+    title: 'Industry metrics',
+    annotations: { title: 'Industry metrics', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     description: 'Get aggregate U.S. banking industry metrics — total banks, total assets, average ROA/ROE/NIM, and trends. Note: this tool scans up to 5,000 bank records and typically takes 8-15 seconds. Let the user know it may take a moment before calling. If using Perplexity, this tool will likely time out — recommend using Claude Desktop for industry-level queries.',
     inputSchema: {
       type: 'object',
@@ -90,6 +96,8 @@ const TOOLS = [
   },
   {
     name: 'get_recent_charters',
+    title: 'New bank charters',
+    annotations: { title: 'New bank charters', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     description: 'List newly chartered FDIC-insured banks (de novo banks). Returns bank name, location, charter date, charter agent, asset size, and holding company. Typically responds in 2-4 seconds.',
     inputSchema: {
       type: 'object',
@@ -100,6 +108,8 @@ const TOOLS = [
   },
   {
     name: 'get_ma_activity',
+    title: 'Bank M&A activity',
+    annotations: { title: 'Bank M&A activity', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     description: 'List recent bank mergers, acquisitions, and failures from FDIC regulatory filings. Returns acquirer, acquired institution, effective date, and transaction type. Typically responds in 2-4 seconds.',
     inputSchema: {
       type: 'object',
@@ -111,6 +121,8 @@ const TOOLS = [
   },
   {
     name: 'get_lender_rankings',
+    title: 'Lender rankings',
+    annotations: { title: 'Lender rankings', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     description: 'Get banks ranked by composite Lending Score (loan concentration + capital strength + asset quality + ROA). Filter by state, city, or asset size tier. Typically responds in 4-8 seconds — fetches and scores up to 100 institutions. Let the user know it may take a moment before calling. Note: if using Perplexity, this tool may time out on broad queries — narrow by state or city for best results.',
     inputSchema: {
       type: 'object',
@@ -125,6 +137,8 @@ const TOOLS = [
   },
   {
     name: 'get_asset_quality_detail',
+    title: 'Asset quality detail',
+    annotations: { title: 'Asset quality detail', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     description: 'Get detailed credit quality breakdown for a specific bank: noncurrent loans, OREO (foreclosed real estate), loan loss reserves, net charge-offs, and key ratios. Returns up to 8 quarters of history. Typically responds in 3-6 seconds. Use to answer "is this bank having credit problems?" or assess reserve adequacy.',
     inputSchema: {
       type: 'object',
@@ -137,6 +151,8 @@ const TOOLS = [
   },
   {
     name: 'get_loan_mix',
+    title: 'Loan mix & CRE concentration',
+    annotations: { title: 'Loan mix & CRE concentration', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     description: 'Get loan portfolio composition for a specific bank: Real Estate (residential, commercial RE with owner-occupied / non-owner-occupied split, construction, multifamily, farmland), C&I, Agricultural, and Consumer, plus ag_total (ag production + farmland). Returns dollar amounts and % of total loans, and the regulatory CRE concentration test against total risk-based capital (construction >= 100%, total CRE >= 300% with 50% 36-month growth, FDIC FIL-22-2006) — distinct from cre_and_construction_pct_of_loans, which is a share of loans. Pass quarters for the latest N (max 8), or start_year (back to 1992) with frequency:"annual" / "quarterly" to rebuild the mix over many years (period_label per row; latest partial year flagged). Typically responds in 3-6 seconds. Use to understand lending strategy or CRE concentration risk and how it has shifted over time. Call reports are quarterly; no public source has monthly loan data.',
     inputSchema: {
       type: 'object',
@@ -151,6 +167,8 @@ const TOOLS = [
   },
   {
     name: 'get_brokered_deposits',
+    title: 'Brokered deposits',
+    annotations: { title: 'Brokered deposits', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     description: 'Get brokered deposit levels and funding-risk detail for a specific bank: dollar amount, percent of total deposits, and trend over up to 8 quarters. Brokered deposits (funds a bank buys from a broker rather than gathering from local depositors) are a widely-watched funding-risk indicator — high or fast-growing levels can signal liquidity stress or an aggressive growth strategy funded by less-stable "hot money." Typically responds in 3-6 seconds. Use to answer "how reliant is this bank on brokered funding?" or assess deposit funding quality.',
     inputSchema: {
       type: 'object',
@@ -163,6 +181,8 @@ const TOOLS = [
   },
   {
     name: 'get_branch_data',
+    title: 'Branch footprint & history',
+    annotations: { title: 'Branch footprint & history', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     description: 'Get branch-level location and deposit data for a specific bank from the FDIC Summary of Deposits (SOD) — the annual branch-level census FDIC-insured banks file every June. Returns branch count, total branch deposits, and a list of individual branches with address, city, state, deposits, service type (FDIC office type: full service, limited service facility/administrative, etc.), established date, and whether it is the main office (sorted first). A $0-deposit site is usually a limited-service office that books no deposits of its own, flagged with zero_deposits, not a dead branch. Pass `year` for a single past SOD year, or `start_year`+`end_year` to rebuild the footprint annually across years — multi-year returns per-year totals (by_year) plus a per-branch history keyed by FDIC branch number, so openings, closures and relocations show as gaps. Typically responds in 3-6 seconds. Use to answer "how many branches," "where does this bank operate," "which branches hold the most deposits," or "how has the branch footprint changed over time." Very large banks (over ~1,200 branch-years on file) return the top branches by deposits plus per-year totals with truncated:true — pass `state` for complete lists. Grain notes: SOD is one snapshot per year (June 30), so branch-level history is annual only — no public source has sub-annual branch data; and SOD lists physical branches, not loan production offices.',
     inputSchema: {
       type: 'object',
@@ -179,6 +199,8 @@ const TOOLS = [
   },
   {
     name: 'get_county_deposit_share',
+    title: 'County deposit market share',
+    annotations: { title: 'County deposit market share', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     description: 'Get deposit market share and competitive rank by county, from the FDIC Summary of Deposits. Two ways to call it. (1) Pass `cert` to see every county a bank operates in, with its deposits, market share, rank, number of competing banks, and the top competitor in each — answers "where is this bank strong or weak," "which markets does it dominate," and "who is beating it in its own backyard." (2) Pass `county` plus `state` to get the full ranked leaderboard of every bank operating in that county — answers "who holds deposit share in this market" and "who would we compete against if we entered." Use the county name alone, without the word "County" (e.g. "Tulsa", not "Tulsa County"). All deposit figures are in thousands of dollars. Standard uses: Community Reinvestment Act deposit market-share analysis, M&A target screening, branch expansion and market-entry planning, and peer benchmarking within a footprint. Note: SOD is an annual filing as of each June 30, so this reflects the most recent annual snapshot, not real-time deposits. Pass start_year (and optionally end_year) for share and rank by year — e.g. how a bank\'s position in each market moved over five years; multi-year is capped at the most recent 5 years and the bank\'s top 10 counties, and an uncached multi-year call can exceed Perplexity\'s 15-second tool limit. Typically responds in 3-8 seconds; a bank spanning many counties takes longer, since each county is ranked separately.',
     inputSchema: {
       type: 'object',
@@ -194,6 +216,8 @@ const TOOLS = [
   },
   {
     name: 'get_county_demographics',
+    title: 'County demographics',
+    annotations: { title: 'County demographics', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     description: 'Get county-level demographic and housing data from the U.S. Census Bureau American Community Survey (ACS 5-year): population, median household income, median family income, median home value, total/owner-occupied/renter-occupied housing units, poverty rate, and unemployment rate. Three ways to call it: `county` plus `state` for one county, `county_fips` for a direct 5-digit state+county FIPS lookup, or `cert` to get demographics for every county a bank operates in (joined through its FDIC branch footprint). Pair it with get_county_deposit_share to build a full market profile: deposit share and competitive rank from one, the demographics of that market from the other, keyed on the same county. Standard uses: Community Reinvestment Act performance evaluations (median FAMILY income is the basis for low/moderate-income thresholds, and is returned separately from household income), branch expansion and market-entry analysis, and assessing lending opportunity in a market. Use the county name without the word "County" (e.g. "Davidson", not "Davidson County"); Louisiana parishes and Alaska boroughs are handled too. Note: ACS is a rolling 5-year survey estimate, not a point-in-time count, and suppressed values are returned as null rather than Census\'s negative sentinel codes.',
     inputSchema: {
       type: 'object',
@@ -207,6 +231,8 @@ const TOOLS = [
   },
   {
     name: 'get_hmda_lending',
+    title: 'HMDA mortgage lending',
+    annotations: { title: 'HMDA mortgage lending', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     description: 'Get mortgage lending activity from CFPB HMDA data: originations, denials, withdrawals, dollar volume and denial rate. Two ways to call it: `cert` for one bank\'s lending record (the FDIC certificate is resolved to the lender\'s LEI automatically — you never need an LEI), or `county` plus `state` / `county_fips` for all lending in a market. Pair with get_county_deposit_share and get_county_demographics to build a full Community Reinvestment Act picture: who holds deposits, who the market is, and who is actually lending in it. Also a credit-appetite and growth signal for M&A screening and vendor targeting. Defaults to the most recent published year. IMPORTANT coverage note to pass on when a bank returns nothing: roughly half of active banks have an LEI recorded with the FDIC (around 94% above \$5B in assets, about 10% under \$100M), and smaller banks often fall under HMDA reporting thresholds and legitimately do not file — an empty result usually means the bank is small, not that the data is broken. Denial rate is computed against decisioned applications only and excludes purchased loans, which are bought from other lenders rather than decided by this bank.',
     inputSchema: {
       type: 'object',
@@ -221,6 +247,8 @@ const TOOLS = [
   },
   {
     name: 'get_bank_leadership',
+    title: 'Bank leadership contacts',
+    annotations: { title: 'Bank leadership contacts', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     description: 'Get key decision-makers for a specific bank, prioritized for B2B sales targeting: CEO/President, CIO/CTO (or closest functional equivalent at smaller banks), and COO -- each with name, title, role_category, source URL, and (when found) a LinkedIn profile URL. Useful for building sales target lists: call search_institutions or get_lender_rankings first to find candidate banks matching your criteria, then call this for each one to build out contacts ready for outreach. On an uncached bank, the FIRST call returns almost instantly (1-2 seconds) with status: "pending" -- enrichment runs in the background (can take 30 seconds to a few minutes, longer for banks with generic/common names) rather than blocking the call. Call this same tool again with the same cert a little later to check; it returns the finished result once ready, or another pending status if still running. Repeat calls on an already-resolved bank return in ~150ms (cached 30 days). linkedin_source tells you how a LinkedIn match was confirmed -- "brightdata_verified" (matched by name+company search, verified against real work history) or "ai_search_scrape_verified" (found via an AI web search, then independently confirmed by scraping that exact profile to check its real data) -- both are safe to use for outreach; null means no LinkedIn URL was found. Nothing is ever returned as an unverified guess. Returns an empty people list when no confident public leadership data can be found for the bank at all.',
     inputSchema: {
       type: 'object',
@@ -232,6 +260,8 @@ const TOOLS = [
   },
   {
     name: 'get_bank_leadership_bulk',
+    title: 'Bank leadership (bulk, cached only)',
+    annotations: { title: 'Bank leadership (bulk, cached only)', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     description: 'Cache-only batch read of leadership data for many banks at once — instant (typically well under 2 seconds for dozens of certs), because it never runs the live Claude+Bright Data pipeline, only reads whatever is already cached. Built for bulk workflows: e.g. call search_institutions or get_lender_rankings to build a list of banks matching criteria (state, asset size, etc.), then call this once with all their CERTs to see what leadership data already exists. Returns per-cert results plus a top-level `cache_misses` array of CERTs with nothing cached yet — for those, call get_bank_leadership individually (which DOES run the live pipeline) to populate them, then re-call this to get the fresh data. This is the fast first pass for building a report or spreadsheet across many banks; it does not itself trigger any new lookups or incur any Bright Data / Claude cost.',
     inputSchema: {
       type: 'object',
@@ -243,6 +273,8 @@ const TOOLS = [
   },
   {
     name: 'trigger_linkedin_match',
+    title: 'Start LinkedIn profile match',
+    annotations: { title: 'Start LinkedIn profile match', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     description: 'Kick off a LinkedIn profile match for one named person at a company -- fast (a few seconds), does NOT wait for the match to complete. Returns a snapshot_id. Available to any user, for a single person or many. Pass the bank cert too (strongly recommended) -- doing so saves the result permanently once found, so this exact person never needs to be looked up again by anyone. After calling this, wait about a minute, then call check_linkedin_match. For bulk workflows processing many banks: call this once per priority-role person across ALL banks first, collecting every snapshot_id, THEN wait 30-60 seconds before checking any -- checking immediately wastes calls, and batching triggers before waiting lets them all process in parallel.',
     inputSchema: {
       type: 'object',
@@ -256,6 +288,8 @@ const TOOLS = [
   },
   {
     name: 'check_linkedin_match',
+    title: 'Check LinkedIn match status',
+    annotations: { title: 'Check LinkedIn match status', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     description: 'Check whether a LinkedIn match started with trigger_linkedin_match is ready, and return the profile URL if so. Fast (a couple seconds) — does NOT wait/poll internally, just checks current status once and returns immediately. Returns {status:"running"} if not ready yet (wait ~15-20 seconds before checking again — checking too frequently wastes calls without helping), {status:"ready", linkedin_url:"..."} once found, or {status:"not_found"} if the search completed but found no match. Most matches complete within 1-3 minutes of being triggered; a few take longer. If trigger_linkedin_match was called with a cert, a ready result here also saves the match into the shared cache automatically — nothing further needed to make it permanent. For a bulk spreadsheet workflow, trigger all people across all banks first, then loop checking the pending ones every 15-20 seconds until all are resolved (ready, not_found, or a reasonable give-up point like 5 minutes) rather than checking one at a time.',
     inputSchema: {
       type: 'object',
@@ -2913,8 +2947,9 @@ exports.handler = async (event) => {
       }
 
       case 'tools/list':
+        // Per-tool title + annotations live on each TOOLS entry (required by the Microsoft 365 Copilot connector program).
         await safeLog({ method, durationMs: Date.now()-t0, success: true });
-        return reply({ tools: TOOLS.map(t => ({ ...t, annotations: t.name === 'trigger_linkedin_match' ? { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true } : { readOnlyHint: true, idempotentHint: true, openWorldHint: true } })) });
+        return reply({ tools: TOOLS.map(t => ({ ...t, annotations: t.annotations || { readOnlyHint: true, idempotentHint: true, openWorldHint: true } })) });
 
       case 'tools/call': {
         const { name, arguments: args } = params || {};
