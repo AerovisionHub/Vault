@@ -2,7 +2,7 @@
 // Implements MCP (Model Context Protocol) over HTTP using JSON-RPC 2.0
 // Spec: https://modelcontextprotocol.io/
 
-const VAULT_MCP_VERSION = '1.24.3';
+const VAULT_MCP_VERSION = '1.24.5';
 const FDIC_BASE = 'https://api.fdic.gov/banks';
 // Summary of Deposits — separate FDIC dataset (annual branch-level census, as of each June 30).
 // Same query syntax as FDIC_BASE (filters=field%3Avalue&fields=...&limit=...&sort_by=...&sort_order=...).
@@ -1494,7 +1494,7 @@ async function mapLimit(items, limit, fn) {
 // supplementary_field_coverage in the response). Fetched in a separate query
 // so an unknown field name can never break the core loan-mix answer.
 const LOANMIX_SUPP_KNOWN = ['LNRECONS', 'LNREMULT', 'LNRENRES'];
-const LOANMIX_SUPP_NEW = ['LNREAG', 'LNRENROW', 'LNRENROT', 'RBCT1J', 'RBCT2', 'RBC', 'RWAJ', 'RBCRWAJ'];
+const LOANMIX_SUPP_NEW = ['LNREAG', 'LNRENROW', 'LNRENROT', 'RBCT1J', 'RBCT2', 'RBC', 'RWAJ', 'RBCRWAJ', 'CBLRIND'];
 
 async function fetchLoanMixSupplement(cert, fromRepdte) {
   const base = `${FDIC_BASE}/financials?filters=CERT%3A${cert}%20AND%20REPDTE%3A%5B${fromRepdte}%20TO%20*%5D&limit=200&sort_by=REPDTE&sort_order=DESC`;
@@ -1538,8 +1538,8 @@ async function getLoanMix(args) {
 
   // v51 prefix: the 5.1 response shape differs, so it must not serve a cached 5.0 body.
   const cacheKey = useHistory
-    ? `loan-mix-v51-${cert}-${freq}-sy${Number(start_year)}`
-    : `loan-mix-v51-${cert}-q${max}`;
+    ? `loan-mix-v52-${cert}-${freq}-sy${Number(start_year)}`
+    : `loan-mix-v52-${cert}-q${max}`;
   const cached = await cacheGet(cacheKey);
   if (cached) return { ...cached, _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) } };
 
@@ -1588,6 +1588,13 @@ async function getLoanMix(args) {
   // Total risk-based capital, with the formula used recorded honestly.
   const capitalOf = (s) => {
     if (!s) return { value: null, basis: null };
+    // Community bank leverage ratio (CBLR) banks don't report risk-based capital:
+    // FDIC returns RBC = 0 and RWAJ = 0 but a real RBCT1J. Falling through to
+    // tier 1 would publish an estimate the spec forbids (found 2026-11-06 on
+    // cert 10012; ~1,800 banks). CBLRIND is the flag; RBC=0 & RWAJ=0 is the backstop.
+    const rwaj = numOrNull(s.RWAJ);
+    if (numOrNull(s.CBLRIND) === 1 || (numOrNull(s.RBC) === 0 && (rwaj === 0 || rwaj == null)))
+      return { value: null, basis: 'CBLR bank: no risk-based capital reported, so capital-based ratios are null (not estimated)' };
     const rbc = numOrNull(s.RBC);
     if (rbc != null && rbc > 0) return { value: rbc, basis: 'RBC (total risk-based capital)' };
     const t1 = numOrNull(s.RBCT1J), t2 = numOrNull(s.RBCT2);
@@ -2228,7 +2235,7 @@ async function getCountyDepositShareHistory(args) {
     const { years, capped, hi } = resolveHistoryYears(start_year, end_year, latest);
     const cacheKey = `county-share-hist-${st}-${String(county).toLowerCase()}-${years[0]}_${hi}-l${max}`;
     const cached = await cacheGet(cacheKey);
-    if (cached) return { ...cached, _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) } };
+    if (cached) return { ...cached, capped: capped ? `Range capped to the most recent ${COUNTY_HIST_MAX_YEARS} years.` : null, _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) } };
 
     const got = await fetchCountyRowsForYears(nameFilter, years);
     if (!got.rows.length) throw new Error(`No FDIC branch data found for county "${county}" in ${st} for ${years[0]}–${hi}.`);
@@ -2257,7 +2264,7 @@ async function getCountyDepositShareHistory(args) {
   const { years, capped, hi } = resolveHistoryYears(start_year, end_year, latest);
   const cacheKey = `county-share-hist-cert-${cert}-${years[0]}_${hi}`;
   const cached = await cacheGet(cacheKey);
-  if (cached) return { ...cached, _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) } };
+  if (cached) return { ...cached, capped: capped ? `Range capped to the most recent ${COUNTY_HIST_MAX_YEARS} years.` : null, _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) } };
 
   // The bank's own branches for each year (proven equality filter), so a
   // county the bank entered or left mid-range still shows up.
