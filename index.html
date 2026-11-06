@@ -1547,6 +1547,95 @@ function fmtPeriod(dateStr) {
   return month + '/' + year;
 }
 
+// Branch footprint: one FDIC Summary of Deposits aggregation call returns
+// branch count + branch deposits for every June 30 filing since 1994, even for
+// the largest banks (JPMorgan's 111k branch-year rows come back in ~0.25s).
+// Counts include limited-service offices, matching the MCP's branch_count.
+const BRANCH_HIST = {}; // cert -> null (loading) | { rows } | { error }; survives state.detail being replaced
+function renderBranchFootprint(d) {
+  const cert = d?.inst?.CERT || d?.cert;
+  const msg = document.getElementById('branchChartMsg');
+  if (!cert || !msg) return;
+  if (BRANCH_HIST[cert] === undefined) {
+    BRANCH_HIST[cert] = null; // loading
+    fetchFDIC(`${FDIC_BASE}/sod?filters=CERT%3A${encodeURIComponent(cert)}&agg_by=YEAR&agg_sum_fields=DEPSUMBR&agg_limit=60&limit=0`)
+      .then(j => {
+        const rows = (j?.data || []).map(x => x.data || {})
+          .map(r => ({ year: Number(r.YEAR), branches: Number(r.count) || 0, deposits: Number(r.sum_DEPSUMBR) || 0 }))
+          .filter(r => r.year).sort((a, b) => a.year - b.year);
+        BRANCH_HIST[cert] = { rows };
+      })
+      .catch(err => { BRANCH_HIST[cert] = { error: String(err?.message || err) }; })
+      .then(() => { const cur = state.detail; if (cur && (cur.inst?.CERT || cur.cert) == cert) drawBranchFootprint(cur); });
+    return;
+  }
+  if (BRANCH_HIST[cert]) drawBranchFootprint(d);
+}
+
+function drawBranchFootprint(d) {
+  const canvas = document.getElementById('branchChart');
+  const msg = document.getElementById('branchChartMsg');
+  const sum = document.getElementById('branchSummary');
+  if (!canvas || !msg) return;
+  const h = BRANCH_HIST[d?.inst?.CERT || d?.cert] || {};
+  if (h.error) {
+    // A failed load is not the same as "no branches" (bug #15): say which, and offer a retry.
+    msg.innerHTML = `<span style="color:#fbbf24;">Branch data didn't load from the FDIC. <a href="#" style="color:var(--accent);" onclick="delete BRANCH_HIST['${d?.inst?.CERT || d?.cert}'];renderBranchFootprint(state.detail);return false;">Try again</a></span>`;
+    msg.style.display = 'flex';
+    return;
+  }
+  const rows = h.rows || [];
+  if (!rows.length) {
+    msg.textContent = 'No Summary of Deposits filings on record for this institution.';
+    msg.style.display = 'flex';
+    return;
+  }
+  msg.style.display = 'none';
+  const first = rows[0], last = rows[rows.length - 1];
+  const peakDep = Math.max(...rows.map(r => r.deposits), 0) * 1000;
+  const unit = peakDep >= 1e12 ? { div: 1e12, s: 'T', dp: 2 } : peakDep >= 1e9 ? { div: 1e9, s: 'B', dp: 1 } : peakDep >= 1e6 ? { div: 1e6, s: 'M', dp: 0 } : { div: 1e3, s: 'K', dp: 0 };
+  const fmt$ = v => '$' + (v * 1000 / unit.div).toFixed(unit.dp) + unit.s;
+  if (sum) {
+    const verb = last.branches > first.branches ? 'up from' : last.branches < first.branches ? 'down from' : 'unchanged from';
+    sum.textContent = `${last.branches.toLocaleString()} ${last.branches === 1 ? 'branch' : 'branches'} in ${last.year}, ${verb} ${first.branches.toLocaleString()} in ${first.year}. Branch deposits ${fmt$(last.deposits)}. Counts include limited-service offices.`;
+  }
+  if (canvas._chartInstance) canvas._chartInstance.destroy();
+  canvas._chartInstance = new Chart(canvas.getContext('2d'), {
+    data: {
+      labels: rows.map(r => String(r.year)),
+      datasets: [
+        { type: 'bar', label: 'Branches', data: rows.map(r => r.branches), yAxisID: 'yBranches',
+          backgroundColor: 'rgba(77,184,255,0.35)', borderColor: '#4db8ff', borderWidth: 1, borderRadius: 3, order: 2 },
+        { type: 'line', label: 'Branch deposits', data: rows.map(r => r.deposits * 1000 / unit.div), yAxisID: 'yDeposits',
+          borderColor: '#b06ef3', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 2, pointHoverRadius: 5,
+          pointBackgroundColor: '#b06ef3', tension: 0.3, order: 1 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'top', align: 'end', labels: { color: '#6b7bb0', font: { family: 'DM Mono', size: 11 }, boxWidth: 12, padding: 12, usePointStyle: true, pointStyleWidth: 8 } },
+        tooltip: { backgroundColor: '#12152a', borderColor: '#252d52', borderWidth: 1, titleColor: '#e8eaf6', bodyColor: '#6b7bb0',
+          titleFont: { family: 'DM Mono', size: 12 }, bodyFont: { family: 'DM Mono', size: 11 }, padding: 12,
+          callbacks: { label: c => c.dataset.yAxisID === 'yBranches' ? ` Branches: ${c.parsed.y.toLocaleString()}` : ` Branch deposits: $${c.parsed.y.toFixed(unit.dp)}${unit.s}` } },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#6b7bb0', font: { family: 'DM Mono', size: 11 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 9 }, border: { color: '#252d52' } },
+        yBranches: { type: 'linear', position: 'left', beginAtZero: true, grid: { color: '#252d52', lineWidth: 0.5 },
+          ticks: { color: '#6b7bb0', font: { family: 'DM Mono', size: 11 }, precision: 0 }, border: { color: '#252d52' } },
+        yDeposits: { type: 'linear', position: 'right', beginAtZero: true, grid: { display: false },
+          ticks: { color: '#6b7bb0', font: { family: 'DM Mono', size: 11 }, callback: v => '$' + v + unit.s }, border: { color: '#252d52' } },
+      },
+    },
+  });
+  const wrap = document.getElementById('branchChartWrap');
+  if (wrap && window.ResizeObserver && !wrap._ro) {
+    wrap._ro = new ResizeObserver(() => canvas._chartInstance && canvas._chartInstance.resize());
+    wrap._ro.observe(wrap);
+  }
+}
+
 function renderHistoryChart(history) {
   const canvas = document.getElementById('historyChart');
   if (!canvas || !history || history.length < 2) return;
@@ -2018,6 +2107,9 @@ function render() {
         wrap._ro.observe(wrap);
       }
     }, 50);
+  }
+  if (state.view === 'detail' && state.detail?.type === 'bank') {
+    setTimeout(() => renderBranchFootprint(state.detail), 60);
   }
   if (state.view === 'detail' && state.detail?.type === 'cu' && state.detail.raw?.assets) {
     setTimeout(() => {
@@ -2522,6 +2614,16 @@ function renderBankDetail(d) {
         </div>
       </div>
     </div>` : ''}
+    <div class="section" id="branchSection">
+      <div class="section-title">Branch Footprint</div>
+      <div id="branchSummary" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin:-4px 0 10px;">Branches and branch deposits from each June 30 Summary of Deposits filing</div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:8px;position:relative;">
+        <div id="branchChartWrap" style="position:relative;width:100%;height:clamp(160px,40vw,240px);">
+          <canvas id="branchChart" role="img" aria-label="Branch count and branch deposits by year"></canvas>
+          <div id="branchChartMsg" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 16px;font-family:var(--mono);font-size:12px;color:var(--muted);"><div class="spinner"></div></div>
+        </div>
+      </div>
+    </div>
     ${renderNewsSection(inst.NAME, inst.CITY, inst.STALP)}
     ${renderLeadershipSection(inst, d.officers, d.stock)}
     ${d.peers && d.peers.length > 0 ? renderPeers(d.peers, inst, latest) : '<div class="peer-loading"><div class="spinner"></div> Loading market peers…</div>'}`;
