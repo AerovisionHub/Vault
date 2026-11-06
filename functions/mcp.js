@@ -2,7 +2,7 @@
 // Implements MCP (Model Context Protocol) over HTTP using JSON-RPC 2.0
 // Spec: https://modelcontextprotocol.io/
 
-const VAULT_MCP_VERSION = '1.25.0';
+const VAULT_MCP_VERSION = '1.25.1';
 const FDIC_BASE = 'https://api.fdic.gov/banks';
 // Summary of Deposits — separate FDIC dataset (annual branch-level census, as of each June 30).
 // Same query syntax as FDIC_BASE (filters=field%3Avalue&fields=...&limit=...&sort_by=...&sort_order=...).
@@ -1732,7 +1732,7 @@ async function getLoanMix(args) {
       categories: 'Five top-level loan categories. Percentages are of gross loans & leases.',
       real_estate_breakdown: 'RE subcategories break out the key types regulators watch. When farmland is available, other_re_loans holds any residual so the subcategories sum to the real estate total.',
       ag_exposure: 'ag_total = agricultural production loans + farmland. Ag banks look far less ag-heavy if only the production line is read.',
-      cre_concentration: 'cre_and_construction_pct_of_loans is a share of LOANS, not the regulatory test. The regulatory test (FDIC FIL-22-2006) is measured against total risk-based capital: construction & land >= 100%, or total CRE (construction + multifamily + non-owner-occupied nonfarm nonresidential) >= 300% with >= 50% growth over 36 months. Those ratios are construction_pct_of_risk_based_capital and regulatory_cre_pct_of_risk_based_capital. Loans to finance CRE not secured by real estate are not in public call-report summaries and are excluded. commercial_re_concentration_percent is a deprecated alias of cre_and_construction_pct_of_loans.',
+      cre_concentration: 'cre_and_construction_pct_of_loans is a share of LOANS, not the regulatory test. The regulatory test (FDIC FIL-22-2006): construction & land >= 100% of capital, or total CRE (construction + multifamily + non-owner-occupied nonfarm nonresidential) >= 300% of capital with >= 50% growth over 36 months. Capital is tier 1 + the allowance for credit losses (the *_pct_of_tier1_plus_acl fields; see capital). Loans to finance CRE not secured by real estate are not in public call-report summaries and are excluded. commercial_re_concentration_percent is a deprecated alias of cre_and_construction_pct_of_loans.',
       capital: 'Primary basis: tier 1 capital + allowance for credit losses on loans (RBCT1J + LNATRES), the denominator examiners have used for credit concentrations since March 31, 2020 (FDIC FIL-31-2020; Fed SR 20-8) for all banks, including community bank leverage ratio (CBLR) banks. The *_pct_of_risk_based_capital fields are the original FIL-22-2006 total-risk-based-capital view; CBLR banks do not report risk-based capital, so those are null for them rather than estimated. Warnings use the tier 1 + allowance basis.',
       multifamily: usedMultifamily ? 'Multifamily (5+ unit residential) included.' : 'Multifamily data not available in this query (FDIC field not exposed for this institution).',
       supplementary_field_coverage: coverage,

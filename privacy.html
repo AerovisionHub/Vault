@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Privacy Policy — Vault</title>
+<meta name="description" content="How Vault (vaultbot.ai) collects, uses and protects information on the website and the Vault MCP server.">
+<link rel="canonical" href="https://vaultbot.ai/privacy">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<style>
+  :root { color-scheme: dark; --bg:#0f1240; --text:#ffffff; --muted:rgba(255,255,255,0.68); --line:rgba(255,255,255,0.12); --cyan:#4db8ff; --cobalt:#3b82f6; }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); scroll-padding-top: env(safe-area-inset-top, 0px); }
+  body { margin: 0; min-height: 100vh; color: var(--text); font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: linear-gradient(135deg, #0f1240 0%, #1a1060 45%, #2d1080 80%, #1a0a5e 100%) fixed;
+    padding: env(safe-area-inset-top, 0px) 20px calc(48px + env(safe-area-inset-bottom, 0px)); }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  .top { display: flex; justify-content: space-between; align-items: center; padding: 22px 0 8px; }
+  .mark { font: 700 26px/1 Georgia, "Times New Roman", serif; color: #fff; text-decoration: none; letter-spacing: -0.01em; }
+  .mark span { color: var(--cobalt); }
+  .top nav a { color: var(--muted); text-decoration: none; font-size: 14px; margin-left: 18px; }
+  .top nav a:hover, .top nav a:focus-visible { color: var(--cyan); }
+  h1 { font: 700 clamp(30px, 6vw, 40px)/1.15 Georgia, "Times New Roman", serif; margin: 40px 0 6px; }
+  .lede { color: var(--muted); margin: 0 0 32px; }
+  h2 { font: 700 21px/1.3 Georgia, "Times New Roman", serif; margin: 40px 0 8px; padding-top: 20px; border-top: 1px solid var(--line); }
+  h3 { font-size: 16px; margin: 22px 0 4px; }
+  p, li { color: rgba(255,255,255,0.86); }
+  ul { padding-left: 20px; } li { margin: 4px 0; }
+  a { color: var(--cyan); text-underline-offset: 3px; }
+  a:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; border-radius: 2px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 10px 0; }
+  .tablewrap { overflow-x: auto; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  .card { background: rgba(255,255,255,0.07); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; margin: 16px 0;
+    -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+  footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+  footer a { color: var(--muted); margin-right: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top"><a class="mark" href="/">Vault<span>.</span></a>
+    <nav><a href="/mcp">MCP docs</a><a href="/support">Support</a></nav></header>
+
+  <h1>Privacy Policy</h1>
+  <p class="lede">Effective November 6, 2026. This policy covers vaultbot.ai and the Vault MCP server at vaultbot.ai/api/mcp.</p>
+
+  <h2>Who runs Vault</h2>
+  <p>Vault is a free bank and credit union intelligence tool built and operated by GOiDENTIFY, LLC (“iDENTIFY”), a data and analytics company in Tulsa, Oklahoma. Questions or requests about this policy go to <a href="mailto:lee@goidentify.com">lee@goidentify.com</a>.</p>
+
+  <h2>The short version</h2>
+  <ul>
+    <li>You don’t need an account to use Vault, on the website or through the MCP server.</li>
+    <li>Almost everything Vault shows comes from public government data: FDIC, NCUA, CFPB HMDA and U.S. Census.</li>
+    <li>We collect personal information only when you fill in a form, plus standard analytics and usage logs.</li>
+    <li>We don’t sell personal information, and we don’t share it for targeted advertising.</li>
+  </ul>
+
+  <h2>What we collect</h2>
+  <h3>Information you give us</h3>
+  <ul>
+    <li><strong>MCP signup form:</strong> name, email, and optionally company, role, how you plan to use Vault, and how you heard about it. We use it to send your setup instructions.</li>
+    <li><strong>Feedback and contact forms:</strong> name, email, institution, role and your message.</li>
+  </ul>
+  <p>The signup form uses hCaptcha to block automated submissions; hCaptcha processes data about your browser under its own privacy policy.</p>
+
+  <h3>Information collected automatically</h3>
+  <ul>
+    <li><strong>Website analytics:</strong> Google Analytics records pages viewed, device and browser type, approximate location and referring site, using cookies. You can block it with your browser settings or Google’s opt-out add-on.</li>
+    <li><strong>MCP usage records:</strong> for each request to the MCP server we record the time, the tool called, the MCP client’s name, the user agent, how long it took, whether it succeeded, and a one-way salted hash of the IP address. We don’t store raw IP addresses or the arguments of your tool calls in these records. We use them to count usage and find errors.</li>
+    <li><strong>Hosting logs:</strong> our host, Netlify, keeps standard server logs (such as IP address and request time) to operate and secure the service.</li>
+    <li><strong>Browser storage:</strong> the website stores a small flag in your browser so it doesn’t ask you to fill in the same form twice. It isn’t used for tracking.</li>
+  </ul>
+
+  <h3>Cached data</h3>
+  <p>To keep Vault fast, results are cached by their query (for example, a bank’s FDIC certificate number), not by who asked. Cached public data is refreshed after 7 days, or kept up to a year for closed historical periods such as a past year’s branch filing.</p>
+
+  <h2>Information about bank executives</h2>
+  <p>Vault’s leadership feature lists a bank’s senior executives (such as the CEO, CIO or COO) with their titles. We gather these from public sources, chiefly the bank’s own website, using Anthropic’s Claude with web search. Where we can, we add a link to the person’s public LinkedIn profile, matched through Bright Data, a commercial provider of publicly available data, and kept only if the profile’s work history names the bank. These results are cached for up to 90 days.</p>
+  <p>If you are one of these executives and want your information corrected or removed, email <a href="mailto:lee@goidentify.com">lee@goidentify.com</a> and we will act on it promptly.</p>
+
+  <h2>How we use information</h2>
+  <ul>
+    <li>To run Vault, send MCP setup instructions, answer your messages and fix problems.</li>
+    <li>To understand which features are used so we can improve them.</li>
+    <li>To send occasional Vault updates. You can opt out at any time by replying or using the unsubscribe link.</li>
+    <li>Vault is built by iDENTIFY, which provides data services to banks and credit unions. If you sign up or contact us, iDENTIFY may follow up about those services. Tell us if you’d rather not hear from us and we’ll stop.</li>
+  </ul>
+
+  <h2>Who we share it with</h2>
+  <p>We use these service providers to run Vault. They process data on our behalf for the purposes above:</p>
+  <div class="tablewrap"><table>
+    <tr><th>Provider</th><th>What for</th></tr>
+    <tr><td>Netlify</td><td>Website and server hosting, form handling, data storage</td></tr>
+    <tr><td>Google Analytics</td><td>Website analytics</td></tr>
+    <tr><td>Resend</td><td>Sending email, such as your MCP setup instructions</td></tr>
+    <tr><td>hCaptcha</td><td>Spam protection on the signup form</td></tr>
+    <tr><td>Anthropic</td><td>AI web search for bank leadership information</td></tr>
+    <tr><td>Bright Data</td><td>Matching bank executives to public LinkedIn profiles</td></tr>
+  </table></div>
+  <p>We may also disclose information if the law requires it, or to protect Vault and its users.</p>
+
+  <h2>Using Vault through an AI assistant</h2>
+  <p>When you use Vault in Claude, Microsoft 365 Copilot or another AI assistant, that assistant’s provider handles your conversation under its own privacy terms. Vault receives only the tool request it makes (the tool name and its parameters, such as a certificate number) and the usage record described above.</p>
+
+  <h2>How long we keep it</h2>
+  <ul>
+    <li>Form submissions: until you ask us to delete them.</li>
+    <li>MCP usage records: kept as usage statistics, with IP addresses stored only as a one-way hash.</li>
+    <li>Executive information: up to 90 days in cache, or sooner on request.</li>
+  </ul>
+
+  <h2>Your choices</h2>
+  <p>You can ask us to access, correct or delete the personal information we hold about you by emailing <a href="mailto:lee@goidentify.com">lee@goidentify.com</a>. We don’t sell personal information or share it for cross-context behavioral advertising.</p>
+
+  <h2>Security</h2>
+  <p>Vault is served over HTTPS, and credentials for the services above are stored as protected secrets, not in code. No system is perfectly secure, but we work to protect what we hold.</p>
+
+  <h2>Children</h2>
+  <p>Vault is a professional tool for the banking industry and isn’t directed to children under 16.</p>
+
+  <h2>Changes to this policy</h2>
+  <p>If we change this policy, we’ll update the effective date at the top of this page.</p>
+
+  <footer><a href="/">Vault home</a><a href="/mcp">MCP docs</a><a href="/support">Support</a><a href="https://goidentify.com">iDENTIFY</a></footer>
+</div>
+</body>
+</html>
