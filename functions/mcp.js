@@ -2,7 +2,7 @@
 // Implements MCP (Model Context Protocol) over HTTP using JSON-RPC 2.0
 // Spec: https://modelcontextprotocol.io/
 
-const VAULT_MCP_VERSION = '1.24.5';
+const VAULT_MCP_VERSION = '1.25.0';
 const FDIC_BASE = 'https://api.fdic.gov/banks';
 // Summary of Deposits — separate FDIC dataset (annual branch-level census, as of each June 30).
 // Same query syntax as FDIC_BASE (filters=field%3Avalue&fields=...&limit=...&sort_by=...&sort_order=...).
@@ -1494,7 +1494,7 @@ async function mapLimit(items, limit, fn) {
 // supplementary_field_coverage in the response). Fetched in a separate query
 // so an unknown field name can never break the core loan-mix answer.
 const LOANMIX_SUPP_KNOWN = ['LNRECONS', 'LNREMULT', 'LNRENRES'];
-const LOANMIX_SUPP_NEW = ['LNREAG', 'LNRENROW', 'LNRENROT', 'RBCT1J', 'RBCT2', 'RBC', 'RWAJ', 'RBCRWAJ', 'CBLRIND'];
+const LOANMIX_SUPP_NEW = ['LNREAG', 'LNRENROW', 'LNRENROT', 'RBCT1J', 'RBCT2', 'RBC', 'RWAJ', 'RBCRWAJ', 'CBLRIND', 'LNATRES'];
 
 async function fetchLoanMixSupplement(cert, fromRepdte) {
   const base = `${FDIC_BASE}/financials?filters=CERT%3A${cert}%20AND%20REPDTE%3A%5B${fromRepdte}%20TO%20*%5D&limit=200&sort_by=REPDTE&sort_order=DESC`;
@@ -1538,8 +1538,8 @@ async function getLoanMix(args) {
 
   // v51 prefix: the 5.1 response shape differs, so it must not serve a cached 5.0 body.
   const cacheKey = useHistory
-    ? `loan-mix-v52-${cert}-${freq}-sy${Number(start_year)}`
-    : `loan-mix-v52-${cert}-q${max}`;
+    ? `loan-mix-v53-${cert}-${freq}-sy${Number(start_year)}`
+    : `loan-mix-v53-${cert}-q${max}`;
   const cached = await cacheGet(cacheKey);
   if (cached) return { ...cached, _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) } };
 
@@ -1650,21 +1650,31 @@ async function getLoanMix(args) {
       reBreakdown.commercial_real_estate.non_owner_occupied_thousands = nonOwnerOcc;
     }
 
-    // Regulatory CRE test vs total risk-based capital (FDIC FIL-22-2006).
+    // Regulatory CRE test. Since Mar 31, 2020 examiners measure credit
+    // concentrations against tier 1 capital + the allowance for credit losses on
+    // loans (FDIC FIL-31-2020, Fed SR 20-8) for ALL banks — which also covers CBLR
+    // banks. The FIL-22-2006 total-risk-based-capital basis is kept as a legacy view.
     const cap = capitalOf(s);
     const regCre = regCreOf(s);
     const constrPctCap = pct(construction, cap.value);
     const regCrePctCap = pct(regCre, cap.value);
+    const t1 = s ? numOrNull(s.RBCT1J) : null, acl = s ? numOrNull(s.LNATRES) : null;
+    const supCap = (t1 != null && t1 > 0 && acl != null) ? t1 + acl : null;
+    const constrPctSup = pct(construction, supCap);
+    const regCrePctSup = pct(regCre, supCap);
+    // Warnings use the current examiner basis; fall back to the legacy basis only if it is missing.
+    const wConstr = constrPctSup ?? constrPctCap, wCre = regCrePctSup ?? regCrePctCap;
+    const wBasis = supCap != null ? 'tier 1 capital + allowance' : 'total risk-based capital';
     const prior = supp.byDate.get(repdteMinusYears(h.REPDTE, 3)) || null;
     const priorRegCre = regCreOf(prior);
     const creGrowth36 = (regCre != null && priorRegCre != null && priorRegCre > 0)
       ? Number(((regCre - priorRegCre) / priorRegCre * 100).toFixed(1)) : null;
     const warnings = [];
-    if (constrPctCap != null && constrPctCap >= 100) warnings.push(`Construction & land development is ${constrPctCap}% of total risk-based capital (guidance threshold 100%).`);
-    if (regCrePctCap != null && regCrePctCap >= 300) {
+    if (wConstr != null && wConstr >= 100) warnings.push(`Construction & land development is ${wConstr}% of ${wBasis} (guidance threshold 100%).`);
+    if (wCre != null && wCre >= 300) {
       warnings.push(creGrowth36 != null && creGrowth36 >= 50
-        ? `Total CRE is ${regCrePctCap}% of total risk-based capital and grew ${creGrowth36}% over 36 months (guidance thresholds 300% and 50%).`
-        : `Total CRE is ${regCrePctCap}% of total risk-based capital (guidance threshold 300%; the 50% 36-month growth leg ${creGrowth36 == null ? 'could not be computed' : `is not met at ${creGrowth36}%`}).`);
+        ? `Total CRE is ${wCre}% of ${wBasis} and grew ${creGrowth36}% over 36 months (guidance thresholds 300% and 50%).`
+        : `Total CRE is ${wCre}% of ${wBasis} (guidance threshold 300%; the 50% 36-month growth leg ${creGrowth36 == null ? 'could not be computed' : `is not met at ${creGrowth36}%`}).`);
     }
     const creLoansPct = pct(cre + construction, total);
 
@@ -1686,6 +1696,9 @@ async function getLoanMix(args) {
       concentration_flags: {
         cre_and_construction_pct_of_loans: creLoansPct,
         commercial_re_concentration_percent: creLoansPct, // DEPRECATED alias (5.1) — same value; removed in a later release
+        tier1_plus_acl_thousands: supCap,
+        construction_pct_of_tier1_plus_acl: constrPctSup,
+        regulatory_cre_pct_of_tier1_plus_acl: regCrePctSup,
         total_risk_based_capital_thousands: cap.value,
         capital_basis: cap.basis,
         construction_pct_of_risk_based_capital: constrPctCap,
@@ -1720,7 +1733,7 @@ async function getLoanMix(args) {
       real_estate_breakdown: 'RE subcategories break out the key types regulators watch. When farmland is available, other_re_loans holds any residual so the subcategories sum to the real estate total.',
       ag_exposure: 'ag_total = agricultural production loans + farmland. Ag banks look far less ag-heavy if only the production line is read.',
       cre_concentration: 'cre_and_construction_pct_of_loans is a share of LOANS, not the regulatory test. The regulatory test (FDIC FIL-22-2006) is measured against total risk-based capital: construction & land >= 100%, or total CRE (construction + multifamily + non-owner-occupied nonfarm nonresidential) >= 300% with >= 50% growth over 36 months. Those ratios are construction_pct_of_risk_based_capital and regulatory_cre_pct_of_risk_based_capital. Loans to finance CRE not secured by real estate are not in public call-report summaries and are excluded. commercial_re_concentration_percent is a deprecated alias of cre_and_construction_pct_of_loans.',
-      capital: 'Banks using the community bank leverage ratio framework do not report risk-based capital; for them the capital-based ratios are null rather than estimated.',
+      capital: 'Primary basis: tier 1 capital + allowance for credit losses on loans (RBCT1J + LNATRES), the denominator examiners have used for credit concentrations since March 31, 2020 (FDIC FIL-31-2020; Fed SR 20-8) for all banks, including community bank leverage ratio (CBLR) banks. The *_pct_of_risk_based_capital fields are the original FIL-22-2006 total-risk-based-capital view; CBLR banks do not report risk-based capital, so those are null for them rather than estimated. Warnings use the tier 1 + allowance basis.',
       multifamily: usedMultifamily ? 'Multifamily (5+ unit residential) included.' : 'Multifamily data not available in this query (FDIC field not exposed for this institution).',
       supplementary_field_coverage: coverage,
       supplementary_fetch_mode: supp.mode,
