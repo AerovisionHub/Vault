@@ -66,7 +66,7 @@ const TOOLS = [
   },
   {
     name: 'get_bank_profile',
-    description: 'Get detailed profile for a single FDIC-insured bank by certificate number (CERT). Returns institution details, latest financials (assets, deposits, ROA, ROE, NIM, capital ratio), and by default the latest 8 quarters. For long-run trends, pass start_year (back to 1992) to rebuild history from that year — with frequency:"annual" you get one Dec-31 row per year (period_label "FY2019") plus the latest partial quarter flagged is_partial_year, or frequency:"quarterly" for every quarter (capped at the most recent 40). Note: call-report net income is year-to-date as of each report_date (net_income_ytd), so compare full years to full years; ROA/ROE are FDIC-annualized. Typically responds in 3-6 seconds. Always run search_institutions first to get the CERT.',
+    description: 'Get detailed profile for a single FDIC-insured bank by certificate number (CERT). Returns institution details, latest financials (assets, deposits, ROA, ROE, NIM, capital ratio), and by default the latest 8 quarters. For long-run trends, pass start_year (back to 1992) to rebuild history from that year — with frequency:"annual" you get one Dec-31 row per year (period_label "FY2019") plus the latest partial quarter flagged is_partial_year, or frequency:"quarterly" for every quarter (capped at the most recent 40). Note: call-report net income is year-to-date as of each report_date (net_income_ytd), so compare full years to full years; ROA/ROE are FDIC-annualized. Grain notes: call reports are quarterly — no public source has monthly deposits or loans; announced acquisitions do not appear in FDIC data until they close. Typically responds in 3-6 seconds. Always run search_institutions first to get the CERT.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -136,7 +136,7 @@ const TOOLS = [
   },
   {
     name: 'get_loan_mix',
-    description: 'Get loan portfolio composition for a specific bank: Real Estate (residential, commercial RE, construction, multifamily), C&I, Agricultural, and Consumer. Returns dollar amounts and % of total loans. Pass quarters for the latest N (max 8), or start_year (back to 1992) with frequency:"annual" / "quarterly" to rebuild the mix over many years (period_label per row; latest partial year flagged). Typically responds in 3-6 seconds. Use to understand lending strategy or CRE concentration risk and how it has shifted over time.',
+    description: 'Get loan portfolio composition for a specific bank: Real Estate (residential, commercial RE with owner-occupied / non-owner-occupied split, construction, multifamily, farmland), C&I, Agricultural, and Consumer, plus ag_total (ag production + farmland). Returns dollar amounts and % of total loans, and the regulatory CRE concentration test against total risk-based capital (construction >= 100%, total CRE >= 300% with 50% 36-month growth, FDIC FIL-22-2006) — distinct from cre_and_construction_pct_of_loans, which is a share of loans. Pass quarters for the latest N (max 8), or start_year (back to 1992) with frequency:"annual" / "quarterly" to rebuild the mix over many years (period_label per row; latest partial year flagged). Typically responds in 3-6 seconds. Use to understand lending strategy or CRE concentration risk and how it has shifted over time. Call reports are quarterly; no public source has monthly loan data.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -162,7 +162,7 @@ const TOOLS = [
   },
   {
     name: 'get_branch_data',
-    description: 'Get branch-level location and deposit data for a specific bank from the FDIC Summary of Deposits (SOD) — the annual branch-level census FDIC-insured banks file every June. Returns branch count, total branch deposits, and a list of individual branches with address, city, state, deposits, service type (FDIC office type: full service, limited service facility/administrative, etc.), established date, and whether it is the main office (sorted first). A $0-deposit site is usually a limited-service office that books no deposits of its own, flagged with zero_deposits, not a dead branch. Pass `year` for a single past SOD year, or `start_year`+`end_year` to rebuild the footprint annually across years — multi-year returns per-year totals (by_year) plus a per-branch history keyed by FDIC branch number, so openings, closures and relocations show as gaps. Typically responds in 3-6 seconds. Use to answer "how many branches," "where does this bank operate," "which branches hold the most deposits," or "how has the branch footprint changed over time." Grain notes: SOD is one snapshot per year (June 30), so branch-level history is annual only — no public source has sub-annual branch data; and SOD lists physical branches, not loan production offices.',
+    description: 'Get branch-level location and deposit data for a specific bank from the FDIC Summary of Deposits (SOD) — the annual branch-level census FDIC-insured banks file every June. Returns branch count, total branch deposits, and a list of individual branches with address, city, state, deposits, service type (FDIC office type: full service, limited service facility/administrative, etc.), established date, and whether it is the main office (sorted first). A $0-deposit site is usually a limited-service office that books no deposits of its own, flagged with zero_deposits, not a dead branch. Pass `year` for a single past SOD year, or `start_year`+`end_year` to rebuild the footprint annually across years — multi-year returns per-year totals (by_year) plus a per-branch history keyed by FDIC branch number, so openings, closures and relocations show as gaps. Typically responds in 3-6 seconds. Use to answer "how many branches," "where does this bank operate," "which branches hold the most deposits," or "how has the branch footprint changed over time." Very large banks (over ~1,200 branch-years on file) return the top branches by deposits plus per-year totals with truncated:true — pass `state` for complete lists. Grain notes: SOD is one snapshot per year (June 30), so branch-level history is annual only — no public source has sub-annual branch data; and SOD lists physical branches, not loan production offices.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -178,7 +178,7 @@ const TOOLS = [
   },
   {
     name: 'get_county_deposit_share',
-    description: 'Get deposit market share and competitive rank by county, from the FDIC Summary of Deposits. Two ways to call it. (1) Pass `cert` to see every county a bank operates in, with its deposits, market share, rank, number of competing banks, and the top competitor in each — answers "where is this bank strong or weak," "which markets does it dominate," and "who is beating it in its own backyard." (2) Pass `county` plus `state` to get the full ranked leaderboard of every bank operating in that county — answers "who holds deposit share in this market" and "who would we compete against if we entered." Use the county name alone, without the word "County" (e.g. "Tulsa", not "Tulsa County"). All deposit figures are in thousands of dollars. Standard uses: Community Reinvestment Act deposit market-share analysis, M&A target screening, branch expansion and market-entry planning, and peer benchmarking within a footprint. Note: SOD is an annual filing as of each June 30, so this reflects the most recent annual snapshot, not real-time deposits. Typically responds in 3-8 seconds; a bank spanning many counties takes longer, since each county is ranked separately.',
+    description: 'Get deposit market share and competitive rank by county, from the FDIC Summary of Deposits. Two ways to call it. (1) Pass `cert` to see every county a bank operates in, with its deposits, market share, rank, number of competing banks, and the top competitor in each — answers "where is this bank strong or weak," "which markets does it dominate," and "who is beating it in its own backyard." (2) Pass `county` plus `state` to get the full ranked leaderboard of every bank operating in that county — answers "who holds deposit share in this market" and "who would we compete against if we entered." Use the county name alone, without the word "County" (e.g. "Tulsa", not "Tulsa County"). All deposit figures are in thousands of dollars. Standard uses: Community Reinvestment Act deposit market-share analysis, M&A target screening, branch expansion and market-entry planning, and peer benchmarking within a footprint. Note: SOD is an annual filing as of each June 30, so this reflects the most recent annual snapshot, not real-time deposits. Pass start_year (and optionally end_year) for share and rank by year — e.g. how a bank\'s position in each market moved over five years; multi-year is capped at the most recent 5 years and the bank\'s top 10 counties, and an uncached multi-year call can exceed Perplexity\'s 15-second tool limit. Typically responds in 3-8 seconds; a bank spanning many counties takes longer, since each county is ranked separately.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -186,6 +186,8 @@ const TOOLS = [
         county: { type: 'string', description: 'County name without the word "County" (e.g. "Tulsa"). Must be paired with state. Returns the full ranked leaderboard for that county.' },
         state: { type: 'string', description: '2-letter state code (e.g. "OK"). Required when using county.' },
         limit: { type: 'number', description: 'Max banks returned in county leaderboard mode (default 25, max 200). Ignored in cert mode.' },
+        start_year: { type: 'number', description: 'Optional. Return share and rank by year from this SOD year (earliest 1994). Capped to the most recent 5 years in the range.' },
+        end_year: { type: 'number', description: 'Optional end of the multi-year range. Defaults to the latest filing year.' },
       },
     },
   },
@@ -300,7 +302,9 @@ async function cacheGet(key) {
     if (!store) return null;
     const raw = await store.get(key, { type: 'json' });
     if (!raw) return null;
-    if (raw._cached_at && (Date.now() - raw._cached_at) > CACHE_TTL_MS) {
+    // Per-entry TTL (5.1): closed periods (e.g. a published SOD year) store a
+    // longer _ttl_ms; everything else keeps the 7-day default.
+    if (raw._cached_at && (Date.now() - raw._cached_at) > (raw._ttl_ms || CACHE_TTL_MS)) {
       await store.delete(key).catch(() => {});
       return null;
     }
@@ -312,11 +316,11 @@ async function cacheGet(key) {
   }
 }
 
-async function cacheSet(key, data) {
+async function cacheSet(key, data, ttlMs) {
   try {
     const store = await getBlobStore();
     if (!store) return;
-    await store.setJSON(key, { ...data, _cached_at: Date.now() });
+    await store.setJSON(key, { ...data, _cached_at: Date.now(), ...(ttlMs ? { _ttl_ms: ttlMs } : {}) });
     console.log('[vault-cache] STORED:', key);
   } catch(e) {
     console.log('[vault-cache] cacheSet error:', e.message);
@@ -1421,6 +1425,71 @@ async function getAssetQualityDetail(args) {
   return result;
 }
 
+// ── 5.1 shared helpers ─────────────────────────────────────────────────────
+// Null-preserving number parse: FDIC omits or nulls fields it doesn't have,
+// and a missing value must stay null rather than becoming a fake 0.
+function numOrNull(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return isNaN(n) ? null : n;
+}
+
+// Run async fn over items with at most `limit` in flight — keeps fan-out
+// queries polite to FDIC's rate limiter and inside the 15s ceiling.
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let i = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (i < items.length) {
+      const idx = i++;
+      try { out[idx] = { ok: true, value: await fn(items[idx], idx) }; }
+      catch (e) { out[idx] = { ok: false, error: e }; }
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
+// Supplementary call-report fields for get_loan_mix (5.1). The first three are
+// already proven; the rest are new and verified by behavior (see
+// supplementary_field_coverage in the response). Fetched in a separate query
+// so an unknown field name can never break the core loan-mix answer.
+const LOANMIX_SUPP_KNOWN = ['LNRECONS', 'LNREMULT', 'LNRENRES'];
+const LOANMIX_SUPP_NEW = ['LNREAG', 'LNRENROW', 'LNRENROT', 'RBCT1J', 'RBCT2', 'RBC', 'RWAJ', 'RBCRWAJ'];
+
+async function fetchLoanMixSupplement(cert, fromRepdte) {
+  const base = `${FDIC_BASE}/financials?filters=CERT%3A${cert}%20AND%20REPDTE%3A%5B${fromRepdte}%20TO%2099991231%5D&limit=200&sort_by=REPDTE&sort_order=DESC`;
+  const byDate = new Map();
+  const merge = (rows) => {
+    for (const r of rows) {
+      if (!r || !r.REPDTE) continue;
+      byDate.set(String(r.REPDTE), { ...(byDate.get(String(r.REPDTE)) || {}), ...r });
+    }
+  };
+  const all = ['REPDTE', ...LOANMIX_SUPP_KNOWN, ...LOANMIX_SUPP_NEW].join(',');
+  try {
+    const r = await fetchFDIC(`${base}&fields=${all}`);
+    merge((r.data || []).map(d => d.data));
+    return { byDate, mode: 'combined' };
+  } catch (e) {
+    // A rejected field list (400) means at least one name is unknown — fall
+    // back to one query per field so every valid field still lands.
+    const fields = [...LOANMIX_SUPP_KNOWN, ...LOANMIX_SUPP_NEW];
+    const results = await mapLimit(fields, 4, async (f) => {
+      const r = await fetchFDIC(`${base}&fields=REPDTE,${f}`);
+      return (r.data || []).map(d => d.data);
+    });
+    results.forEach(res => { if (res.ok) merge(res.value); });
+    return { byDate, mode: 'per_field', combined_error: e.message };
+  }
+}
+
+// Shift an FDIC REPDTE back N years, same quarter-end (20260630 -> 20230630).
+function repdteMinusYears(repdte, years) {
+  const s = String(repdte);
+  return `${Number(s.slice(0, 4)) - years}${s.slice(4, 8)}`;
+}
+
 async function getLoanMix(args) {
   const { cert, quarters = 1, start_year, frequency } = args || {};
   if (!cert) throw new Error('Required parameter "cert" missing. Get a CERT from search_institutions.');
@@ -1428,9 +1497,10 @@ async function getLoanMix(args) {
   const max = Math.min(Math.max(Number(quarters) || 1, 1), 8);
   const freq = frequency === 'annual' ? 'annual' : 'quarterly';
 
+  // v51 prefix: the 5.1 response shape differs, so it must not serve a cached 5.0 body.
   const cacheKey = useHistory
-    ? `loan-mix-${cert}-${freq}-sy${Number(start_year)}`
-    : `loan-mix-${cert}-q${max}`;
+    ? `loan-mix-v51-${cert}-${freq}-sy${Number(start_year)}`
+    : `loan-mix-v51-${cert}-q${max}`;
   const cached = await cacheGet(cacheKey);
   if (cached) return { ...cached, _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) } };
 
@@ -1439,10 +1509,6 @@ async function getLoanMix(args) {
   const fieldsWithMult = 'REPDTE,LNLSGR,LNRE,LNRECONS,LNRENRES,LNRERES,LNREMULT,LNCI,LNAG,LNCON';
   const fieldsNoMult   = 'REPDTE,LNLSGR,LNRE,LNRECONS,LNRENRES,LNRERES,LNCI,LNAG,LNCON';
 
-  // History mode pulls a multi-year range (filtered to year-ends/partials in
-  // code); default keeps the latest `quarters`. REPDTE range syntax is the same
-  // proven pattern get_recent_charters uses. Farmland (LNREAG) and the CRE
-  // regulatory ratios are a later item — not added here.
   const limit = useHistory ? 200 : max;
   const dateFilter = useHistory ? `%20AND%20REPDTE%3A%5B${Number(start_year)}0101%20TO%2099991231%5D` : '';
 
@@ -1452,13 +1518,12 @@ async function getLoanMix(args) {
     const fR = await fetchFDIC(`${FDIC_BASE}/financials?filters=CERT%3A${cert}${dateFilter}&fields=${fieldsWithMult}&limit=${limit}&sort_by=REPDTE&sort_order=DESC`);
     rawRows = (fR.data || []).map(d => d.data).filter(Boolean);
   } catch (e) {
-    // If FDIC rejected the field list (HTTP 400), retry without LNREMULT
     if (e.message.includes('400') || e.message.toLowerCase().includes('field')) {
       const fR = await fetchFDIC(`${FDIC_BASE}/financials?filters=CERT%3A${cert}${dateFilter}&fields=${fieldsNoMult}&limit=${limit}&sort_by=REPDTE&sort_order=DESC`);
       rawRows = (fR.data || []).map(d => d.data).filter(Boolean);
       usedMultifamily = false;
     } else {
-      throw e; // re-throw rate limit, timeout, etc.
+      throw e;
     }
   }
 
@@ -1469,11 +1534,37 @@ async function getLoanMix(args) {
   const sel = selectHistoryRows(rawRows, { start_year, frequency });
   const history = sel.rows;
 
-  // Institution name for context
-  const iR = await fetchFDIC(`${FDIC_BASE}/institutions?filters=CERT%3A${cert}&fields=NAME,CITY,STALP&limit=1`).catch(() => ({ data: [] }));
+  // Supplement covers every returned period plus 36 months back, so the
+  // FIL-22-2006 growth test has its comparison quarter.
+  const oldestReturned = history.length ? String(history[history.length - 1].REPDTE) : String(rawRows[0].REPDTE);
+  const suppFrom = Math.max(19920101, Number(repdteMinusYears(oldestReturned, 3)));
+  const [iR, supp] = await Promise.all([
+    fetchFDIC(`${FDIC_BASE}/institutions?filters=CERT%3A${cert}&fields=NAME,CITY,STALP&limit=1`).catch(() => ({ data: [] })),
+    fetchLoanMixSupplement(cert, suppFrom).catch(e => ({ byDate: new Map(), mode: 'failed', combined_error: e.message })),
+  ]);
   const inst = iR.data?.[0]?.data;
 
-  const pct = (n, d) => d > 0 ? Number((n / d * 100).toFixed(2)) : null;
+  const pct = (n, d) => (n != null && d != null && d > 0) ? Number((n / d * 100).toFixed(2)) : null;
+
+  // Total risk-based capital, with the formula used recorded honestly.
+  const capitalOf = (s) => {
+    if (!s) return { value: null, basis: null };
+    const rbc = numOrNull(s.RBC);
+    if (rbc != null && rbc > 0) return { value: rbc, basis: 'RBC (total risk-based capital)' };
+    const t1 = numOrNull(s.RBCT1J), t2 = numOrNull(s.RBCT2);
+    if (t1 != null && t2 != null && t1 + t2 > 0) return { value: t1 + t2, basis: 'Tier 1 (RBCT1J) + Tier 2 (RBCT2)' };
+    const ratio = numOrNull(s.RBCRWAJ), rwa = numOrNull(s.RWAJ);
+    if (ratio != null && rwa != null && ratio > 0 && rwa > 0) return { value: Math.round(ratio * rwa / 100), basis: 'Total RBC ratio (RBCRWAJ) x risk-weighted assets (RWAJ)' };
+    return { value: null, basis: null };
+  };
+  // Regulatory CRE per FIL-22-2006: construction + multifamily + non-owner-
+  // occupied nonfarm nonresidential. Null when the non-owner split is missing.
+  const regCreOf = (s) => {
+    if (!s) return null;
+    const nonOwner = numOrNull(s.LNRENROT);
+    if (nonOwner == null) return null;
+    return (numOrNull(s.LNRECONS) || 0) + (numOrNull(s.LNREMULT) || 0) + nonOwner;
+  };
 
   const periods = history.map(h => {
     const total = Number(h.LNLSGR) || 0;
@@ -1487,6 +1578,11 @@ async function getLoanMix(args) {
     const consumer = Number(h.LNCON) || 0;
     const otherLoans = Math.max(0, total - totalRE - ci - ag - consumer);
 
+    const s = supp.byDate.get(String(h.REPDTE)) || null;
+    const farmland = s ? numOrNull(s.LNREAG) : null;
+    const ownerOcc = s ? numOrNull(s.LNRENROW) : null;
+    const nonOwnerOcc = s ? numOrNull(s.LNRENROT) : null;
+
     const reBreakdown = {
       residential_1_4_family: { thousands: resi, percent_of_loans: pct(resi, total), percent_of_re: pct(resi, totalRE) },
       commercial_real_estate: { thousands: cre, percent_of_loans: pct(cre, total), percent_of_re: pct(cre, totalRE) },
@@ -1495,12 +1591,41 @@ async function getLoanMix(args) {
     if (multifamily !== null) {
       reBreakdown.multifamily = { thousands: multifamily, percent_of_loans: pct(multifamily, total), percent_of_re: pct(multifamily, totalRE) };
     }
+    if (farmland != null) {
+      reBreakdown.farmland = { thousands: farmland, percent_of_loans: pct(farmland, total), percent_of_re: pct(farmland, totalRE) };
+      // Residual so the buckets always sum to the real estate total. Named
+      // other_re_loans, not other_real_estate, to avoid confusion with ORE
+      // (other real estate OWNED, i.e. foreclosed property).
+      const residual = Math.max(0, totalRE - resi - cre - construction - (multifamily || 0) - farmland);
+      reBreakdown.other_re_loans = { thousands: residual, percent_of_loans: pct(residual, total), percent_of_re: pct(residual, totalRE) };
+    }
+    if (ownerOcc != null || nonOwnerOcc != null) {
+      reBreakdown.commercial_real_estate.owner_occupied_thousands = ownerOcc;
+      reBreakdown.commercial_real_estate.non_owner_occupied_thousands = nonOwnerOcc;
+    }
+
+    // Regulatory CRE test vs total risk-based capital (FDIC FIL-22-2006).
+    const cap = capitalOf(s);
+    const regCre = regCreOf(s);
+    const constrPctCap = pct(construction, cap.value);
+    const regCrePctCap = pct(regCre, cap.value);
+    const prior = supp.byDate.get(repdteMinusYears(h.REPDTE, 3)) || null;
+    const priorRegCre = regCreOf(prior);
+    const creGrowth36 = (regCre != null && priorRegCre != null && priorRegCre > 0)
+      ? Number(((regCre - priorRegCre) / priorRegCre * 100).toFixed(1)) : null;
+    const warnings = [];
+    if (constrPctCap != null && constrPctCap >= 100) warnings.push(`Construction & land development is ${constrPctCap}% of total risk-based capital (guidance threshold 100%).`);
+    if (regCrePctCap != null && regCrePctCap >= 300) {
+      warnings.push(creGrowth36 != null && creGrowth36 >= 50
+        ? `Total CRE is ${regCrePctCap}% of total risk-based capital and grew ${creGrowth36}% over 36 months (guidance thresholds 300% and 50%).`
+        : `Total CRE is ${regCrePctCap}% of total risk-based capital (guidance threshold 300%; the 50% 36-month growth leg ${creGrowth36 == null ? 'could not be computed' : `is not met at ${creGrowth36}%`}).`);
+    }
+    const creLoansPct = pct(cre + construction, total);
 
     const row = {
       report_date: h.REPDTE,
       period_label: (h._period || fdicPeriodInfo(h.REPDTE)).label,
       gross_loans_thousands: total,
-      // Top-level category breakdown
       categories: {
         real_estate: { thousands: totalRE, percent_of_loans: pct(totalRE, total) },
         commercial_industrial: { thousands: ci, percent_of_loans: pct(ci, total) },
@@ -1508,17 +1633,34 @@ async function getLoanMix(args) {
         consumer: { thousands: consumer, percent_of_loans: pct(consumer, total) },
         other: { thousands: otherLoans, percent_of_loans: pct(otherLoans, total) },
       },
-      // Real estate subcategories
       real_estate_breakdown: reBreakdown,
-      // Concentration flags
+      ag_total: farmland != null
+        ? { thousands: ag + farmland, percent_of_loans: pct(ag + farmland, total), note: 'Agricultural production loans plus farmland-secured real estate.' }
+        : null,
       concentration_flags: {
-        commercial_re_concentration_percent: pct(cre + construction, total),
-        cre_construction_warning: pct(cre + construction, total) > 300 ? 'High CRE+Construction concentration vs capital (regulator threshold)' : null,
+        cre_and_construction_pct_of_loans: creLoansPct,
+        commercial_re_concentration_percent: creLoansPct, // DEPRECATED alias (5.1) — same value; removed in a later release
+        total_risk_based_capital_thousands: cap.value,
+        capital_basis: cap.basis,
+        construction_pct_of_risk_based_capital: constrPctCap,
+        regulatory_cre_thousands: regCre,
+        regulatory_cre_pct_of_risk_based_capital: regCrePctCap,
+        regulatory_cre_growth_36m_pct: creGrowth36,
+        cre_construction_warning: warnings.length ? warnings.join(' ') : null,
       },
     };
     if (h._partial) row.is_partial_year = true;
     return row;
   });
+
+  // Field coverage — how many returned periods each supplementary field
+  // actually populated. Lets a reader (and our own post-deploy check) tell a
+  // real zero from a field FDIC never supplied.
+  const coverage = {};
+  for (const f of LOANMIX_SUPP_NEW) {
+    const n = history.filter(h => { const s = supp.byDate.get(String(h.REPDTE)); return s && numOrNull(s[f]) != null; }).length;
+    coverage[f] = `${n}/${history.length}`;
+  }
 
   const result = {
     cert,
@@ -1529,9 +1671,13 @@ async function getLoanMix(args) {
     multifamily_data_available: usedMultifamily,
     interpretation_notes: {
       categories: 'Five top-level loan categories. Percentages are of gross loans & leases.',
-      real_estate_breakdown: 'RE subcategories break out the key types regulators watch.',
-      cre_concentration: 'Commercial RE + Construction over 300% of risk-based capital flags regulator attention (FDIC FIL-22-2006).',
+      real_estate_breakdown: 'RE subcategories break out the key types regulators watch. When farmland is available, other_re_loans holds any residual so the subcategories sum to the real estate total.',
+      ag_exposure: 'ag_total = agricultural production loans + farmland. Ag banks look far less ag-heavy if only the production line is read.',
+      cre_concentration: 'cre_and_construction_pct_of_loans is a share of LOANS, not the regulatory test. The regulatory test (FDIC FIL-22-2006) is measured against total risk-based capital: construction & land >= 100%, or total CRE (construction + multifamily + non-owner-occupied nonfarm nonresidential) >= 300% with >= 50% growth over 36 months. Those ratios are construction_pct_of_risk_based_capital and regulatory_cre_pct_of_risk_based_capital. Loans to finance CRE not secured by real estate are not in public call-report summaries and are excluded. commercial_re_concentration_percent is a deprecated alias of cre_and_construction_pct_of_loans.',
+      capital: 'Banks using the community bank leverage ratio framework do not report risk-based capital; for them the capital-based ratios are null rather than estimated.',
       multifamily: usedMultifamily ? 'Multifamily (5+ unit residential) included.' : 'Multifamily data not available in this query (FDIC field not exposed for this institution).',
+      supplementary_field_coverage: coverage,
+      supplementary_fetch_mode: supp.mode,
     },
     profile_url: `https://vaultbot.ai/bank/${cert}`,
     _cache: { hit: false, stored_at: new Date().toISOString() },
@@ -1637,6 +1783,14 @@ function decodeServiceType(code) {
   return SOD_SERVICE_TYPES[n] || `Service type ${code}`;
 }
 
+// Branch-year rows above which get_branch_data switches to the size-guarded
+// path. Legend (15 branches x 33 years ~ 500 rows) stays on the exact path;
+// a top-10 bank (thousands of branches per year) takes the guarded one.
+const BRANCH_EXACT_ROW_LIMIT = 1200;
+const BRANCH_GUARD_TOP_N = 25;
+const BRANCH_GUARD_MAX_YEARS = 15;
+const SOD_CLOSED_YEAR_TTL_MS = 365 * 24 * 60 * 60 * 1000; // a published SOD year is final
+
 async function getBranchData(args) {
   const { cert, state, limit = 50, year, start_year, end_year } = args || {};
   if (!cert) throw new Error('Required parameter "cert" missing. Get a CERT from search_institutions.');
@@ -1653,47 +1807,30 @@ async function getBranchData(args) {
 
   // Corrected field names, verified against a raw SOD response for cert 3108
   // (2026 filing): the main-office flag is BKMO (not MAINOFF) and the branch
-  // established date is SIMS_ESTABLISHED_DATE (not ESTYMD). The old names are not
-  // real SOD fields, so FDIC silently dropped them and returned undefined — which
-  // is exactly why is_main_office was false for every branch and established was
-  // always null. BRSERTYP (service type) and SIMS_ACQUIRED_DATE are now mapped
-  // through to the output.
-  const fieldsFull = 'CERT,NAMEFULL,ADDRESBR,CITYBR,STALPBR,ZIPBR,DEPSUMBR,BRSERTYP,SIMS_ESTABLISHED_DATE,SIMS_ACQUIRED_DATE,YEAR,BKMO,UNINUMBR';
+  // established date is SIMS_ESTABLISHED_DATE (not ESTYMD). FDIC silently
+  // drops unknown SOD field names, which is why the old names returned
+  // undefined for years without an error.
+  const fieldsFull = 'CERT,NAMEFULL,ADDRESBR,CITYBR,STALPBR,ZIPBR,DEPSUMBR,DEPSUM,BRSERTYP,SIMS_ESTABLISHED_DATE,SIMS_ACQUIRED_DATE,YEAR,BKMO,UNINUMBR';
   const fieldsSafe = 'CERT,NAMEFULL,CITYBR,STALPBR,DEPSUMBR,BKMO,YEAR';
 
   let branchFilters = `CERT%3A${cert}`;
   if (state) branchFilters += `%20AND%20STALPBR%3A%22${state.toUpperCase()}%22`;
 
-  // Pull every filing year for this CERT (one row per branch per year), newest
-  // first, then slice years in code. A YEAR range filter is avoided on purpose:
-  // a single bank's full history is small (a 15-branch bank over ~30 years is
-  // well under the page limit) and this dodges an untestable range-filter edge
-  // case. Large-bank size guards are a later item.
-  let rows;
-  let usedFullFields = true;
+  // ── Size probe: one row gives the latest filing year, the bank-wide deposit
+  // total (DEPSUM rides on every row), and FDIC's count of branch-year rows.
+  let probeTotal = null, latestYear = null;
   try {
-    const r = await fetchFDIC(`${FDIC_SOD_BASE}?filters=${branchFilters}&fields=${fieldsFull}&limit=1200&sort_by=YEAR&sort_order=DESC`);
-    rows = (r.data || []).map(d => d.data).filter(Boolean);
+    const p = await fetchFDIC(`${FDIC_SOD_BASE}?filters=${branchFilters}&fields=YEAR,DEPSUM&limit=1&sort_by=YEAR&sort_order=DESC`);
+    const pr = (p.data || []).map(d => d.data).filter(Boolean)[0];
+    probeTotal = numOrNull(p.meta?.total);
+    latestYear = pr ? numOrNull(pr.YEAR) : null;
   } catch (e) {
-    if (e.message.includes('400') || e.message.toLowerCase().includes('field')) {
-      usedFullFields = false;
-      try {
-        const r = await fetchFDIC(`${FDIC_SOD_BASE}?filters=${branchFilters}&fields=${fieldsSafe}&limit=1200&sort_by=YEAR&sort_order=DESC`);
-        rows = (r.data || []).map(d => d.data).filter(Boolean);
-      } catch (e2) {
-        throw new Error(`Branch data lookup for CERT ${cert} failed on both full and reduced field sets. FDIC said: ${e2.message}`);
-      }
-    } else {
-      throw new Error(`Branch data lookup for CERT ${cert}: ${e.message}`);
-    }
+    // Probe failure is not fatal: fall through to the exact path, which has
+    // its own error handling and messages.
   }
 
-  if (!rows.length) throw new Error(`No branch data found for CERT ${cert}${state ? ` in ${state.toUpperCase()}` : ''}. The certificate may be inactive, not FDIC-insured, or have no branches in that state. Verify with search_institutions or get_bank_profile first.`);
-
-  const allYears = [...new Set(rows.map(r => Number(r.YEAR)).filter(y => !isNaN(y)))].sort((a, b) => b - a);
-  const latestYear = allYears.length ? allYears[0] : null;
-
-  // Map one SOD row -> branch object. Shared by the single-year and range paths.
+  // Map one SOD row -> branch object. Shared by every path.
+  let usedFullFields = true;
   const toBranch = (r) => ({
     name: r.NAMEFULL || null,
     branch_key: usedFullFields && r.UNINUMBR != null ? Number(r.UNINUMBR) : null,
@@ -1708,9 +1845,6 @@ async function getBranchData(args) {
     established: usedFullFields ? (r.SIMS_ESTABLISHED_DATE || null) : null,
     acquired: usedFullFields ? (r.SIMS_ACQUIRED_DATE || null) : null,
   });
-
-  // Build one year's branch list: dedupe by branch key, main office first then
-  // deposits desc, capped to `max`.
   const buildBranches = (yearRows) => {
     let list = yearRows;
     if (usedFullFields) {
@@ -1727,17 +1861,124 @@ async function getBranchData(args) {
       .sort((a, b) => (Number(b.is_main_office) - Number(a.is_main_office)) || (b.deposits_thousands - a.deposits_thousands))
       .slice(0, max);
   };
-
-  // Honest field-availability note (built from what actually came back, not from
-  // which query path ran).
   const fieldNote = (branchList) => {
     if (!usedFullFields) return 'Reduced field set returned — address, zip, service type and establish date were unavailable for this query.';
     const n = branchList.length;
     const missEst = branchList.filter(b => !b.established).length;
     return `Established date present for ${n - missEst} of ${n} branches${missEst ? ` (missing for ${missEst})` : ''}.`;
   };
+  const ttlFor = (lastYearCovered) => (latestYear != null && lastYearCovered != null && lastYearCovered < latestYear) ? SOD_CLOSED_YEAR_TTL_MS : undefined;
+  const SOURCE_NOTE = 'FDIC Summary of Deposits (SOD) — an annual census of branch locations and deposits, filed as of June 30 each year. Branch-level data is annual only; no public source has sub-annual branch data. SOD lists physical branches, not loan production offices.';
 
-  // ── Range mode: by_year totals + per-branch history across filing years ──
+  // ════ Size-guarded path (large banks) ════
+  if (probeTotal != null && probeTotal > BRANCH_EXACT_ROW_LIMIT && latestYear != null) {
+    // Pull one year's top branches by deposits, plus the main office (which
+    // could sit outside the top N), without dragging every branch-year in.
+    const topBranchesForYear = async (y, n) => {
+      const yf = `${branchFilters}%20AND%20YEAR%3A${y}`;
+      let top, sortedServerSide = true;
+      try {
+        top = await fetchFDIC(`${FDIC_SOD_BASE}?filters=${yf}&fields=${fieldsFull}&limit=${n}&sort_by=DEPSUMBR&sort_order=DESC`);
+      } catch (e) {
+        sortedServerSide = false;
+        top = await fetchFDIC(`${FDIC_SOD_BASE}?filters=${yf}&fields=${fieldsFull}&limit=2000&sort_by=YEAR&sort_order=DESC`);
+      }
+      const main = await fetchFDIC(`${FDIC_SOD_BASE}?filters=${yf}%20AND%20BKMO%3A1&fields=${fieldsFull}&limit=1`).catch(() => ({ data: [] }));
+      const rows = [...(top.data || []), ...(main.data || [])].map(d => d.data).filter(Boolean);
+      return { rows, total: numOrNull(top.meta?.total), sortedServerSide };
+    };
+    const hint = state
+      ? 'Narrow further with a smaller year range.'
+      : 'Pass a 2-letter `state` to get complete branch lists for one state.';
+
+    if (!isRange) {
+      const y = singleYear ?? latestYear;
+      const t = await topBranchesForYear(y, Math.max(max, BRANCH_GUARD_TOP_N));
+      if (!t.rows.length) throw new Error(`No SOD branch data on file for CERT ${cert} in filing year ${y}.`);
+      const branches = buildBranches(t.rows);
+      const bankTotal = !state ? numOrNull((t.rows.find(r => r.DEPSUM != null) || {}).DEPSUM) : null;
+      const result = {
+        cert,
+        as_of_year: y,
+        branch_count: branches.length,
+        total_branches_on_file: t.total,
+        total_branch_deposits_thousands: branches.reduce((s, b) => s + b.deposits_thousands, 0),
+        bank_total_deposits_thousands: bankTotal,
+        state_filter: state ? state.toUpperCase() : null,
+        truncated: t.total != null && t.total > branches.length,
+        branches,
+        interpretation_notes: {
+          source: `${SOURCE_NOTE} These figures are the ${y} filing.`,
+          size_guard: `This bank has ${t.total ?? 'many'} branches on file for ${y}; showing the top ${branches.length} by deposits (main office first). total_branch_deposits_thousands sums only the branches shown${bankTotal != null ? '; bank_total_deposits_thousands is the bank-wide total' : ''}. ${hint}`,
+          branch_field_availability: fieldNote(branches),
+          ...(t.sortedServerSide ? {} : { ranking_note: 'FDIC would not sort by deposits server-side; the list is ranked from a partial pull and may miss some large branches.' }),
+        },
+        profile_url: `https://vaultbot.ai/bank/${cert}`,
+        _cache: { hit: false, stored_at: new Date().toISOString() },
+      };
+      await cacheSet(cacheKey, result, ttlFor(y)).catch(() => {});
+      return result;
+    }
+
+    // Range on a large bank: per-year totals from one 1-row probe per year
+    // (meta.total = branch count, DEPSUM = bank-wide deposits), plus the top
+    // branches for the last year. No per-branch history at this size.
+    const lo = rangeStart ?? 1994;
+    const hi = Math.min(rangeEnd ?? latestYear, latestYear);
+    let years = [];
+    for (let y = hi; y >= lo; y--) years.push(y);
+    const yearsCapped = years.length > BRANCH_GUARD_MAX_YEARS;
+    years = years.slice(0, BRANCH_GUARD_MAX_YEARS).sort((a, b) => a - b);
+    const perYear = await mapLimit(years, 4, async (y) => {
+      const r = await fetchFDIC(`${FDIC_SOD_BASE}?filters=${branchFilters}%20AND%20YEAR%3A${y}&fields=YEAR,DEPSUM&limit=1`);
+      const row = (r.data || []).map(d => d.data).filter(Boolean)[0];
+      return { year: y, branch_count: numOrNull(r.meta?.total) || 0, total_deposits_thousands: (!state && row) ? numOrNull(row.DEPSUM) : null };
+    });
+    const by_year = perYear.map((p, i) => p.ok ? p.value : { year: years[i], error: p.error.message }).filter(p => p.error || p.branch_count > 0);
+    const top = await topBranchesForYear(hi, BRANCH_GUARD_TOP_N);
+    const result = {
+      cert,
+      mode: 'multi_year',
+      years: by_year.map(b => b.year),
+      state_filter: state ? state.toUpperCase() : null,
+      truncated: true,
+      by_year,
+      top_branches_latest_year: { year: hi, branches: buildBranches(top.rows).slice(0, BRANCH_GUARD_TOP_N) },
+      interpretation_notes: {
+        source: SOURCE_NOTE,
+        size_guard: `This bank has ${probeTotal} branch-year rows on file — too many to return branch by branch inside the response budget. Returned per-year branch counts${state ? '' : ' and bank-wide deposit totals'}, plus the top ${BRANCH_GUARD_TOP_N} branches by deposits for ${hi}. ${hint}${yearsCapped ? ` Range capped to the most recent ${BRANCH_GUARD_MAX_YEARS} years.` : ''}`,
+      },
+      profile_url: `https://vaultbot.ai/bank/${cert}`,
+      _cache: { hit: false, stored_at: new Date().toISOString() },
+    };
+    await cacheSet(cacheKey, result, ttlFor(hi)).catch(() => {});
+    return result;
+  }
+
+  // ════ Exact path (small/mid banks) — unchanged behavior from 5.0 ════
+  let rows;
+  try {
+    const r = await fetchFDIC(`${FDIC_SOD_BASE}?filters=${branchFilters}&fields=${fieldsFull}&limit=${BRANCH_EXACT_ROW_LIMIT}&sort_by=YEAR&sort_order=DESC`);
+    rows = (r.data || []).map(d => d.data).filter(Boolean);
+  } catch (e) {
+    if (e.message.includes('400') || e.message.toLowerCase().includes('field')) {
+      usedFullFields = false;
+      try {
+        const r = await fetchFDIC(`${FDIC_SOD_BASE}?filters=${branchFilters}&fields=${fieldsSafe}&limit=${BRANCH_EXACT_ROW_LIMIT}&sort_by=YEAR&sort_order=DESC`);
+        rows = (r.data || []).map(d => d.data).filter(Boolean);
+      } catch (e2) {
+        throw new Error(`Branch data lookup for CERT ${cert} failed on both full and reduced field sets. FDIC said: ${e2.message}`);
+      }
+    } else {
+      throw new Error(`Branch data lookup for CERT ${cert}: ${e.message}`);
+    }
+  }
+
+  if (!rows.length) throw new Error(`No branch data found for CERT ${cert}${state ? ` in ${state.toUpperCase()}` : ''}. The certificate may be inactive, not FDIC-insured, or have no branches in that state. Verify with search_institutions or get_bank_profile first.`);
+
+  const allYears = [...new Set(rows.map(r => Number(r.YEAR)).filter(y => !isNaN(y)))].sort((a, b) => b - a);
+  if (latestYear == null && allYears.length) latestYear = allYears[0];
+
   if (isRange) {
     const lo = rangeStart ?? (allYears.length ? Math.min(...allYears) : latestYear);
     const hi = rangeEnd ?? latestYear;
@@ -1745,16 +1986,9 @@ async function getBranchData(args) {
 
     const by_year = yearsInRange.map(y => {
       const branches = buildBranches(rows.filter(r => Number(r.YEAR) === y));
-      return {
-        year: y,
-        branch_count: branches.length,
-        total_deposits_thousands: branches.reduce((s, b) => s + b.deposits_thousands, 0),
-        branches,
-      };
+      return { year: y, branch_count: branches.length, total_deposits_thousands: branches.reduce((s, b) => s + b.deposits_thousands, 0), branches };
     });
 
-    // Follow each branch (by UNINUMBR) across years; a gap means the branch was
-    // not on file that year (opening, closure, or transfer via acquisition).
     const history = new Map();
     for (const r of rows) {
       const y = Number(r.YEAR);
@@ -1769,11 +2003,8 @@ async function getBranchData(args) {
       cur.deposits_by_year[y] = Number(r.DEPSUMBR) || 0;
       history.set(k, cur);
     }
-    const branch_history = [...history.values()].sort((a, b) => {
-      const am = Math.max(0, ...Object.values(a.deposits_by_year));
-      const bm = Math.max(0, ...Object.values(b.deposits_by_year));
-      return bm - am;
-    });
+    const branch_history = [...history.values()].sort((a, b) =>
+      Math.max(0, ...Object.values(b.deposits_by_year)) - Math.max(0, ...Object.values(a.deposits_by_year)));
 
     const result = {
       cert,
@@ -1783,28 +2014,26 @@ async function getBranchData(args) {
       by_year,
       branch_history,
       interpretation_notes: {
-        source: 'FDIC Summary of Deposits (SOD) — an annual census of branch locations and deposits, filed as of June 30 each year. Branch-level history is annual only; no public source has sub-annual branch data. SOD lists physical branches, not loan production offices.',
+        source: SOURCE_NOTE,
         branch_key: 'branch_key is FDIC\'s unique branch number (UNINUMBR); a gap in a branch_history row means the branch was not on file that year — an opening, a closure, or a transfer via acquisition.',
       },
       profile_url: `https://vaultbot.ai/bank/${cert}`,
       _cache: { hit: false, stored_at: new Date().toISOString() },
     };
-    await cacheSet(cacheKey, result).catch(() => {});
+    await cacheSet(cacheKey, result, ttlFor(hi)).catch(() => {});
     return result;
   }
 
-  // ── Single-year / latest mode ──
   const targetYear = singleYear ?? latestYear;
   const yearRows = rows.filter(r => Number(r.YEAR) === targetYear);
   if (!yearRows.length) throw new Error(`No SOD branch data on file for CERT ${cert} in filing year ${targetYear}. Available filing years: ${allYears.join(', ')}.`);
   const branches = buildBranches(yearRows);
-  const totalBranchDeposits = branches.reduce((sum, b) => sum + b.deposits_thousands, 0);
 
   const result = {
     cert,
     as_of_year: targetYear,
     branch_count: branches.length,
-    total_branch_deposits_thousands: totalBranchDeposits,
+    total_branch_deposits_thousands: branches.reduce((sum, b) => sum + b.deposits_thousands, 0),
     state_filter: state ? state.toUpperCase() : null,
     branches,
     interpretation_notes: {
@@ -1815,7 +2044,7 @@ async function getBranchData(args) {
     profile_url: `https://vaultbot.ai/bank/${cert}`,
     _cache: { hit: false, stored_at: new Date().toISOString() },
   };
-  await cacheSet(cacheKey, result).catch(() => {});
+  await cacheSet(cacheKey, result, ttlFor(targetYear)).catch(() => {});
   return result;
 }
 
@@ -1882,12 +2111,182 @@ async function fetchCountyRows(filters) {
   };
 }
 
+// ── get_county_deposit_share: multi-year (5.1) ─────────────────────────────
+// Caps keep an uncached call inside the response budget: counties x years
+// leaderboards are the most expensive query shape Vault runs.
+const COUNTY_HIST_MAX_YEARS = 5;
+const COUNTY_HIST_MAX_PAGES = 5;
+
+// Pull every branch row for one county filter across [lo..hi]. Tries a single
+// YEAR range query (paged, de-duped so an ignored offset can't double-count);
+// if FDIC rejects the range syntax, falls back to one equality query per year
+// (the proven YEAR:yyyy form).
+async function fetchCountyRowsForYears(filter, years) {
+  const lo = Math.min(...years), hi = Math.max(...years);
+  const fields = `${COUNTY_SOD_FIELDS},UNINUMBR`;
+  const seen = new Set();
+  const rows = [];
+  const keep = (list) => {
+    let added = 0;
+    for (const r of list) {
+      const y = Number(r.YEAR);
+      if (!years.includes(y)) continue;
+      const k = `${y}|${r.CERT}|${r.UNINUMBR}`;
+      if (seen.has(k)) continue;
+      seen.add(k); rows.push(r); added++;
+    }
+    return added;
+  };
+  let reported = null, mode = 'range';
+  try {
+    for (let page = 0; page < COUNTY_HIST_MAX_PAGES; page++) {
+      const r = await fetchFDIC(`${FDIC_SOD_BASE}?filters=${filter}%20AND%20YEAR%3A%5B${lo}%20TO%20${hi}%5D&fields=${fields}&limit=${COUNTY_FETCH_LIMIT}&offset=${page * COUNTY_FETCH_LIMIT}&sort_by=YEAR&sort_order=DESC`);
+      const list = (r.data || []).map(d => d.data).filter(Boolean);
+      reported = numOrNull(r.meta?.total);
+      const added = keep(list);
+      if (list.length < COUNTY_FETCH_LIMIT || added === 0) break;
+    }
+    if (!rows.length) throw new Error('range query returned no rows');
+  } catch (e) {
+    mode = 'per_year';
+    rows.length = 0; seen.clear(); reported = 0;
+    const res = await mapLimit(years, 3, async (y) => {
+      const r = await fetchFDIC(`${FDIC_SOD_BASE}?filters=${filter}%20AND%20YEAR%3A${y}&fields=${fields}&limit=${COUNTY_FETCH_LIMIT}&sort_by=YEAR&sort_order=DESC`);
+      return { list: (r.data || []).map(d => d.data).filter(Boolean), total: numOrNull(r.meta?.total) || 0 };
+    });
+    for (const x of res) if (x.ok) { keep(x.value.list); reported += x.value.total; }
+  }
+  return { rows, reported_total: reported, incomplete: reported != null && reported > rows.length, mode };
+}
+
+function resolveHistoryYears(start_year, end_year, latest) {
+  const hi = Math.min(end_year != null ? Number(end_year) : latest, latest);
+  const lo = start_year != null ? Math.max(1994, Number(start_year)) : hi - (COUNTY_HIST_MAX_YEARS - 1);
+  let years = [];
+  for (let y = hi; y >= lo; y--) years.push(y);
+  const capped = years.length > COUNTY_HIST_MAX_YEARS;
+  years = years.slice(0, COUNTY_HIST_MAX_YEARS).sort((a, b) => a - b);
+  return { years, capped, hi };
+}
+
+async function getCountyDepositShareHistory(args) {
+  const { cert, county, state, limit = 25, start_year, end_year } = args || {};
+  const max = Math.min(Math.max(Number(limit) || 25, 1), 200);
+  const HIST_NOTE = 'Multi-year county share is the heaviest Vault query (counties x years leaderboards). Capped at the most recent 5 years and the bank\'s top 10 counties per call; can exceed Perplexity\'s 15-second tool limit when uncached. SOD is one snapshot per year (June 30).';
+
+  // ── County leaderboard by year ──
+  if (!cert) {
+    const st = String(state).toUpperCase();
+    const nameFilter = `CNTYNAMB%3A%22${encodeURIComponent(county)}%22%20AND%20STALPBR%3A%22${st}%22`;
+    const latest = await latestSodYear(nameFilter);
+    if (latest == null) throw new Error(`No FDIC branch data found for county "${county}" in ${st}. Use the county name only, without the word "County".`);
+    const { years, capped, hi } = resolveHistoryYears(start_year, end_year, latest);
+    const cacheKey = `county-share-hist-${st}-${String(county).toLowerCase()}-${years[0]}_${hi}-l${max}`;
+    const cached = await cacheGet(cacheKey);
+    if (cached) return { ...cached, _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) } };
+
+    const got = await fetchCountyRowsForYears(nameFilter, years);
+    if (!got.rows.length) throw new Error(`No FDIC branch data found for county "${county}" in ${st} for ${years[0]}–${hi}.`);
+    const by_year = years.map(y => {
+      const yr = got.rows.filter(r => Number(r.YEAR) === y);
+      if (!yr.length) return { year: y, bank_count: 0, total_county_deposits_thousands: 0, banks: [] };
+      const { banks, total_county_deposits, bank_count } = rankBanksInCounty(yr);
+      return { year: y, bank_count, total_county_deposits_thousands: total_county_deposits, banks: banks.slice(0, max) };
+    });
+    const result = {
+      mode: 'county_leaderboard_history',
+      county: got.rows[0].CNTYNAMB, state: st, county_fips: got.rows[0].STCNTYBR ?? null,
+      years, by_year,
+      capped: capped ? `Range capped to the most recent ${COUNTY_HIST_MAX_YEARS} years.` : null,
+      incomplete_warning: got.incomplete ? `FDIC reported ${got.reported_total} branch rows but ${got.rows.length} were retrieved; some years may be ranked on a partial county.` : null,
+      interpretation_notes: { source: 'FDIC Summary of Deposits (SOD), annual branch-level filing as of June 30', history: HIST_NOTE, fetch_mode: got.mode },
+      _cache: { hit: false, stored_at: new Date().toISOString() },
+    };
+    await cacheSet(cacheKey, result, hi < latest ? SOD_CLOSED_YEAR_TTL_MS : undefined);
+    return result;
+  }
+
+  // ── Bank footprint by year ──
+  const latest = await latestSodYear(`CERT%3A${cert}`);
+  if (latest == null) throw new Error(`No branch data found for CERT ${cert}. It may be inactive or not FDIC-insured. Verify with search_institutions.`);
+  const { years, capped, hi } = resolveHistoryYears(start_year, end_year, latest);
+  const cacheKey = `county-share-hist-cert-${cert}-${years[0]}_${hi}`;
+  const cached = await cacheGet(cacheKey);
+  if (cached) return { ...cached, _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) } };
+
+  // The bank's own branches for each year (proven equality filter), so a
+  // county the bank entered or left mid-range still shows up.
+  const own = await mapLimit(years, 3, async (y) => (await fetchCountyRows(`CERT%3A${cert}%20AND%20YEAR%3A${y}`)).rows);
+  const bankRows = own.filter(x => x.ok).flatMap(x => x.value);
+  if (!bankRows.length) throw new Error(`No branch data found for CERT ${cert} for ${years[0]}–${hi}.`);
+
+  const footprint = new Map();
+  for (const r of bankRows) {
+    const fips = String(r.STCNTYBR);
+    const y = Number(r.YEAR);
+    const c = footprint.get(fips) || { county_fips: r.STCNTYBR, county: r.CNTYNAMB, state: r.STALPBR, peak: 0, byYear: {} };
+    const b = c.byYear[y] || { deposits: 0, branches: 0 };
+    b.deposits += Number(r.DEPSUMBR) || 0; b.branches += 1;
+    c.byYear[y] = b;
+    c.peak = Math.max(c.peak, b.deposits);
+    footprint.set(fips, c);
+  }
+  const ordered = [...footprint.values()].sort((a, b) => b.peak - a.peak);
+  const selected = ordered.slice(0, MAX_COUNTIES_PER_BANK);
+
+  const countyResults = await mapLimit(selected, 3, async (c) => {
+    const got = await fetchCountyRowsForYears(`STCNTYBR%3A${c.county_fips}`, years);
+    const by_year = years.map(y => {
+      const mine = c.byYear[y];
+      if (!mine) return { year: y, present: false };
+      const { banks, total_county_deposits, bank_count } = rankBanksInCounty(got.rows.filter(r => Number(r.YEAR) === y));
+      const me = banks.find(b => String(b.cert) === String(cert));
+      return {
+        year: y, present: true,
+        bank_deposits_thousands: mine.deposits, bank_branches: mine.branches,
+        total_county_deposits_thousands: total_county_deposits,
+        market_share_pct: me ? me.market_share_pct : null,
+        rank: me ? me.rank : null,
+        banks_in_county: bank_count,
+      };
+    });
+    return {
+      county: c.county, state: c.state, county_fips: c.county_fips, by_year,
+      incomplete_warning: got.incomplete ? `FDIC reported ${got.reported_total} rows but ${got.rows.length} were retrieved; ranks may be partial.` : null,
+    };
+  });
+  const counties = countyResults.map((r, i) => r.ok ? r.value
+    : { county: selected[i].county, state: selected[i].state, county_fips: selected[i].county_fips, error: r.error.message });
+
+  const result = {
+    mode: 'bank_county_footprint_history',
+    cert: String(cert),
+    bank_name: bankRows[0].NAMEFULL,
+    years,
+    county_count: ordered.length,
+    counties,
+    capped: capped ? `Range capped to the most recent ${COUNTY_HIST_MAX_YEARS} years.` : null,
+    truncated: ordered.length > selected.length
+      ? { showing: selected.length, of: ordered.length, note: `Showing the ${selected.length} counties where this bank held the most deposits in any year of the range.` }
+      : null,
+    interpretation_notes: {
+      source: 'FDIC Summary of Deposits (SOD), annual branch-level filing as of June 30',
+      history: HIST_NOTE,
+      present: 'present:false means the bank had no branch in that county that year (entry or exit).',
+    },
+    _cache: { hit: false, stored_at: new Date().toISOString() },
+  };
+  await cacheSet(cacheKey, result, hi < latest ? SOD_CLOSED_YEAR_TTL_MS : undefined);
+  return result;
+}
+
 async function getCountyDepositShare(args) {
   const { cert, county, state, limit = 25 } = args || {};
   if (!cert && !(county && state)) {
     throw new Error('Provide either "cert" (to see every county that bank competes in) or both "county" and "state" (to see the ranked leaderboard for one county). Get a CERT from search_institutions.');
   }
   const max = Math.min(Math.max(Number(limit) || 25, 1), 200);
+  if (args.start_year != null || args.end_year != null) return getCountyDepositShareHistory(args);
 
   // ── Mode B: one county, full leaderboard ──────────────────────────────────
   if (!cert) {
@@ -2442,7 +2841,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.23.1',
+        name: 'vault-mcp', version: '1.24.0',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -2497,7 +2896,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: negotiatedProtocol,
-          serverInfo: { name: 'vault-mcp', version: '1.23.1' },
+          serverInfo: { name: 'vault-mcp', version: '1.24.0' },
           capabilities: { tools: {} },
         });
       }
