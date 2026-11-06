@@ -162,7 +162,7 @@ const TOOLS = [
   },
   {
     name: 'get_branch_data',
-    description: 'Get branch-level location and deposit data for a specific bank from the FDIC Summary of Deposits (SOD) — the annual branch-level census FDIC-insured banks file every June. Returns branch count, total branch deposits, and a list of individual branches with address, city, state, deposits, service type (full service, drive-through, limited service, etc.), established date, and whether it is the main office (sorted first). A $0-deposit site is usually a drive-through or limited-service office, flagged with zero_deposits, not a dead branch. Pass `year` for a single past SOD year, or `start_year`+`end_year` to rebuild the footprint annually across years — multi-year returns per-year totals (by_year) plus a per-branch history keyed by FDIC branch number, so openings, closures and relocations show as gaps. Typically responds in 3-6 seconds. Use to answer "how many branches," "where does this bank operate," "which branches hold the most deposits," or "how has the branch footprint changed over time." Grain notes: SOD is one snapshot per year (June 30), so branch-level history is annual only — no public source has sub-annual branch data; and SOD lists physical branches, not loan production offices.',
+    description: 'Get branch-level location and deposit data for a specific bank from the FDIC Summary of Deposits (SOD) — the annual branch-level census FDIC-insured banks file every June. Returns branch count, total branch deposits, and a list of individual branches with address, city, state, deposits, service type (FDIC office type: full service, limited service facility/administrative, etc.), established date, and whether it is the main office (sorted first). A $0-deposit site is usually a limited-service office that books no deposits of its own, flagged with zero_deposits, not a dead branch. Pass `year` for a single past SOD year, or `start_year`+`end_year` to rebuild the footprint annually across years — multi-year returns per-year totals (by_year) plus a per-branch history keyed by FDIC branch number, so openings, closures and relocations show as gaps. Typically responds in 3-6 seconds. Use to answer "how many branches," "where does this bank operate," "which branches hold the most deposits," or "how has the branch footprint changed over time." Grain notes: SOD is one snapshot per year (June 30), so branch-level history is annual only — no public source has sub-annual branch data; and SOD lists physical branches, not loan production offices.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1617,19 +1617,19 @@ async function getBrokeredDeposits(args) {
 // $0-deposit sites: a drive-through or limited-service office books no deposits
 // of its own but is not a dead branch.
 const SOD_SERVICE_TYPES = {
-  11: 'Full service, brick and mortar',
-  12: 'Full service, retail',
+  11: 'Full service, brick and mortar office',
+  12: 'Full service, retail office',
   13: 'Full service, cyber office',
-  21: 'Limited service, administrative',
+  21: 'Limited service, administrative office',
   22: 'Limited service, military facility',
-  23: 'Limited service, facility',
+  23: 'Limited service, facility office',
   24: 'Limited service, loan production office',
-  25: 'Limited service, consumer credit',
+  25: 'Limited service, consumer credit office',
   26: 'Limited service, contractual office',
-  27: 'Limited service, messenger',
-  28: 'Limited service, retail',
-  29: 'Limited service, mobile / drive-through',
-  30: 'Limited service, trust office',
+  27: 'Limited service, messenger office',
+  28: 'Limited service, retail office',
+  29: 'Limited service, mobile/seasonal office',
+  30: 'Trust office',
 };
 function decodeServiceType(code) {
   if (code == null || code === '') return null;
@@ -2442,7 +2442,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.23.0',
+        name: 'vault-mcp', version: '1.23.1',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -2497,7 +2497,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: negotiatedProtocol,
-          serverInfo: { name: 'vault-mcp', version: '1.23.0' },
+          serverInfo: { name: 'vault-mcp', version: '1.23.1' },
           capabilities: { tools: {} },
         });
       }
