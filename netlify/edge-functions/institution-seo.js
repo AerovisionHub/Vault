@@ -23,7 +23,7 @@
 // instead of throwing, so the worst case is an unchanged page rather than a
 // broken one.
 
-const FDIC_BASE = 'https://banks.data.fdic.gov/api';
+const FDIC_BASE = 'https://api.fdic.gov/banks';
 
 // Soft-404 fix (2026-10-25). Search Console flagged "Soft 404": every
 // /bank/* and /cu/* URL answered 200 even when the institution doesn't exist
@@ -150,7 +150,7 @@ async function getBank(cert) {
 // and county pages. Query shapes are copied from proven MCP tools
 // (getLenderRankings, getBranchData, county SOD). Every block is optional:
 // a failed call drops that block, never the page.
-const FDIC_SOD = 'https://banks.data.fdic.gov/api/sod';
+const FDIC_SOD = 'https://api.fdic.gov/banks/sod';
 
 // Peer bands are fixed asset buckets (in $ thousands, as FDIC reports) rather
 // than a per-bank 0.5x–2x window, so every bank in the same state + bucket

@@ -9,7 +9,7 @@
 // Slugs must match what the client builds in index.html, or every URL here
 // redirects and the crawl budget is wasted on hops.
 
-const FDIC_BASE = 'https://banks.data.fdic.gov/api';
+const FDIC_BASE = 'https://api.fdic.gov/banks';
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const SITE = 'https://vaultbot.ai';
 

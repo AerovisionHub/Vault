@@ -52,7 +52,7 @@ export default async (request, context) => {
     const fdicController = new AbortController();
     const fdicTimer = setTimeout(() => fdicController.abort(), 3000);
     const fdicResp = await fetch(
-      `https://banks.data.fdic.gov/api/institutions?filters=CERT%3A${cert}&fields=NAME,CITY,STALP&limit=1`,
+      `https://api.fdic.gov/banks/institutions?filters=CERT%3A${cert}&fields=NAME,CITY,STALP&limit=1`,
       { signal: fdicController.signal }
     );
     clearTimeout(fdicTimer);

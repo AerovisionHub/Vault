@@ -726,7 +726,7 @@
         <a onclick="showLenders();closeAllNavDropdowns()"><span class="dot" style="background:#4ade80;"></span>Find a Lender</a>
         <a onclick="showCompare();closeAllNavDropdowns()"><span class="dot" style="background:#b06ef3;"></span>Compare Banks</a>
         <div class="nav-dropdown-divider"></div>
-        <a href="https://banks.data.fdic.gov/docs/" target="_blank" class="nav-dropdown-external">FDIC Data ↗</a>
+        <a href="https://api.fdic.gov/banks/docs/" target="_blank" class="nav-dropdown-external">FDIC Data ↗</a>
         <a href="https://mapping.ncua.gov/ResearchCreditUnion" target="_blank" class="nav-dropdown-external">NCUA Data ↗</a>
       </div>
     </div>
@@ -767,7 +767,7 @@
   <a onclick="showMA();closeMobileNav()" style="color:#f87171;">📋 M&amp;A Activity</a>
   <a onclick="showAbout();closeMobileNav()" style="color:#c4b5fd;">ℹ About Vault</a>
   <div class="nav-mobile-divider"></div>
-  <a href="https://banks.data.fdic.gov/docs/" target="_blank" class="nav-mobile-external">FDIC Data ↗</a>
+  <a href="https://api.fdic.gov/banks/docs/" target="_blank" class="nav-mobile-external">FDIC Data ↗</a>
   <a href="https://mapping.ncua.gov/ResearchCreditUnion" target="_blank" class="nav-mobile-external">NCUA Data ↗</a>
 </nav>
 
@@ -818,14 +818,14 @@
     <span class="footer-hide-mobile"> — Empowering Banks to Better Serve Their Communities</span>
   </div>
   <div style="font-family:var(--mono);font-size:11px;color:var(--muted);display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
-    <span class="footer-hide-mobile">Data sourced from <a href="https://banks.data.fdic.gov" target="_blank" style="color:var(--muted);text-decoration:underline;text-underline-offset:3px;">FDIC BankFind</a> & <a href="https://ncua.gov" target="_blank" style="color:var(--muted);text-decoration:underline;text-underline-offset:3px;">NCUA</a></span>
+    <span class="footer-hide-mobile">Data sourced from <a href="https://api.fdic.gov/banks/docs/" target="_blank" style="color:var(--muted);text-decoration:underline;text-underline-offset:3px;">FDIC BankFind</a> & <a href="https://ncua.gov" target="_blank" style="color:var(--muted);text-decoration:underline;text-underline-offset:3px;">NCUA</a></span>
     <span class="footer-show-mobile" style="display:none;font-size:10px;color:var(--muted);">FDIC + NCUA data</span>
     <a href="https://goidentify.com" target="_blank" style="color:#3b82f6;text-decoration:none;font-weight:500;">goidentify.com ↗</a>
   </div>
 </footer>
 
 <script>
-const FDIC_BASE = 'https://banks.data.fdic.gov/api';
+const FDIC_BASE = 'https://api.fdic.gov/banks';
 
 // Full state name -> 2-letter code, for detecting "banks in Oklahoma" style
 // queries. Keys are lowercase for case-insensitive matching.
@@ -4464,7 +4464,7 @@ async function loadMA(year) {
   if (year !== 'all') {
     filters += `%20AND%20EFFDATE%3A%5B${year}0101%20TO%20${year}1231%5D`;
   } else {
-    filters += `%20AND%20EFFDATE%3A%5B20230101%20TO%2099999999%5D`;
+    filters += `%20AND%20EFFDATE%3A%5B20230101%20TO%20*%5D`;
   }
 
   try {
@@ -4587,12 +4587,8 @@ function renderCharters() {
 
     <!-- Year selector -->
     <div style="display:flex;gap:8px;margin-bottom:28px;flex-wrap:wrap;">
-      <button onclick="setCharterYear(2025)" id="charterBtn2025"
-        style="padding:6px 18px;border-radius:20px;font-family:var(--mono);font-size:12px;cursor:pointer;border:1px solid var(--accent);background:rgba(77,184,255,0.15);color:var(--accent);">2025</button>
-      <button onclick="setCharterYear(2024)" id="charterBtn2024"
-        style="padding:6px 18px;border-radius:20px;font-family:var(--mono);font-size:12px;cursor:pointer;border:1px solid rgba(255,255,255,0.15);background:transparent;color:var(--muted);">2024</button>
-      <button onclick="setCharterYear(2023)" id="charterBtn2023"
-        style="padding:6px 18px;border-radius:20px;font-family:var(--mono);font-size:12px;cursor:pointer;border:1px solid rgba(255,255,255,0.15);background:transparent;color:var(--muted);">2023</button>
+      ${charterYears().map((y, i) => `<button onclick="setCharterYear(${y})" id="charterBtn${y}"
+        style="${i === 0 ? 'padding:6px 18px;border-radius:20px;font-family:var(--mono);font-size:12px;cursor:pointer;border:1px solid var(--accent);background:rgba(77,184,255,0.15);color:var(--accent);' : 'padding:6px 18px;border-radius:20px;font-family:var(--mono);font-size:12px;cursor:pointer;border:1px solid rgba(255,255,255,0.15);background:transparent;color:var(--muted);'}">${y}</button>`).join('\n      ')}
       <button onclick="setCharterYear('all')" id="charterBtnall"
         style="padding:6px 18px;border-radius:20px;font-family:var(--mono);font-size:12px;cursor:pointer;border:1px solid rgba(255,255,255,0.15);background:transparent;color:var(--muted);">All Years</button>
     </div>
@@ -4610,7 +4606,9 @@ function renderCharters() {
   </div>`;
 }
 
-let _charterYear = 2025;
+// Charter year buttons run from the current year back to 2023, so the page never goes stale on Jan 1.
+function charterYears() { const a = []; for (let y = new Date().getFullYear(); y >= 2023; y--) a.push(y); return a; }
+let _charterYear = charterYears()[0];
 let _charterType = 'bank';
 let _charterCache = {};
 let _cuCharterCache = {};
@@ -4631,7 +4629,7 @@ function setCharterType(type) {
 function setCharterYear(year) {
   _charterYear = year;
   // Update button styles
-  ['2025','2024','2023','all'].forEach(y => {
+  [...charterYears().map(String), 'all'].forEach(y => {
     const btn = document.getElementById(`charterBtn${y}`);
     if (!btn) return;
     const active = String(y) === String(year);
@@ -4643,7 +4641,7 @@ function setCharterYear(year) {
 }
 
 async function initCharters() {
-  loadCharters(2025);
+  loadCharters(_charterYear);
 }
 
 async function loadCharters(year) {
@@ -4661,7 +4659,7 @@ async function loadCharters(year) {
   const fields = 'NAME,CERT,CITY,STALP,ASSET,ESTYMD,INSTCAT,CHRTAGNT,WEBADDR,NAMEHCR,ADDRESS,ZIP,DEP';
   let filters;
   if (year === 'all') {
-    filters = `ESTYMD%3A%5B20230101%20TO%2099999999%5D%20AND%20ACTIVE%3A1`;
+    filters = `ESTYMD%3A%5B20230101%20TO%20*%5D%20AND%20ACTIVE%3A1`;
   } else {
     filters = `ESTYMD%3A%5B${year}0101%20TO%20${year}1231%5D%20AND%20ACTIVE%3A1`;
   }
@@ -4690,7 +4688,7 @@ function renderCharterData(banks, year) {
 
   if (statsEl) {
     statsEl.innerHTML = [
-      { label: 'New Charters', val: banks.length, sub: year === 'all' ? '2023–2025' : `In ${year}`, color: '#fbbf24' },
+      { label: 'New Charters', val: banks.length, sub: year === 'all' ? `2023–${charterYears()[0]}` : `In ${year}`, color: '#fbbf24' },
       { label: 'Total Assets', val: `$${(totalAssets/1000).toFixed(0)}M`, sub: 'Combined', color: '#4db8ff' },
       { label: 'States', val: states, sub: 'Represented', color: '#b06ef3' },
       { label: 'Independent', val: independent, sub: 'No holding co.', color: '#4ade80' },
@@ -5013,7 +5011,7 @@ async function fetchLiveFDICAggregate() {
   try {
     const fields = 'REPDTE,PROBNUM,PROBASS,NIMY,ROA,ROE,ASSET,DEP';
     // Get last 8 quarters of aggregate data
-    const url = `${FDIC_BASE}/summary?fields=${fields}&limit=8&sort_by=REPDTE&sort_order=DESC&filters=REPDTE%3A%5B20220101%20TO%2099999999%5D`;
+    const url = `${FDIC_BASE}/summary?fields=${fields}&limit=8&sort_by=REPDTE&sort_order=DESC&filters=REPDTE%3A%5B20220101%20TO%20*%5D`;
     const r = await fetch(url);
     if (!r.ok) return null;
     const data = await r.json();
@@ -5746,7 +5744,7 @@ function renderAbout() {
       </div>
       <div class="about-card">
         <h3>// The data</h3>
-        <p>All data is sourced directly from the <a href="https://banks.data.fdic.gov/docs/" target="_blank" style="color:var(--accent);">FDIC BankFind API</a> and the <a href="https://mapping.ncua.gov/ResearchCreditUnion" target="_blank" style="color:var(--accent);">NCUA</a> public data portal. Financial figures are in thousands of dollars as reported. Updated quarterly with each call report cycle.</p>
+        <p>All data is sourced directly from the <a href="https://api.fdic.gov/banks/docs/" target="_blank" style="color:var(--accent);">FDIC BankFind API</a> and the <a href="https://mapping.ncua.gov/ResearchCreditUnion" target="_blank" style="color:var(--accent);">NCUA</a> public data portal. Financial figures are in thousands of dollars as reported. Updated quarterly with each call report cycle.</p>
       </div>
       <div class="about-card">
         <h3>// What's coming</h3>

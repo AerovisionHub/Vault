@@ -16,7 +16,7 @@
 // content that exists without JavaScript, so routing these through index.html
 // would reintroduce the exact problem the institution edge function fixed.
 
-const FDIC_BASE = 'https://banks.data.fdic.gov/api';
+const FDIC_BASE = 'https://api.fdic.gov/banks';
 const CENSUS_VINTAGE = 2024;
 
 const STATES = {

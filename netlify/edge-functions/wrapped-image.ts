@@ -22,7 +22,7 @@ import { ImageResponse } from "https://deno.land/x/og_edge/mod.ts";
 const h = (type: string, props: Record<string, unknown>, ...children: unknown[]) =>
   React.createElement(type, props, ...children);
 
-const FDIC_BASE = "https://banks.data.fdic.gov/api";
+const FDIC_BASE = "https://api.fdic.gov/banks";
 const BG = "linear-gradient(135deg, #1a1060, #2d1080)";
 const CYAN = "#4db8ff";
 const AMBER = "#fbbf24";

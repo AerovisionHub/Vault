@@ -2,10 +2,11 @@
 // Implements MCP (Model Context Protocol) over HTTP using JSON-RPC 2.0
 // Spec: https://modelcontextprotocol.io/
 
-const FDIC_BASE = 'https://banks.data.fdic.gov/api';
+const VAULT_MCP_VERSION = '1.24.2';
+const FDIC_BASE = 'https://api.fdic.gov/banks';
 // Summary of Deposits — separate FDIC dataset (annual branch-level census, as of each June 30).
 // Same query syntax as FDIC_BASE (filters=field%3Avalue&fields=...&limit=...&sort_by=...&sort_order=...).
-const FDIC_SOD_BASE = 'https://banks.data.fdic.gov/api/sod';
+const FDIC_SOD_BASE = 'https://api.fdic.gov/banks/sod';
 
 // FDIC fetch with rate-limit + bad-response detection.
 // FDIC returns plain text "You've exceeded the rate limit..." when throttling, which crashes
@@ -1057,7 +1058,7 @@ async function getBankProfile(args) {
   const finFields = 'REPDTE,ASSET,DEP,EQ,NETINC,RBC1AAJ,ROA,ROE,NIMY,NCLNLSR,LNLSDEPR,NUMEMP';
   // History mode pulls a multi-year range; default keeps the latest 8 quarters.
   const finLimit = useHistory ? 200 : 8;
-  const dateFilter = useHistory ? `%20AND%20REPDTE%3A%5B${Number(start_year)}0101%20TO%2099991231%5D` : '';
+  const dateFilter = useHistory ? `%20AND%20REPDTE%3A%5B${Number(start_year)}0101%20TO%20*%5D` : '';
   const [iR, fR] = await Promise.all([
     fetchFDIC(`${FDIC_BASE}/institutions?filters=CERT%3A${cert}&fields=${instFields}&limit=1`),
     fetchFDIC(`${FDIC_BASE}/financials?filters=CERT%3A${cert}${dateFilter}&fields=${finFields}&limit=${finLimit}&sort_by=REPDTE&sort_order=DESC`),
@@ -1184,14 +1185,14 @@ async function getIndustryMetrics(args) {
 
 async function getRecentCharters(args) {
   const { year } = args || {};
-  const cacheKey = `recent-charters-${year || 'all'}`;
+  const cacheKey = `recent-charters-v2-${year || 'all'}`;
   const cached = await cacheGet(cacheKey);
   if (cached) return { ...cached, _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) } };
 
   const fields = 'NAME,CERT,CITY,STALP,ASSET,ESTYMD,CHRTAGNT,WEBADDR,NAMEHCR';
   const filters = year
     ? `ESTYMD%3A%5B${year}0101%20TO%20${year}1231%5D%20AND%20ACTIVE%3A1`
-    : `ESTYMD%3A%5B20230101%20TO%2099999999%5D%20AND%20ACTIVE%3A1`;
+    : `ESTYMD%3A%5B20230101%20TO%20*%5D%20AND%20ACTIVE%3A1`;
   const r = await fetchFDIC(`${FDIC_BASE}/institutions?filters=${filters}&fields=${fields}&limit=100&sort_by=ESTYMD&sort_order=DESC`).catch(() => ({ data: [] }));
   const charters = (r.data || []).map(d => ({
     cert: d.data.CERT,
@@ -1210,21 +1211,23 @@ async function getRecentCharters(args) {
     count: charters.length,
     _cache: { hit: false, stored_at: new Date().toISOString() },
   };
-  await cacheSet(cacheKey, result).catch(() => {});
+  // Never cache an empty list: FDIC failures and silent filter mismatches (e.g. the
+  // 2026-11-06 history/institutions reindex) look identical to 'nothing found'.
+  if ((result.charters || []).length) await cacheSet(cacheKey, result).catch(() => {});
   return result;
 }
 
 async function getMAActivity(args) {
   const { year, limit = 50 } = args || {};
   const max = Math.min(Number(limit) || 50, 200);
-  const cacheKey = `ma-activity-${year || 'all'}-${max}`;
+  const cacheKey = `ma-activity-v2-${year || 'all'}-${max}`;
   const cached = await cacheGet(cacheKey);
   if (cached) return { ...cached, _cache: { hit: true, age_hours: Math.round((Date.now() - cached._cached_at) / 3600000) } };
 
   const fields = 'TRANSNUM,EFFDATE,CHANGECODE_DESC,ACQ_INSTNAME,ACQ_CERT,ACQ_PCITY,ACQ_PSTALP,OUT_INSTNAME,OUT_CERT,OUT_PCITY,OUT_PSTALP,ASSISTED_PAYOUT_FLAG';
   let filters = 'REPORT_TYPE%3A223';
   if (year) filters += `%20AND%20EFFDATE%3A%5B${year}0101%20TO%20${year}1231%5D`;
-  else filters += `%20AND%20EFFDATE%3A%5B20230101%20TO%2099999999%5D`;
+  else filters += `%20AND%20EFFDATE%3A%5B20230101%20TO%20*%5D`;
   const r = await fetchFDIC(`${FDIC_BASE}/history?filters=${filters}&fields=${fields}&limit=${max}&sort_by=EFFDATE&sort_order=DESC`).catch(() => ({ data: [] }));
   const seen = new Map();
   (r.data || []).forEach(d => {
@@ -1242,7 +1245,9 @@ async function getMAActivity(args) {
     count: transactions.length,
     _cache: { hit: false, stored_at: new Date().toISOString() },
   };
-  await cacheSet(cacheKey, result).catch(() => {});
+  // Never cache an empty list: FDIC failures and silent filter mismatches (e.g. the
+  // 2026-11-06 history/institutions reindex) look identical to 'nothing found'.
+  if ((result.transactions || []).length) await cacheSet(cacheKey, result).catch(() => {});
   return result;
 }
 
@@ -1458,7 +1463,7 @@ const LOANMIX_SUPP_KNOWN = ['LNRECONS', 'LNREMULT', 'LNRENRES'];
 const LOANMIX_SUPP_NEW = ['LNREAG', 'LNRENROW', 'LNRENROT', 'RBCT1J', 'RBCT2', 'RBC', 'RWAJ', 'RBCRWAJ'];
 
 async function fetchLoanMixSupplement(cert, fromRepdte) {
-  const base = `${FDIC_BASE}/financials?filters=CERT%3A${cert}%20AND%20REPDTE%3A%5B${fromRepdte}%20TO%2099991231%5D&limit=200&sort_by=REPDTE&sort_order=DESC`;
+  const base = `${FDIC_BASE}/financials?filters=CERT%3A${cert}%20AND%20REPDTE%3A%5B${fromRepdte}%20TO%20*%5D&limit=200&sort_by=REPDTE&sort_order=DESC`;
   const byDate = new Map();
   const merge = (rows) => {
     for (const r of rows) {
@@ -1510,7 +1515,7 @@ async function getLoanMix(args) {
   const fieldsNoMult   = 'REPDTE,LNLSGR,LNRE,LNRECONS,LNRENRES,LNRERES,LNCI,LNAG,LNCON';
 
   const limit = useHistory ? 200 : max;
-  const dateFilter = useHistory ? `%20AND%20REPDTE%3A%5B${Number(start_year)}0101%20TO%2099991231%5D` : '';
+  const dateFilter = useHistory ? `%20AND%20REPDTE%3A%5B${Number(start_year)}0101%20TO%20*%5D` : '';
 
   let rawRows = null;
   let usedMultifamily = true;
@@ -2847,7 +2852,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.24.1',
+        name: 'vault-mcp', version: VAULT_MCP_VERSION,
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -2902,7 +2907,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: negotiatedProtocol,
-          serverInfo: { name: 'vault-mcp', version: '1.24.1' },
+          serverInfo: { name: 'vault-mcp', version: VAULT_MCP_VERSION },
           capabilities: { tools: {} },
         });
       }
@@ -2925,7 +2930,7 @@ exports.handler = async (event) => {
         // Attach timing so the AI agent can naturally report "fetched in X seconds"
         // without the user wondering if something hung.
         const enriched = typeof data === 'object' && data !== null && !Array.isArray(data)
-          ? { ...data, _vault_meta: { fetched_in_ms: durationMs, fetched_in_s: Number((durationMs/1000).toFixed(1)), powered_by: 'Vault MCP by iDENTIFY · vaultbot.ai' } }
+          ? { ...data, _vault_meta: { fetched_in_ms: durationMs, fetched_in_s: Number((durationMs/1000).toFixed(1)), powered_by: 'Vault MCP by iDENTIFY · vaultbot.ai', mcp_version: VAULT_MCP_VERSION } }
           : data;
         await safeLog({ method, toolName, durationMs: Date.now()-t0, success: true });
         return reply({
