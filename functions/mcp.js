@@ -1896,20 +1896,25 @@ async function getBranchData(args) {
       const t = await topBranchesForYear(y, Math.max(max, BRANCH_GUARD_TOP_N));
       if (!t.rows.length) throw new Error(`No SOD branch data on file for CERT ${cert} in filing year ${y}.`);
       const branches = buildBranches(t.rows);
-      const bankTotal = !state ? numOrNull((t.rows.find(r => r.DEPSUM != null) || {}).DEPSUM) : null;
+      const shownSum = branches.reduce((s, b) => s + b.deposits_thousands, 0);
+      // DEPSUM (bank-wide SOD deposits) is populated for most banks but came
+      // back 0 for JPMorgan (cert 628) in live testing — only trust it when it
+      // is positive and at least the sum of the branches shown.
+      const rawTotal = !state ? Math.max(0, ...t.rows.map(r => numOrNull(r.DEPSUM) || 0)) : 0;
+      const bankTotal = rawTotal > 0 && rawTotal >= shownSum ? rawTotal : null;
       const result = {
         cert,
         as_of_year: y,
         branch_count: branches.length,
         total_branches_on_file: t.total,
-        total_branch_deposits_thousands: branches.reduce((s, b) => s + b.deposits_thousands, 0),
+        total_branch_deposits_thousands: shownSum,
         bank_total_deposits_thousands: bankTotal,
         state_filter: state ? state.toUpperCase() : null,
         truncated: t.total != null && t.total > branches.length,
         branches,
         interpretation_notes: {
           source: `${SOURCE_NOTE} These figures are the ${y} filing.`,
-          size_guard: `This bank has ${t.total ?? 'many'} branches on file for ${y}; showing the top ${branches.length} by deposits (main office first). total_branch_deposits_thousands sums only the branches shown${bankTotal != null ? '; bank_total_deposits_thousands is the bank-wide total' : ''}. ${hint}`,
+          size_guard: `This bank has ${t.total ?? 'many'} branches on file for ${y}; showing the top ${branches.length} by deposits (main office first). total_branch_deposits_thousands sums only the branches shown${bankTotal != null ? '; bank_total_deposits_thousands is the bank-wide total' : '; a bank-wide SOD total was not available for this bank — use get_bank_profile for total deposits'}. ${hint}`,
           branch_field_availability: fieldNote(branches),
           ...(t.sortedServerSide ? {} : { ranking_note: 'FDIC would not sort by deposits server-side; the list is ranked from a partial pull and may miss some large branches.' }),
         },
@@ -1932,7 +1937,8 @@ async function getBranchData(args) {
     const perYear = await mapLimit(years, 4, async (y) => {
       const r = await fetchFDIC(`${FDIC_SOD_BASE}?filters=${branchFilters}%20AND%20YEAR%3A${y}&fields=YEAR,DEPSUM&limit=1`);
       const row = (r.data || []).map(d => d.data).filter(Boolean)[0];
-      return { year: y, branch_count: numOrNull(r.meta?.total) || 0, total_deposits_thousands: (!state && row) ? numOrNull(row.DEPSUM) : null };
+      const dep = (!state && row) ? numOrNull(row.DEPSUM) : null;
+      return { year: y, branch_count: numOrNull(r.meta?.total) || 0, total_deposits_thousands: dep && dep > 0 ? dep : null };
     });
     const by_year = perYear.map((p, i) => p.ok ? p.value : { year: years[i], error: p.error.message }).filter(p => p.error || p.branch_count > 0);
     const top = await topBranchesForYear(hi, BRANCH_GUARD_TOP_N);
@@ -2841,7 +2847,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200, headers: CORS_HEADERS,
       body: JSON.stringify({
-        name: 'vault-mcp', version: '1.24.0',
+        name: 'vault-mcp', version: '1.24.1',
         description: 'Vault MCP — banking intelligence for AI agents. Built by iDENTIFY.',
         protocol: 'mcp', protocol_version: '2024-11-05',
         endpoint: 'https://vaultbot.ai/.netlify/functions/mcp',
@@ -2896,7 +2902,7 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: negotiatedProtocol,
-          serverInfo: { name: 'vault-mcp', version: '1.24.0' },
+          serverInfo: { name: 'vault-mcp', version: '1.24.1' },
           capabilities: { tools: {} },
         });
       }
