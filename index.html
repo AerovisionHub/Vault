@@ -346,7 +346,7 @@
   .result-type { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
 
   .inst-header { margin-bottom: 40px; padding-bottom: 32px; border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
-  .inst-name { font-family: var(--serif); font-size: 36px; letter-spacing: -0.5px; line-height: 1.1; margin-bottom: 8px; }
+  .inst-name { font-family: var(--serif); font-size: 36px; font-weight: 400; letter-spacing: -0.5px; line-height: 1.1; margin: 0 0 8px; }
   .inst-meta-row { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
   .inst-meta-item { font-family: var(--mono); font-size: 12px; color: var(--muted); }
   .inst-meta-item strong { color: var(--text); font-weight: 500; }
@@ -621,7 +621,7 @@
     .type-toggle { order: -1; }
     .kpi-grid { grid-template-columns: 1fr 1fr; }
     .inst-header { flex-direction: column; }
-    .inst-name { font-size: 24px; }
+    .inst-name { font-size: 24px !important; }
     .nav-mobile { top: 62px; }
     .badge { font-size: 9px; padding: 3px 7px; }
     .logo { font-size: 24px; }
@@ -2006,7 +2006,9 @@ function setPageMeta(view) {
   // canonical=https://vaultbot.ai/ and the homepage description on every
   // bank/CU page until FDIC answered — and permanently whenever FDIC
   // throttled the renderer. loadDetail() refines these after a successful load.
-  if (view === 'detail') return;
+  // Same for /wrapped/{cert}: wrapped-meta.js sets a per-bank canonical, and the
+  // generic 'wrapped' entry pointed it at /wrapped (which serves the homepage).
+  if (view === 'detail' || view === 'wrapped') return;
   const m = PAGE_META[view] || PAGE_META.home;
   document.title = m.title;
   document.querySelector('meta[name="description"]')?.setAttribute('content', m.desc);
@@ -2488,7 +2490,7 @@ function renderBankDetail(d) {
   return `
     <div class="inst-header">
       <div>
-        <div class="inst-name">${inst.NAME}</div>
+        <h1 class="inst-name">${inst.NAME}</h1>
         <div class="inst-meta-row">
           <span class="inst-meta-item"><strong>${inst.CITY}, ${inst.STALP}</strong></span>
           <span class="inst-meta-item">FDIC CERT <strong>${inst.CERT}</strong></span>
@@ -2695,7 +2697,7 @@ function renderCUDetail(d) {
   return `
     <div class="inst-header">
       <div>
-        <div class="inst-name">${name}</div>
+        <h1 class="inst-name">${name}</h1>
         <div class="inst-meta-row">
           <span class="inst-meta-item"><strong>${city}, ${state}${zip ? ' ' + zip : ''}</strong></span>
           <span class="inst-meta-item">Charter <strong>${charter}</strong></span>

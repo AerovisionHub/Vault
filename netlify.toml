@@ -54,11 +54,6 @@
   to = "/index.html"
   status = 200
 
-[[redirects]]
-  from = "/.netlify/functions/*"
-  to = "/.netlify/functions/:splat"
-  status = 200
-
 
 # Short, pasteable MCP endpoint. The Claude "Add custom connector" flow asks
 # people to type/paste a URL, and /.netlify/functions/mcp is long enough to be

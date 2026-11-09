@@ -101,6 +101,11 @@ function fmtUSD(thousands) {
   return `$${Math.round(v).toLocaleString()}`;
 }
 
+function isoDay(v) {
+  const m = String(v || '').match(/^(\d{4})-?(\d{2})-?(\d{2})/);
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
+}
+
 function pct(v) {
   const n = Number(v);
   return isFinite(n) ? `${n.toFixed(2)}%` : null;
@@ -348,11 +353,17 @@ function buildBank(b) {
 
   const title = `${b.NAME} (FDIC Cert ${b.CERT}) — Financials, Deposits & Peer Data | Vault`;
 
-  const bits = [`${b.NAME} is an FDIC-insured bank`];
+  // Inactive certs (merged, failed, closed) still resolve so M&A research works,
+  // but their figures are years old. Say so, and keep them out of the index.
+  const inactive = String(b.ACTIVE) === '0';
+  const lastQ = isoDay(l.REPDTE);
+  const bits = [inactive
+    ? `${b.NAME} was an FDIC-insured bank and is no longer active${lastQ ? `; its last call report was filed for ${lastQ}` : ''}`
+    : `${b.NAME} is an FDIC-insured bank`];
   if (where) bits.push(`headquartered in ${where}`);
   if (assets) bits.push(`with ${assets} in total assets`);
   if (deps) bits.push(`and ${deps} in deposits`);
-  const lead = bits.join(' ') + '.';
+  const lead = bits.join(inactive ? ', ' : ' ').replace(/, (headquartered)/, '. It was $1').replace(/, (with|and) /g, ' $1 ') + '.';
 
   const extra = [];
   if (loans) extra.push(`Net loans and leases total ${loans}`);
@@ -381,11 +392,16 @@ function buildBank(b) {
       creator: { '@type': 'Organization', name: 'Federal Deposit Insurance Corporation' },
       license: PUBLIC_DOMAIN_LICENSE,
       isAccessibleForFree: true,
-      temporalCoverage: l.REPDTE ? String(l.REPDTE) : undefined,
+      // ISO 8601 interval across the quarters shown (Google's Dataset docs use
+      // the extended YYYY-MM-DD form; FDIC's REPDTE is YYYYMMDD).
+      temporalCoverage: (() => {
+        const h = (b.history || []).map(r => isoDay(r.REPDTE)).filter(Boolean).sort();
+        return h.length > 1 ? `${h[0]}/${h[h.length - 1]}` : (h[0] || undefined);
+      })(),
     },
   };
 
-  return { title, desc, h1: b.NAME, lead, detail, where, jsonld, kind: 'bank',
+  return { title, desc, h1: b.NAME, lead, detail, where, jsonld, kind: 'bank', noindex: inactive,
            canonicalPath: `/bank/${slugify(b.NAME, b.CITY, b.STALP)}-${b.CERT}`,
            stateLink: stateHub(b.STALP),
            facts: [
@@ -518,6 +534,7 @@ export default async (request, context) => {
   html = html.replace(/<meta name="twitter:title" content="[^"]*">/, `<meta name="twitter:title" content="${t}">`);
   html = html.replace(/<meta name="twitter:description" content="[^"]*">/, `<meta name="twitter:description" content="${d}">`);
   html = html.replace(/(<link rel="canonical" href=")[^"]*(")/, `$1${u}$2`);
+  if (model.noindex) html = html.replace(/<meta name="robots" content="[^"]*">/, '<meta name="robots" content="noindex, follow">');
 
   // The crawlable body. Positioned immediately after <body> so it is the
   // first content in the document, and removed by the client on load so a
