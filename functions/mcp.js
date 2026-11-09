@@ -2,7 +2,7 @@
 // Implements MCP (Model Context Protocol) over HTTP using JSON-RPC 2.0
 // Spec: https://modelcontextprotocol.io/
 
-const VAULT_MCP_VERSION = '1.27.0';
+const VAULT_MCP_VERSION = '1.27.1';
 const FDIC_BASE = 'https://api.fdic.gov/banks';
 // Summary of Deposits — separate FDIC dataset (annual branch-level census, as of each June 30).
 // Same query syntax as FDIC_BASE (filters=field%3Avalue&fields=...&limit=...&sort_by=...&sort_order=...).
@@ -1136,6 +1136,20 @@ function fdicAliasUrls(base, words, fields, extraFilter = '') {
   return [or('TE', 10), orPrior].map(f => `${base}/institutions?filters=${f}%20AND%20ACTIVE%3A1${extraFilter}&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC`);
 }
 
+function cuRelevance(cu, query) {
+  const name = cu.name || '';
+  const loc = { city: cu.city, state: cu.state };
+  let best = searchRelevance({ ...loc, name }, query);
+  if (!/credit union|\bf?cu$/i.test(name.trim())) {
+    const kind = String(cu.cuType || cu.type || '');
+    const suffix = /federal/i.test(kind) ? ' Federal Credit Union' : ' Credit Union';
+    best = Math.max(best, searchRelevance({ ...loc, name: name + suffix }, query));
+  }
+  return best;
+}
+// ── end of verbatim search block ──
+
+
 // ── Credit unions in search_institutions (MCP 1.27.0) ──────────────────────
 // The MCP used to search FDIC banks only, while its title promised credit
 // unions too. It now asks the same NCUA proxy the website uses
@@ -1166,6 +1180,11 @@ async function fetchNCUAProxy(q, stateCode, limit = 20, timeoutMs = 8000) {
 // failed, so the caller can say so instead of implying "no credit unions".
 async function searchCreditUnions(q, scoreQuery, stCode, loc) {
   const calls = [fetchNCUAProxy(q, stCode)];
+  // Acronyms ("MSUFCU"): NCUA stores "MICHIGAN STATE UNIVERSITY", whose initials
+  // are "MSU", so also ask the proxy for the acronym minus its charter suffix
+  // (same trick as the website's searchNCUA).
+  const acr = q.trim().match(/^([a-z0-9]{2,8}?)(fcu|ecu|tcu|scu|cu)$/i);
+  if (acr && !/\s/.test(q.trim())) calls.push(fetchNCUAProxy(acr[1], stCode, 15));
   // "Navy Federal Virginia": also search the name part within the stated state.
   if (!stCode && loc.state && loc.nameQuery && loc.nameQuery !== q) calls.push(fetchNCUAProxy(loc.nameQuery, loc.state));
   const settled = await Promise.allSettled(calls);
@@ -1177,7 +1196,7 @@ async function searchCreditUnions(q, scoreQuery, stCode, loc) {
   const seen = new Map();
   ok.forEach(s => s.value.results.forEach(cu => { if (cu?.id != null && !seen.has(String(cu.id))) seen.set(String(cu.id), cu); }));
   const rows = [...seen.values()]
-    .map(cu => ({ cu, score: searchRelevance({ name: cu.name, city: cu.city, state: cu.state }, scoreQuery) }))
+    .map(cu => ({ cu, score: cuRelevance(cu, scoreQuery) }))
     .filter(x => x.score >= 40);
   return { rows, failed: false, asOf: ok[0].value.asOf };
 }

@@ -1115,6 +1115,24 @@ function fdicAliasUrls(base, words, fields, extraFilter = '') {
   return [or('TE', 10), orPrior].map(f => `${base}/institutions?filters=${f}%20AND%20ACTIVE%3A1${extraFilter}&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC`);
 }
 
+// NCUA's roster drops the charter suffix from most names: FOICU stores
+// "MICHIGAN STATE UNIVERSITY" and "AMERICAN HERITAGE", not "... Federal Credit
+// Union" (Navy Federal is an exception). Scored raw, "MSUFCU" or "American
+// Heritage Credit Union" never match. So a credit union scores by the better
+// of its stored name and its name with the suffix restored from its charter
+// type ("Federal CU" -> "Federal Credit Union", anything else -> "Credit Union").
+function cuRelevance(cu, query) {
+  const name = cu.name || '';
+  const loc = { city: cu.city, state: cu.state };
+  let best = searchRelevance({ ...loc, name }, query);
+  if (!/credit union|\bf?cu$/i.test(name.trim())) {
+    const kind = String(cu.cuType || cu.type || '');
+    const suffix = /federal/i.test(kind) ? ' Federal Credit Union' : ' Credit Union';
+    best = Math.max(best, searchRelevance({ ...loc, name: name + suffix }, query));
+  }
+  return best;
+}
+
 async function searchFDIC(query) {
   const fields = 'NAME,CERT,CITY,STALP,ASSET,REPDTE,ACTIVE,INSTCAT,WEBADDR,' + FDIC_ALIAS_FIELDS.join(',');
   const q = query.trim();
@@ -3130,7 +3148,7 @@ async function performSearch(q) {
       const cuAll = [...cuSeen.values()];
       const cuFallback = cuAll.filter(r => r.ncuaFallback);
       const cuResults = cuAll.filter(r => !r.ncuaFallback)
-        .map(r => ({ ...r, score: searchRelevance(r, q) }))
+        .map(r => ({ ...r, score: cuRelevance(r, q) }))
         .filter(r => r.score >= 40);
       // Relevance first, then size. Sorting by assets alone buried exact
       // name matches under bigger, loosely matching institutions.
