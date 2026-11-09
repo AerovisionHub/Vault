@@ -7,6 +7,8 @@ let lastZipFileList = null;  // diagnostic: every file name found in the most re
 let lastEmployeeSource = null; // diagnostic: which file ACCT_564A was actually found in (or null)
 let lastAccountSources = null; // diagnostic: { ACCT_xxx: 'FS220X.txt' | null } for PROFILE_ACCOUNTS
 let lastTradeNameInfo = null;  // diagnostic: TradeNames file, detected columns, row count
+let lastAccountCandidates = null; // diagnostic: for unlocated codes, similar column names seen in any FS220* header
+let lastAcctDescMatches = null;   // diagnostic: AcctDesc.txt rows mentioning the unlocated codes
 let cacheTimestamp = 0; 
 const CACHE_TTL = 60 * 60 * 1000;
 // NCUA posts one ZIP per quarter at a predictable URL, ~10 weeks after the
@@ -230,38 +232,13 @@ const PROFILE_ACCOUNTS = {
   netWorth: 'ACCT_997', netWorthRatio: 'ACCT_998', netIncomeYtd: 'ACCT_661A',
 };
 
-// Map account codes -> the table/file NCUA's AcctDesc.txt says they live in.
-function lookupAccountTables(zipBuf, codes) {
-  const out = {};
-  try {
-    const buf = extractFromZip(zipBuf, 'AcctDesc.txt');
-    if (!buf) return out;
-    const rows = buf.toString('latin1').split('\n');
-    const header = parseCSVLine((rows[0] || '').replace('\r', '')).map(h => h.trim());
-    const acctIdx  = header.findIndex(h => /^acct(_?code|name)?$/i.test(h) || /account/i.test(h));
-    const tableIdx = header.findIndex(h => /table|file|schedule/i.test(h));
-    if (acctIdx === -1 || tableIdx === -1) return out;
-    const want = new Set(codes.map(c => c.replace(/^ACCT_/i, '').toUpperCase()));
-    for (const line of rows.slice(1)) {
-      const cells = parseCSVLine(line.replace('\r', ''));
-      const acct = (cells[acctIdx] || '').trim().replace(/^ACCT_/i, '').toUpperCase();
-      if (!want.has(acct)) continue;
-      const table = (cells[tableIdx] || '').trim();
-      if (table) out['ACCT_' + acct] = table.toLowerCase().endsWith('.txt') ? table : `${table}.txt`;
-    }
-  } catch (e) {
-    console.log('[ncua-profile] AcctDesc lookup failed:', e.message);
-  }
-  return out;
-}
-
 // Parse only the listed columns, keyed by CU_NUMBER (a full parseCSVtoMap of
 // every FS220* table would hold hundreds of columns per credit union in memory).
 function extractColumns(buf, cols) {
   const lines = buf.toString('latin1').split('\n');
-  const header = parseCSVLine((lines[0] || '').replace('\r', ''));
+  const header = parseCSVLine((lines[0] || '').replace('\r', '')).map(h => h.trim().toUpperCase());
   const keyIdx = header.indexOf('CU_NUMBER');
-  const present = cols.map(c => [c, header.indexOf(c)]).filter(([, i]) => i !== -1);
+  const present = cols.map(c => [c, header.indexOf(c.toUpperCase())]).filter(([, i]) => i !== -1);
   const map = {};
   if (keyIdx === -1 || !present.length) return { map, found: [] };
   for (let i = 1; i < lines.length; i++) {
@@ -272,6 +249,33 @@ function extractColumns(buf, cols) {
     for (const [c, idx] of present) row[c] = v[idx];
   }
   return { map, found: present.map(([c]) => c) };
+}
+
+// Read only the header row of a ZIP entry. A partial raw-inflate of the first
+// few KB with Z_SYNC_FLUSH returns what it could decode instead of throwing,
+// which is enough for the column names. This replaced fully inflating each of
+// the 17 FS220* files under a time budget, which ran out before reaching the
+// files that hold 997/998/661A (first live check, 2026-11-09).
+function zipHeaderLines(buf) {
+  const out = {};
+  let offset = 0;
+  while (offset < buf.length - 4) {
+    if (buf.readUInt32LE(offset) !== 0x04034b50) { offset++; continue; }
+    const fnLen = buf.readUInt16LE(offset + 26), extraLen = buf.readUInt16LE(offset + 28);
+    const fn = buf.slice(offset + 30, offset + 30 + fnLen).toString('utf8');
+    const compSize = buf.readUInt32LE(offset + 18), method = buf.readUInt16LE(offset + 8);
+    const dataOffset = offset + 30 + fnLen + extraLen;
+    if (/^FS220.*\.txt$/i.test(fn)) {
+      try {
+        const head = buf.slice(dataOffset, dataOffset + Math.min(compSize, 65536));
+        const raw = method === 0 ? head : zlib.inflateRawSync(head, { finishFlush: zlib.constants.Z_SYNC_FLUSH });
+        const line = raw.toString('latin1').split('\n')[0].replace('\r', '');
+        out[fn] = parseCSVLine(line).map(h => h.trim().toUpperCase());
+      } catch (e) { console.log('[ncua-profile] header read failed', fn, e.message); }
+    }
+    offset = dataOffset + compSize;
+  }
+  return out;
 }
 
 function findProfileAccounts(zipBuf, zipFileList, fs220Map) {
@@ -288,27 +292,41 @@ function findProfileAccounts(zipBuf, zipFileList, fs220Map) {
   const sample = Object.values(fs220Map || {})[0] || {};
   const inFs220 = codes.filter(c => c in sample);
   if (inFs220.length) merge(fs220Map, inFs220, 'FS220.txt');
-  const tryFile = (name, wanted) => {
-    const buf = extractFromZip(zipBuf, name);
-    if (!buf) return;
-    const { map, found } = extractColumns(buf, wanted);
-    if (found.length) merge(map, found, name);
-  };
-  // 2. NCUA's index says where the rest live.
-  let missing = codes.filter(c => !sources[c]);
-  const index = lookupAccountTables(zipBuf, missing);
+  // 2. Header index of every FS220* file -> the exact file for each remaining code.
+  const headers = zipHeaderLines(zipBuf);
   const byFile = {};
-  for (const c of missing) if (index[c]) (byFile[index[c]] = byFile[index[c]] || []).push(c);
-  for (const [file, wanted] of Object.entries(byFile)) {
-    try { tryFile(file, wanted); } catch (e) { console.log('[ncua-profile] read failed', file, e.message); }
+  for (const c of codes.filter(c => !sources[c])) {
+    const file = Object.keys(headers).sort().find(f => f.toUpperCase() !== 'FS220.TXT' && headers[f].includes(c.toUpperCase()));
+    if (file) (byFile[file] = byFile[file] || []).push(c);
   }
-  // 3. Bounded probe for anything still missing.
-  const started = Date.now();
-  for (const name of (zipFileList || []).filter(n => /^FS220.+\.txt$/i.test(n)).sort()) {
-    missing = codes.filter(c => !sources[c]);
-    if (!missing.length || Date.now() - started > PROBE_BUDGET_MS) break;
-    if (byFile[name]) continue;
-    try { tryFile(name, missing); } catch (e) { console.log('[ncua-profile] probe failed', name, e.message); }
+  for (const [file, wanted] of Object.entries(byFile)) {
+    try {
+      const buf = extractFromZip(zipBuf, file);
+      if (!buf) continue;
+      const { map, found } = extractColumns(buf, wanted);
+      if (found.length) merge(map, found, file);
+    } catch (e) { console.log('[ncua-profile] read failed', file, e.message); }
+  }
+  // 3. Diagnostics for anything still missing: similar column names, and what
+  //    NCUA's AcctDesc.txt says about the code. Shown by ?debug=1.
+  const missing = codes.filter(c => !sources[c]);
+  lastAccountCandidates = {};
+  for (const c of missing) {
+    const digits = c.replace(/^ACCT_/i, '').replace(/[A-Z]+$/i, '');
+    lastAccountCandidates[c] = Object.entries(headers)
+      .flatMap(([f, h]) => h.filter(col => col.includes(digits)).map(col => `${f}:${col}`)).slice(0, 12);
+  }
+  lastAcctDescMatches = null;
+  if (missing.length) {
+    try {
+      const ad = extractFromZip(zipBuf, 'AcctDesc.txt');
+      if (ad) {
+        const lines = ad.toString('latin1').split('\n');
+        const want = missing.map(c => c.replace(/^ACCT_/i, '').toUpperCase());
+        lastAcctDescMatches = { header: (lines[0] || '').replace('\r', '').slice(0, 200),
+          rows: lines.filter(l => want.some(w => new RegExp(`(^|[^0-9A-Z])(ACCT_)?${w}([^0-9A-Z]|$)`, 'i').test(l))).slice(0, 10).map(l => l.replace('\r', '').slice(0, 200)) };
+      }
+    } catch (e) { /* diagnostics only */ }
   }
   lastAccountSources = sources;
   console.log('[ncua-profile] account sources:', JSON.stringify(sources));
@@ -646,6 +664,8 @@ exports.handler = async function(event, context) {
           employee_source_file: lastEmployeeSource,
           cus_with_employee_count: allCUs.filter(cu => cu.employees != null).length,
           account_sources: lastAccountSources,
+          account_candidates: lastAccountCandidates,
+          acctdesc_matches: lastAcctDescMatches,
           trade_names: lastTradeNameInfo,
           profile_sample: allCUs.filter(cu => cu.loans != null).sort((a, b) => b.assets - a.assets).slice(0, 3)
             .map(cu => ({ name: cu.name, assets: cu.assets, loans: cu.loans, shares: cu.shares, netWorth: cu.netWorth, netWorthRatio: cu.netWorthRatio, netIncomeYtd: cu.netIncomeYtd, delinquentLoans: cu.delinquentLoans, tradeNames: cu.tradeNames })),
