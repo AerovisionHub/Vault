@@ -3053,7 +3053,7 @@ function buildBankPath(inst) {
 }
 
 function buildCUPath(id, raw) {
-  if (!raw?.name) return `/cu/${id}`;
+  if (!raw?.name || raw.placeholder || String(raw.name) === String(id)) return `/cu/${id}`;
   const slug = slugify(raw.name, raw.city || '', raw.state || '');
   return `/cu/${slug}-${id}`;
 }
@@ -3082,7 +3082,7 @@ async function loadDetail(id, type) {
       state.detail = { type: 'bank', inst, history, peers, officers, stock, edgar, recentAcquisitions };
     } else {
       const raw = await getNCUADetail(id);
-      state.detail = { type: 'cu', id, raw: raw || { name: id, id } };
+      state.detail = { type: 'cu', id, raw: raw || { name: id, id, placeholder: true } };
     }
   } catch(e) {
     state.detail = { type: 'error', msg: e.message };
@@ -3117,7 +3117,9 @@ async function loadDetail(id, type) {
     document.querySelector('meta[name="twitter:title"]')?.setAttribute('content', title);
     document.querySelector('meta[name="twitter:description"]')?.setAttribute('content', desc);
     document.querySelector('link[rel="canonical"]')?.setAttribute('href', fullUrl);
-  } else if (state.detail?.type === 'cu' && state.detail.raw?.name) {
+  // No URL/meta rewrite for the placeholder: it produced /cu/{id}-{id} paths
+  // (Search Console "Page with redirect": /cu/2782-2782, /cu/198-198 …).
+  } else if (state.detail?.type === 'cu' && state.detail.raw?.name && !state.detail.raw.placeholder) {
     const raw      = state.detail.raw;
     const slugPath = buildCUPath(state.detail.id, raw);
     const fullUrl  = `https://vaultbot.ai${slugPath}`;
