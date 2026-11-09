@@ -1982,6 +1982,15 @@ const PAGE_META = {
     canonical: 'https://vaultbot.ai/charters',
     image: 'https://vaultbot.ai/og-charters.png?v=1'
   },
+  // /compare is in the sitemap; without its own entry it fell back to the
+  // homepage canonical, which Search Console reported as "Alternate page
+  // with proper canonical tag" for a sitemap URL. Copy matches page-seo.js.
+  compare: {
+    title: 'Compare Banks Side by Side — Peer Benchmarking Tool | Vault',
+    desc:  'Compare any US banks or credit unions side by side on assets, deposits, loans, ROA, ROE and capital ratios. Benchmark against asset-range peers. Free FDIC and NCUA data.',
+    canonical: 'https://vaultbot.ai/compare',
+    image: 'https://vaultbot.ai/og-image.png?v=4'
+  },
   about: {
     title: 'About Vault — Built with AI by iDENTIFY',
     desc:  'Vault was built entirely with Claude AI. Free bank and credit union intelligence powered by FDIC BankFind and NCUA public data. No login, no paywall.',
@@ -1991,6 +2000,13 @@ const PAGE_META = {
 };
 
 function setPageMeta(view) {
+  // Institution pages get their title/description/canonical from the
+  // institution-seo edge function. Overwriting them here with the homepage
+  // values (the old fallback) meant Google's rendered DOM carried
+  // canonical=https://vaultbot.ai/ and the homepage description on every
+  // bank/CU page until FDIC answered — and permanently whenever FDIC
+  // throttled the renderer. loadDetail() refines these after a successful load.
+  if (view === 'detail') return;
   const m = PAGE_META[view] || PAGE_META.home;
   document.title = m.title;
   document.querySelector('meta[name="description"]')?.setAttribute('content', m.desc);
@@ -3075,7 +3091,12 @@ async function loadDetail(id, type) {
     if (location.pathname !== slugPath) {
       window.history.replaceState({ view: 'detail', id: inst.CERT, type: 'bank' }, '', slugPath);
     }
-    document.title = title;
+    // Keep the edge-rendered title/description when the prerender is for this
+    // institution (richer, and what Google indexed); set them only on SPA navigation.
+    if (String(window.__vaultPrerender?.id) !== String(inst.CERT)) {
+      document.title = title;
+      document.querySelector('meta[name="description"]')?.setAttribute('content', desc);
+    }
     document.querySelector('meta[property="og:title"]')?.setAttribute('content', title);
     document.querySelector('meta[property="og:description"]')?.setAttribute('content', desc);
     document.querySelector('meta[property="og:url"]')?.setAttribute('content', fullUrl);
@@ -3091,7 +3112,12 @@ async function loadDetail(id, type) {
     if (location.pathname !== slugPath) {
       window.history.replaceState({ view: 'detail', id: state.detail.id, type: 'cu' }, '', slugPath);
     }
-    document.title = title;
+    // Keep the edge-rendered title/description when the prerender is for this
+    // institution (richer, and what Google indexed); set them only on SPA navigation.
+    if (String(window.__vaultPrerender?.id) !== String(state.detail.id)) {
+      document.title = title;
+      document.querySelector('meta[name="description"]')?.setAttribute('content', desc);
+    }
     document.querySelector('meta[property="og:title"]')?.setAttribute('content', title);
     document.querySelector('meta[property="og:description"]')?.setAttribute('content', desc);
     document.querySelector('meta[property="og:url"]')?.setAttribute('content', fullUrl);
