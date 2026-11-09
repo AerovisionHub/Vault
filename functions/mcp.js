@@ -2,7 +2,7 @@
 // Implements MCP (Model Context Protocol) over HTTP using JSON-RPC 2.0
 // Spec: https://modelcontextprotocol.io/
 
-const VAULT_MCP_VERSION = '1.25.1';
+const VAULT_MCP_VERSION = '1.26.0';
 const FDIC_BASE = 'https://api.fdic.gov/banks';
 // Summary of Deposits — separate FDIC dataset (annual branch-level census, as of each June 30).
 // Same query syntax as FDIC_BASE (filters=field%3Avalue&fields=...&limit=...&sort_by=...&sort_order=...).
@@ -56,7 +56,7 @@ const TOOLS = [
     name: 'search_institutions',
     title: 'Search banks & credit unions',
     annotations: { title: 'Search banks & credit unions', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    description: 'Search FDIC-insured banks and credit unions by name, city, or partial match. Returns up to 20 results ranked by relevance and asset size. Typically responds in 2-4 seconds. Use this first to get a CERT number before calling other tools.',
+    description: 'Search FDIC-insured banks by name, city, state or partial match (\"American Heritage Oklahoma\", \"Heritage Sapulpa\", \"Pinnacle Bank TN\"). Returns up to 20 results ranked by relevance (match_score), then asset size. Credit unions are not covered by this tool yet. Typically responds in 2-4 seconds. Use this first to get a CERT number before calling other tools.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -986,6 +986,125 @@ async function logCall(event, { method, toolName, clientName, durationMs, succes
 }
 
 // ── Tool Implementations ─────────────────────────────────────────────────────
+// ── Search relevance — VERBATIM COPY of index.html (2026-11-09). Keep both in sync:
+// the website and the MCP must rank the same query the same way.
+const STATE_NAME_TO_CODE = {
+  'alabama':'AL','alaska':'AK','arizona':'AZ','arkansas':'AR','california':'CA',
+  'colorado':'CO','connecticut':'CT','delaware':'DE','florida':'FL','georgia':'GA',
+  'hawaii':'HI','idaho':'ID','illinois':'IL','indiana':'IN','iowa':'IA',
+  'kansas':'KS','kentucky':'KY','louisiana':'LA','maine':'ME','maryland':'MD',
+  'massachusetts':'MA','michigan':'MI','minnesota':'MN','mississippi':'MS','missouri':'MO',
+  'montana':'MT','nebraska':'NE','nevada':'NV','new hampshire':'NH','new jersey':'NJ',
+  'new mexico':'NM','new york':'NY','north carolina':'NC','north dakota':'ND','ohio':'OH',
+  'oklahoma':'OK','oregon':'OR','pennsylvania':'PA','rhode island':'RI','south carolina':'SC',
+  'south dakota':'SD','tennessee':'TN','texas':'TX','utah':'UT','vermont':'VT',
+  'virginia':'VA','washington':'WA','west virginia':'WV','wisconsin':'WI','wyoming':'WY',
+  'district of columbia':'DC',
+};
+
+const VALID_STATE_CODES = new Set(Object.values(STATE_NAME_TO_CODE));
+
+function fuzzyScore(name, query) {
+  const n = name.toLowerCase().replace(/^the\s+/, ''); // strip leading "The"
+  const q = query.toLowerCase().trim().replace(/^the\s+/, '');
+  if (n === q) return 100;
+  if (n.startsWith(q)) return 90;
+  if (n.includes(q)) return 80;
+  // Acronym match: "MSUFCU" matches "Michigan State University Federal Credit Union"
+  const words = n.replace(/[^a-z0-9 ]/g, '').split(/\s+/);
+  const acronym = words.map(w => w[0]).join('');
+  if (acronym.includes(q.toLowerCase())) return 75;
+  if (acronym.startsWith(q.toLowerCase())) return 85;
+  // Token match — but weight distinctive words more heavily
+  // Common banking words that shouldn't drive score on their own
+  const commonWords = new Set(['first','bank','national','federal','savings','trust','state',
+    'community','commercial','peoples','heritage','home','liberty','union','american',
+    'united','citizens','central','western','eastern','northern','southern','premier']);
+  const qTokens = q.split(/\s+/).filter(t => t.length > 1);
+  const distinctiveQ = qTokens.filter(t => !commonWords.has(t));
+  // If query has distinctive words, require at least one to match
+  if (distinctiveQ.length > 0) {
+    const distinctiveMatches = distinctiveQ.filter(t => n.includes(t)).length;
+    if (distinctiveMatches === 0) return 0; // no distinctive word matched — irrelevant
+    if (qTokens.every(t => n.includes(t))) return 70; // all words match
+    const matchCount = qTokens.filter(t => n.includes(t)).length;
+    // Partial matches stay below the all-words-match score (70): otherwise a name
+    // sharing 3 of 4 words could outrank one containing all 4.
+    return Math.round(10 + (distinctiveMatches / distinctiveQ.length) * 35 + (matchCount / qTokens.length) * 20);
+  }
+  // All query words are common (e.g. "First Bank") — standard partial match
+  if (qTokens.every(t => n.includes(t))) return 60;
+  const matchCount = qTokens.filter(t => n.includes(t)).length;
+  return Math.round((matchCount / qTokens.length) * 40);
+}
+
+const SEARCH_STOP = new Set(['of','the','and','a','an','at','in','for','by','to','de','la','le','&']);
+
+const SEARCH_COMMON = new Set(['first','bank','banks','national','federal','savings','trust','state',
+  'community','commercial','peoples','heritage','home','liberty','union','american','united','citizens',
+  'central','western','eastern','northern','southern','premier','financial','credit','unions','company',
+  'association','fcu','cu','na','n.a.','co','inc']);
+
+function titleCase(s) { return s.toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase()); }
+
+function parseSearchLocation(query) {
+  const raw = query.trim().replace(/\s+/g, ' ');
+  let rest = raw, state = null;
+  const names = Object.keys(STATE_NAME_TO_CODE).sort((a, b) => b.length - a.length);
+  for (const n of names) {
+    // "Kansas City", "Oklahoma City", "Texas City": a state name followed by "city" is a city, not a state.
+    const re = new RegExp(`(^|\\s)(?!of\\s)(\\S+\\s)?${n.replace(/\s+/g, '\\s+')}(?=\\s|$)(?!\\s+city\\b)`, 'i');
+    const m = rest.match(re);
+    if (m && !/^of\s$/i.test(m[2] || '')) {
+      const idx = m.index + m[1].length + (m[2] ? m[2].length : 0);
+      const stripped = (rest.slice(0, idx) + rest.slice(idx + m[0].length - m[1].length - (m[2] ? m[2].length : 0))).trim();
+      if (stripped) { state = STATE_NAME_TO_CODE[n]; rest = stripped; }
+      break;
+    }
+  }
+  if (!state) {
+    const toks = rest.split(' ');
+    const last = toks[toks.length - 1];
+    if (toks.length > 1 && last.length === 2 && VALID_STATE_CODES.has(last.toUpperCase()) && !/^(of|in|or|me|to|at|by|la|de|co|na)$/.test(last)) {
+      state = last.toUpperCase(); rest = toks.slice(0, -1).join(' ');
+    }
+  }
+  const cityOk = w => w.length > 2 && !SEARCH_STOP.has(w.toLowerCase()) && !SEARCH_COMMON.has(w.toLowerCase());
+  const cities = [];
+  // City candidates come from the raw query as well as the state-stripped one,
+  // so a city containing a state name ("Oklahoma City", "Kansas City") survives.
+  for (const words of [raw.split(' '), rest.split(' ')]) {
+    const w = words.filter(Boolean);
+    if (w.length >= 1 && cityOk(w[w.length - 1])) cities.push(titleCase(w[w.length - 1]));
+    if (w.length >= 2 && cityOk(w[w.length - 1]) && (cityOk(w[w.length - 2]) || STATE_NAME_TO_CODE[w[w.length - 2].toLowerCase()]))
+      cities.push(titleCase(w.slice(-2).join(' ')));
+  }
+  return { nameQuery: rest, state, cities: [...new Set(cities)].filter(c => !STATE_NAME_TO_CODE[c.toLowerCase()]).slice(0, 3) };
+}
+
+function searchRelevance(inst, query) {
+  const name = inst.name || '';
+  const full = fuzzyScore(name, query);
+  const city = (inst.city || '').toLowerCase();
+  const st = (inst.state || '').toUpperCase();
+  const stateName = Object.keys(STATE_NAME_TO_CODE).find(k => STATE_NAME_TO_CODE[k] === st) || '';
+  let rest = ' ' + query.toLowerCase().replace(/\s+/g, ' ') + ' ';
+  let located = false;
+  if (city && rest.includes(' ' + city + ' ')) { rest = rest.replace(' ' + city + ' ', ' '); located = true; }
+  else if (city) {
+    for (const w of city.split(' ')) if (w.length > 2 && rest.includes(' ' + w + ' ')) { rest = rest.replace(' ' + w + ' ', ' '); located = true; }
+  }
+  if (stateName && rest.includes(' ' + stateName + ' ') && !rest.includes(' of ' + stateName + ' ') && !rest.includes(' ' + stateName + ' city ')) { rest = rest.replace(' ' + stateName + ' ', ' '); located = true; }
+  const t = rest.trim().split(' ');
+  if (st && t.length > 1 && t[t.length - 1] === st.toLowerCase()) { t.pop(); rest = ' ' + t.join(' ') + ' '; located = true; }
+  if (!located) return full;
+  const remaining = rest.replace(/\b(of|the|in|near)\b/g, ' ').trim();
+  const loc = remaining ? fuzzyScore(name, remaining) : 55; // pure-location query, e.g. "Sapulpa"
+  // Capped at 95 so an exact full-name match ("Texas Capital Bank") still
+  // outranks a location reading of the same words ("Capital Bank" in Texas).
+  return Math.max(full, loc >= 40 ? Math.min(95, loc + 5) : 0);
+}
+
 async function searchInstitutions(args) {
   const { query, state, limit = 20 } = args || {};
   if (!query || typeof query !== 'string' || !query.trim()) {
@@ -993,36 +1112,65 @@ async function searchInstitutions(args) {
   }
   const max = Math.min(Number(limit) || 20, 50);
   const fields = 'NAME,CERT,CITY,STALP,ASSET,REPDTE,WEBADDR,INSTCAT';
-  const stopWords = new Set(['of','the','and','a','an','at','in','for','by','to','&']);
-  const words = query.replace(/^the\s+/i,'').split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w.toLowerCase()));
+  const q = query.trim();
+  const qNoThe = q.replace(/^the\s+/i, '');
+  const stopWords = new Set(['of','the','and','a','an','at','in','for','by','to','de','la','le','&']);
+  const commonBankWords = new Set(['first','bank','national','federal','savings','trust','state',
+    'community','commercial','peoples','heritage','home','liberty','union','american',
+    'united','citizens','central','western','eastern','northern','southern','premier','financial']);
+  const tokenWords = (qNoThe.split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w.toLowerCase())));
+  const tw = tokenWords.length ? tokenWords : qNoThe.split(/\s+/);
+  const distinct = tw.filter(w => !commonBankWords.has(w.toLowerCase()));
+  const searchWords = distinct.length ? distinct : tw;
+  const loc = parseSearchLocation(q);
+  const stCode = state ? String(state).toUpperCase() : null;
+  const stateFilter = stCode ? `%20AND%20STALP%3A${stCode}` : '';
+  const base = (f, n) => `${FDIC_BASE}/institutions?filters=${f}%20AND%20ACTIVE%3A1${stateFilter}&fields=${fields}&limit=${n}&sort_by=ASSET&sort_order=DESC`;
 
-  const stateFilter = state ? `%20AND%20STALP%3A%22${state.toUpperCase()}%22` : '';
+  // Same retrieval as the website: starts-with per distinctive word, the
+  // combined contains query, contains for short single words, "The" prefix,
+  // plus the location-aware queries (name within a stated state; city names).
   const urls = [
-    `${FDIC_BASE}/institutions?search=${encodeURIComponent(query)}&fields=${fields}&limit=${max}&sort_by=ASSET&sort_order=DESC&filters=ACTIVE%3A1${stateFilter}`,
+    `${FDIC_BASE}/institutions?search=${encodeURIComponent(q)}&fields=${fields}&limit=30&sort_by=ASSET&sort_order=DESC&filters=ACTIVE%3A1${stateFilter}`,
+    ...searchWords.slice(0, 4).map(w => base(`NAME%3A${encodeURIComponent(w)}*`, 50)),
+    base(`NAME%3AThe*${encodeURIComponent(searchWords[0])}*`, 20),
   ];
-  if (words.length > 0) {
-    urls.push(`${FDIC_BASE}/institutions?filters=NAME%3A${encodeURIComponent(words[0])}*%20AND%20ACTIVE%3A1${stateFilter}&fields=${fields}&limit=50&sort_by=ASSET&sort_order=DESC`);
+  if (tw.length > 1) urls.push(base(`NAME%3A*${tw.map(encodeURIComponent).join('*')}*`, 20));
+  if (tw.length === 1 && tw[0].length <= 6) urls.push(base(`NAME%3A*${encodeURIComponent(tw[0])}*`, 50));
+  if (loc.state && loc.nameQuery && loc.nameQuery !== qNoThe && !stCode) {
+    const nw = loc.nameQuery.split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w.toLowerCase()));
+    const nd = nw.filter(w => !commonBankWords.has(w.toLowerCase()));
+    (nd.length ? nd : nw).slice(0, 3).forEach(w => urls.push(`${FDIC_BASE}/institutions?filters=NAME%3A*${encodeURIComponent(w)}*%20AND%20STALP%3A${loc.state}%20AND%20ACTIVE%3A1&fields=${fields}&limit=50&sort_by=ASSET&sort_order=DESC`));
   }
-  if (words.length > 1) {
-    urls.push(`${FDIC_BASE}/institutions?filters=NAME%3A*${words.map(encodeURIComponent).join('*')}*%20AND%20ACTIVE%3A1${stateFilter}&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC`);
-  }
+  loc.cities.forEach(c => urls.push(base(`CITY%3A%22${encodeURIComponent(c)}%22`, 100)));
 
-  const results = await Promise.all(urls.map(u => fetch(u).then(r => r.json()).catch(() => ({ data: [] }))));
+  let failures = 0;
+  const get = u => fetchFDIC(u).catch(() => new Promise(r => setTimeout(r, 700)).then(() => fetchFDIC(u))).catch(() => { failures++; return { data: [] }; });
+  const results = await Promise.all(urls.map(get));
+  if (failures === urls.length) throw new Error('The FDIC API is busy right now. Please retry in a few seconds.');
+
+  // Score every candidate (the old version returned them in asset order with
+  // no scoring, so 50 large "American…" banks crowded out "American Heritage Bank").
   const seen = new Map();
-  results.forEach(r => (r.data || []).forEach(d => {
-    const cert = d.data?.CERT;
-    if (cert && !seen.has(cert)) seen.set(cert, d.data);
+  results.forEach(r => (r.data || []).forEach(x => {
+    const d = x.data; if (!d?.CERT) return;
+    const score = searchRelevance({ name: d.NAME, city: d.CITY, state: d.STALP }, stCode ? `${q} ${stCode}` : q);
+    if (!seen.has(d.CERT) || seen.get(d.CERT).score < score) seen.set(d.CERT, { d, score });
   }));
-
-  return [...seen.values()].slice(0, max).map(d => ({
-    cert: d.CERT,
-    name: d.NAME,
-    city: d.CITY,
-    state: d.STALP,
-    assets_thousands: d.ASSET,
-    website: d.WEBADDR || null,
-    profile_url: `https://vaultbot.ai/bank/${d.CERT}`,
-  }));
+  return [...seen.values()]
+    .filter(x => x.score >= 40)
+    .sort((a, b) => b.score - a.score || (b.d.ASSET || 0) - (a.d.ASSET || 0))
+    .slice(0, max)
+    .map(({ d, score }) => ({
+      cert: d.CERT,
+      name: d.NAME,
+      city: d.CITY,
+      state: d.STALP,
+      assets_thousands: d.ASSET,
+      website: d.WEBADDR || null,
+      match_score: score,
+      profile_url: `https://vaultbot.ai/bank/${d.CERT}`,
+    }));
 }
 
 // Parse an FDIC REPDTE (YYYYMMDD) into period metadata for the history

@@ -995,12 +995,89 @@ function fuzzyScore(name, query) {
     if (distinctiveMatches === 0) return 0; // no distinctive word matched — irrelevant
     if (qTokens.every(t => n.includes(t))) return 70; // all words match
     const matchCount = qTokens.filter(t => n.includes(t)).length;
-    return Math.round(10 + (distinctiveMatches / distinctiveQ.length) * 50 + (matchCount / qTokens.length) * 20);
+    // Partial matches stay below the all-words-match score (70): otherwise a name
+    // sharing 3 of 4 words could outrank one containing all 4.
+    return Math.round(10 + (distinctiveMatches / distinctiveQ.length) * 35 + (matchCount / qTokens.length) * 20);
   }
   // All query words are common (e.g. "First Bank") — standard partial match
   if (qTokens.every(t => n.includes(t))) return 60;
   const matchCount = qTokens.filter(t => n.includes(t)).length;
   return Math.round((matchCount / qTokens.length) * 40);
+}
+
+// ── Search relevance (2026-11-09) ───────────────────────────────────────────
+// Users type locations into name searches ("American Heritage Oklahoma",
+// "Heritage Sapulpa"). parseSearchLocation pulls a state (full name anywhere
+// not preceded by "of", or a 2-letter code as the last word) and up to three
+// city candidates (last word, last two words) out of the query. A state
+// preceded by "of" stays part of the name: "First National Bank of Oklahoma".
+const SEARCH_STOP = new Set(['of','the','and','a','an','at','in','for','by','to','de','la','le','&']);
+const SEARCH_COMMON = new Set(['first','bank','banks','national','federal','savings','trust','state',
+  'community','commercial','peoples','heritage','home','liberty','union','american','united','citizens',
+  'central','western','eastern','northern','southern','premier','financial','credit','unions','company',
+  'association','fcu','cu','na','n.a.','co','inc']);
+function titleCase(s) { return s.toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase()); }
+function parseSearchLocation(query) {
+  const raw = query.trim().replace(/\s+/g, ' ');
+  let rest = raw, state = null;
+  const names = Object.keys(STATE_NAME_TO_CODE).sort((a, b) => b.length - a.length);
+  for (const n of names) {
+    // "Kansas City", "Oklahoma City", "Texas City": a state name followed by "city" is a city, not a state.
+    const re = new RegExp(`(^|\\s)(?!of\\s)(\\S+\\s)?${n.replace(/\s+/g, '\\s+')}(?=\\s|$)(?!\\s+city\\b)`, 'i');
+    const m = rest.match(re);
+    if (m && !/^of\s$/i.test(m[2] || '')) {
+      const idx = m.index + m[1].length + (m[2] ? m[2].length : 0);
+      const stripped = (rest.slice(0, idx) + rest.slice(idx + m[0].length - m[1].length - (m[2] ? m[2].length : 0))).trim();
+      if (stripped) { state = STATE_NAME_TO_CODE[n]; rest = stripped; }
+      break;
+    }
+  }
+  if (!state) {
+    const toks = rest.split(' ');
+    const last = toks[toks.length - 1];
+    if (toks.length > 1 && last.length === 2 && VALID_STATE_CODES.has(last.toUpperCase()) && !/^(of|in|or|me|to|at|by|la|de|co|na)$/.test(last)) {
+      state = last.toUpperCase(); rest = toks.slice(0, -1).join(' ');
+    }
+  }
+  const cityOk = w => w.length > 2 && !SEARCH_STOP.has(w.toLowerCase()) && !SEARCH_COMMON.has(w.toLowerCase());
+  const cities = [];
+  // City candidates come from the raw query as well as the state-stripped one,
+  // so a city containing a state name ("Oklahoma City", "Kansas City") survives.
+  for (const words of [raw.split(' '), rest.split(' ')]) {
+    const w = words.filter(Boolean);
+    if (w.length >= 1 && cityOk(w[w.length - 1])) cities.push(titleCase(w[w.length - 1]));
+    if (w.length >= 2 && cityOk(w[w.length - 1]) && (cityOk(w[w.length - 2]) || STATE_NAME_TO_CODE[w[w.length - 2].toLowerCase()]))
+      cities.push(titleCase(w.slice(-2).join(' ')));
+  }
+  return { nameQuery: rest, state, cities: [...new Set(cities)].filter(c => !STATE_NAME_TO_CODE[c.toLowerCase()]).slice(0, 3) };
+}
+
+// One relevance score for banks AND credit unions. Takes the better of two
+// readings: the whole query against the name, or the query with this
+// institution's own city/state words removed (plus a small bonus for the
+// location match). So "Heritage Sapulpa" scores American Heritage Bank in
+// Sapulpa highly, while "Bank of Oklahoma"-style names still match in full.
+function searchRelevance(inst, query) {
+  const name = inst.name || '';
+  const full = fuzzyScore(name, query);
+  const city = (inst.city || '').toLowerCase();
+  const st = (inst.state || '').toUpperCase();
+  const stateName = Object.keys(STATE_NAME_TO_CODE).find(k => STATE_NAME_TO_CODE[k] === st) || '';
+  let rest = ' ' + query.toLowerCase().replace(/\s+/g, ' ') + ' ';
+  let located = false;
+  if (city && rest.includes(' ' + city + ' ')) { rest = rest.replace(' ' + city + ' ', ' '); located = true; }
+  else if (city) {
+    for (const w of city.split(' ')) if (w.length > 2 && rest.includes(' ' + w + ' ')) { rest = rest.replace(' ' + w + ' ', ' '); located = true; }
+  }
+  if (stateName && rest.includes(' ' + stateName + ' ') && !rest.includes(' of ' + stateName + ' ') && !rest.includes(' ' + stateName + ' city ')) { rest = rest.replace(' ' + stateName + ' ', ' '); located = true; }
+  const t = rest.trim().split(' ');
+  if (st && t.length > 1 && t[t.length - 1] === st.toLowerCase()) { t.pop(); rest = ' ' + t.join(' ') + ' '; located = true; }
+  if (!located) return full;
+  const remaining = rest.replace(/\b(of|the|in|near)\b/g, ' ').trim();
+  const loc = remaining ? fuzzyScore(name, remaining) : 55; // pure-location query, e.g. "Sapulpa"
+  // Capped at 95 so an exact full-name match ("Texas Capital Bank") still
+  // outranks a location reading of the same words ("Capital Bank" in Texas).
+  return Math.max(full, loc >= 40 ? Math.min(95, loc + 5) : 0);
 }
 
 async function searchFDIC(query) {
@@ -1023,12 +1100,19 @@ async function searchFDIC(query) {
   const merge = (seen, data, q) => {
     (data.data || []).forEach(d => {
       const cert = d.data?.CERT; if (!cert) return;
-      const score = fuzzyScore(d.data.NAME, q);
+      const score = searchRelevance({ name: d.data.NAME, city: d.data.CITY, state: d.data.STALP }, q);
       if (!seen.has(cert) || seen.get(cert).score < score) seen.set(cert, { ...d, score });
     });
   };
 
-  const get = url => fetch(url).then(r => r.json()).catch(() => ({ data: [] }));
+  // FDIC throttles bursts (x-ratelimit-limit: 20). A failed request used to
+  // read as "no results"; now it retries once, and if every request fails the
+  // caller gets an error instead of a silently empty list (bug #15 pattern).
+  let attempts = 0, failures = 0;
+  const get = url => { attempts++; return fetchFDIC(url, { timeoutMs: 9000 })
+    .catch(() => new Promise(r => setTimeout(r, 700)).then(() => fetchFDIC(url, { timeoutMs: 9000 })))
+    .catch(() => { failures++; return { data: [] }; }); };
+  const loc = parseSearchLocation(q);
 
   // Round 1: FDIC fulltext + starts-with wildcard on each token word (parallel)
   const round1Urls = [
@@ -1047,8 +1131,19 @@ async function searchFDIC(query) {
     `${FDIC_BASE}/institutions?filters=WEBADDR%3A${q.toLowerCase().replace(/[^a-z0-9]/g,'')}*%20AND%20ACTIVE%3A1&fields=${fields}&limit=10&sort_by=ASSET&sort_order=DESC`,
   ];
 
+  // Location-aware retrieval: the name part within the detected state, and
+  // institutions in a city named in the query ("Heritage Sapulpa").
+  const nameWords = loc.nameQuery.split(/\s+/).filter(w => w.length > 1 && !stopWords.has(w.toLowerCase()));
+  const nameDistinct = nameWords.filter(w => !commonBankWords.has(w.toLowerCase()));
+  const locUrls = [];
+  if (loc.state && loc.nameQuery && loc.nameQuery !== qNoThe) {
+    (nameDistinct.length ? nameDistinct : nameWords).slice(0, 3).forEach(w =>
+      locUrls.push(`${FDIC_BASE}/institutions?filters=NAME%3A*${encodeURIComponent(w)}*%20AND%20STALP%3A${loc.state}%20AND%20ACTIVE%3A1&fields=${fields}&limit=50&sort_by=ASSET&sort_order=DESC`));
+  }
+  loc.cities.forEach(c => locUrls.push(`${FDIC_BASE}/institutions?filters=CITY%3A%22${encodeURIComponent(c)}%22%20AND%20ACTIVE%3A1&fields=${fields}&limit=100&sort_by=ASSET&sort_order=DESC`));
+
   const seen = new Map();
-  const round1 = await Promise.all(round1Urls.map(get));
+  const round1 = await Promise.all([...round1Urls, ...locUrls].map(get));
   round1.forEach(data => merge(seen, data, q));
 
   // Round 2: Contains-style wildcard (*word*) — catches mid-name words like "Chase", "Plains"
@@ -1071,10 +1166,12 @@ async function searchFDIC(query) {
     }
   }
 
+  if (attempts > 0 && failures === attempts) throw new Error('FDIC is busy right now');
   return [...seen.values()]
     .filter(d => d.score >= 40)
     .sort((a, b) => b.score - a.score || (b.data?.ASSET || 0) - (a.data?.ASSET || 0))
     .map(d => ({
+      score: d.score,
       type: 'bank',
       id: d.data.CERT,
       name: d.data.NAME,
@@ -1183,7 +1280,8 @@ async function getFDICDetail(cert) {
 // totalResultCount > 0 (CORS blocked body), fall back to the NCUA locator link.
 // We also cache a charter→name map from the search page DOM if possible.
 
-async function searchNCUA(query) {
+async function searchNCUA(query, stateCode) {
+  const stParam = stateCode ? `&state=${encodeURIComponent(stateCode)}` : '';
   // Use our Netlify Edge Function proxy at /api/ncua — bypasses NCUA CORS restriction
   try {
     // Acronym expansion: if query is all-caps 4-8 chars (e.g. "MSUFCU"), try common expansions
@@ -1202,8 +1300,8 @@ async function searchNCUA(query) {
       if (prefix && prefix !== q) {
         // Run two searches: exact acronym + prefix initials expansion
         const [r1, r2] = await Promise.allSettled([
-          fetch(`/.netlify/functions/ncua?q=${encodeURIComponent(q)}&limit=10`),
-          fetch(`/.netlify/functions/ncua?q=${encodeURIComponent(prefix)}&limit=15`)
+          fetch(`/.netlify/functions/ncua?q=${encodeURIComponent(q)}&limit=10${stParam}`),
+          fetch(`/.netlify/functions/ncua?q=${encodeURIComponent(prefix)}&limit=15${stParam}`)
         ]);
         const d1 = r1.status === 'fulfilled' ? (await r1.value.json()).results || [] : [];
         const d2 = r2.status === 'fulfilled' ? (await r2.value.json()).results || [] : [];
@@ -1222,7 +1320,7 @@ async function searchNCUA(query) {
         }
       }
     }
-    const url = `/.netlify/functions/ncua?q=${encodeURIComponent(searchQuery)}&limit=20`;
+    const url = `/.netlify/functions/ncua?q=${encodeURIComponent(searchQuery)}&limit=20${stParam}`;
     const r = await fetch(url);
     if (!r.ok) throw new Error(`Proxy returned ${r.status}`);
     const data = await r.json();
@@ -2374,6 +2472,7 @@ function renderResults() {
     </div>
     ${state.loading ? `<div class="state-msg"><div class="spinner"></div><br>Searching banks &amp; credit unions…</div>` : ''}
     ${state.error ? `<div class="state-msg">${state.error}</div>` : ''}
+    ${!state.loading && state.searchWarning ? `<div role="status" style="margin:0 0 14px;padding:10px 14px;border:1px solid rgba(251,191,36,0.4);background:rgba(251,191,36,0.08);border-radius:10px;font-family:var(--mono);font-size:12px;color:#fbbf24;">${escAttr(state.searchWarning)} <a href="#" style="color:var(--accent);" onclick="performSearch(state.query);return false;">Search again</a></div>` : ''}
     ${!state.loading && results.length === 0 ? renderMergedNotice() : ''}
     ${!state.loading && results.length > 0 ? `
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
@@ -2960,6 +3059,7 @@ async function performSearch(q) {
   state.results = [];
   state.resultFilter = 'all'; // reset filter on new search
   state.mergedNotice = null;
+  state.searchWarning = null;
   state.view = 'results';
   render();
 
@@ -2970,16 +3070,33 @@ async function performSearch(q) {
       results.sort((a, b) => (b.assets || 0) - (a.assets || 0));
       state.results = results;
     } else {
-      // Always search both FDIC banks and NCUA credit unions in parallel
-      const [banks, cus] = await Promise.allSettled([
+      // Always search both FDIC banks and NCUA credit unions in parallel.
+      // A state in the query also runs a state-filtered credit union search.
+      const loc = parseSearchLocation(q);
+      const [banks, cus, cusInState] = await Promise.allSettled([
         searchFDIC(q),
         searchNCUA(q).catch(() => []),
+        (loc.state && loc.nameQuery && loc.nameQuery !== q.trim()) ? searchNCUA(loc.nameQuery, loc.state).catch(() => []) : Promise.resolve([]),
       ]);
       const bankResults = banks.status === 'fulfilled' ? banks.value : [];
-      const cuResults   = cus.status   === 'fulfilled' ? cus.value   : [];
-      const results = [...bankResults, ...cuResults];
-      results.sort((a, b) => (b.assets || 0) - (a.assets || 0));
-      state.results = results;
+      if (banks.status === 'rejected') state.searchWarning = 'Bank results didn’t load because the FDIC is busy. Search again in a moment.';
+      // Credit unions get the same relevance score and cutoff as banks. The
+      // NCUA proxy's own matcher is loose (one shared word qualifies), which
+      // used to flood results with large, unrelated credit unions.
+      const cuSeen = new Map();
+      [...(cus.status === 'fulfilled' ? cus.value : []), ...(cusInState.status === 'fulfilled' ? cusInState.value : [])].forEach(r => {
+        const key = r.id || r.name; if (!cuSeen.has(key)) cuSeen.set(key, r);
+      });
+      const cuAll = [...cuSeen.values()];
+      const cuFallback = cuAll.filter(r => r.ncuaFallback);
+      const cuResults = cuAll.filter(r => !r.ncuaFallback)
+        .map(r => ({ ...r, score: searchRelevance(r, q) }))
+        .filter(r => r.score >= 40);
+      // Relevance first, then size. Sorting by assets alone buried exact
+      // name matches under bigger, loosely matching institutions.
+      const results = [...bankResults, ...cuResults]
+        .sort((a, b) => (b.score || 0) - (a.score || 0) || (b.assets || 0) - (a.assets || 0));
+      state.results = [...results, ...cuFallback];
 
       // Zero results is exactly the case a merged-away bank produces —
       // its FDIC charter goes inactive, not deleted, so the normal
