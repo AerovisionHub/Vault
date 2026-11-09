@@ -50,6 +50,7 @@ CASES = [  # query, expected id, must be within top N
  ('First Fidelity Bank','23473',5), ('Sutton Bank','5962',5), ('MidFirst Bank','4063',5), ('Triad Bank','24677',5),
  ('Citizens Bank','17211',5), ('Bank of the Plains','18118',5), ('Wells Fargo','3511',5),
  ('First National Bank Oklahoma','4211',5), ('First National Bank of Oklahoma','4211',1), ('JPMorgan Chase','628',5), ('Fidelity Bank','30895',5),
+ ('Bank of Oklahoma','4214',1), ('bank of oklahoma','4214',1), ('Bank of Albuquerque','4214',1), ('Chase','628',1), ('Chase Manhattan','628',1), ('Bank of Texas','4214',3),
  ('Legend Bank','3108',1), ('Legend Bank Bowie','3108',1), ('MSUFCU','65428',1), ('Navy Federal','5536',1), ('Tinker','19914',1),
 ]
 async def main():

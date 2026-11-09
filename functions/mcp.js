@@ -2,7 +2,7 @@
 // Implements MCP (Model Context Protocol) over HTTP using JSON-RPC 2.0
 // Spec: https://modelcontextprotocol.io/
 
-const VAULT_MCP_VERSION = '1.26.0';
+const VAULT_MCP_VERSION = '1.26.1';
 const FDIC_BASE = 'https://api.fdic.gov/banks';
 // Summary of Deposits — separate FDIC dataset (annual branch-level census, as of each June 30).
 // Same query syntax as FDIC_BASE (filters=field%3Avalue&fields=...&limit=...&sort_by=...&sort_order=...).
@@ -56,7 +56,7 @@ const TOOLS = [
     name: 'search_institutions',
     title: 'Search banks & credit unions',
     annotations: { title: 'Search banks & credit unions', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    description: 'Search FDIC-insured banks by name, city, state or partial match (\"American Heritage Oklahoma\", \"Heritage Sapulpa\", \"Pinnacle Bank TN\"). Returns up to 20 results ranked by relevance (match_score), then asset size. Credit unions are not covered by this tool yet. Typically responds in 2-4 seconds. Use this first to get a CERT number before calling other tools.',
+    description: 'Search FDIC-insured banks by name, trade name (\"Bank of Oklahoma\"), former name, city, state or partial match (\"American Heritage Oklahoma\", \"Heritage Sapulpa\", \"Pinnacle Bank TN\"). Returns up to 20 results ranked by relevance (match_score), then asset size. Credit unions are not covered by this tool yet. Typically responds in 2-4 seconds. Use this first to get a CERT number before calling other tools.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1005,7 +1005,11 @@ const STATE_NAME_TO_CODE = {
 const VALID_STATE_CODES = new Set(Object.values(STATE_NAME_TO_CODE));
 
 function fuzzyScore(name, query) {
-  const n = name.toLowerCase().replace(/^the\s+/, ''); // strip leading "The"
+  // Strip a leading "The" and trailing legal boilerplate (", National Association",
+  // ", N.A.", ", Inc.", ", FSB", ", SSB") so "Fidelity Bank" is an exact match for
+  // "Fidelity Bank, National Association" — people don't type the suffix.
+  const n = name.toLowerCase().replace(/^the\s+/, '')
+    .replace(/,?\s+(national association|n\.\s?a\.?|inc\.?|f\.?s\.?b\.?|s\.?s\.?b\.?)\s*$/, '').trim();
   const q = query.toLowerCase().trim().replace(/^the\s+/, '');
   if (n === q) return 100;
   if (n.startsWith(q)) return 90;
@@ -1090,19 +1094,46 @@ function searchRelevance(inst, query) {
   const stateName = Object.keys(STATE_NAME_TO_CODE).find(k => STATE_NAME_TO_CODE[k] === st) || '';
   let rest = ' ' + query.toLowerCase().replace(/\s+/g, ' ') + ' ';
   let located = false;
+  // The whole city name must appear: "Oklahoma" alone must not match "Oklahoma City".
   if (city && rest.includes(' ' + city + ' ')) { rest = rest.replace(' ' + city + ' ', ' '); located = true; }
-  else if (city) {
-    for (const w of city.split(' ')) if (w.length > 2 && rest.includes(' ' + w + ' ')) { rest = rest.replace(' ' + w + ' ', ' '); located = true; }
-  }
   if (stateName && rest.includes(' ' + stateName + ' ') && !rest.includes(' of ' + stateName + ' ') && !rest.includes(' ' + stateName + ' city ')) { rest = rest.replace(' ' + stateName + ' ', ' '); located = true; }
   const t = rest.trim().split(' ');
   if (st && t.length > 1 && t[t.length - 1] === st.toLowerCase()) { t.pop(); rest = ' ' + t.join(' ') + ' '; located = true; }
   if (!located) return full;
-  const remaining = rest.replace(/\b(of|the|in|near)\b/g, ' ').trim();
-  const loc = remaining ? fuzzyScore(name, remaining) : 55; // pure-location query, e.g. "Sapulpa"
+  const remaining = rest.replace(/\b(of|the|in|near)\b/g, ' ').replace(/\s+/g, ' ').trim();
+  // If only generic words are left ("bank", "state bank"), the location reading
+  // says little about the name, so it is capped low instead of matching every "Bank …".
+  const GENERIC = new Set(['bank','banks','trust','company','credit','union','savings','national','state','financial','and','&']);
+  const genericOnly = remaining && remaining.split(' ').every(w => GENERIC.has(w));
+  let loc = remaining ? fuzzyScore(name, remaining) : 55; // pure-location query, e.g. "Sapulpa"
+  if (genericOnly) loc = Math.min(loc, 55);
   // Capped at 95 so an exact full-name match ("Texas Capital Bank") still
   // outranks a location reading of the same words ("Capital Bank" in Texas).
   return Math.max(full, loc >= 40 ? Math.min(95, loc + 5) : 0);
+}
+
+const FDIC_ALIAS_FIELDS = ['TE01N529','TE02N529','TE03N529','TE04N529','TE05N529','TE06N529','TE07N529','TE08N529','TE09N529','TE10N529',
+  'PRIORNAME1','PRIORNAME2','PRIORNAME3','PRIORNAME4','PRIORNAME5','PRIORNAME6'];
+
+function institutionRelevance(d, query) {
+  const loc = { city: d.CITY, state: d.STALP };
+  let best = { score: searchRelevance({ ...loc, name: d.NAME || '' }, query), aka: null };
+  for (const f of FDIC_ALIAS_FIELDS) {
+    const alias = d[f];
+    if (!alias || typeof alias !== 'string' || alias === d.NAME) continue;
+    const trade = f.startsWith('TE');
+    const sc = searchRelevance({ ...loc, name: alias }, query) - (trade ? 3 : 8);
+    if (sc > best.score) best = { score: sc, aka: { name: alias, kind: trade ? 'trade name' : 'former name' } };
+  }
+  return best;
+}
+
+function fdicAliasUrls(base, words, fields, extraFilter = '') {
+  const w = words.filter(Boolean).map(x => encodeURIComponent(titleCase(x))).join('*');
+  if (!w) return [];
+  const or = (prefix, n) => '(' + Array.from({ length: n }, (_, i) => `${prefix}${String(i + 1).padStart(2, '0')}N529%3A*${w}*`).join('%20OR%20') + ')';
+  const orPrior = '(' + [1,2,3,4,5,6].map(i => `PRIORNAME${i}%3A*${w}*`).join('%20OR%20') + ')';
+  return [or('TE', 10), orPrior].map(f => `${base}/institutions?filters=${f}%20AND%20ACTIVE%3A1${extraFilter}&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC`);
 }
 
 async function searchInstitutions(args) {
@@ -1111,7 +1142,7 @@ async function searchInstitutions(args) {
     throw new Error('Required parameter "query" missing or empty. Provide a search term like a bank name or city.');
   }
   const max = Math.min(Number(limit) || 20, 50);
-  const fields = 'NAME,CERT,CITY,STALP,ASSET,REPDTE,WEBADDR,INSTCAT';
+  const fields = 'NAME,CERT,CITY,STALP,ASSET,REPDTE,WEBADDR,INSTCAT,' + FDIC_ALIAS_FIELDS.join(',');
   const q = query.trim();
   const qNoThe = q.replace(/^the\s+/i, '');
   const stopWords = new Set(['of','the','and','a','an','at','in','for','by','to','de','la','le','&']);
@@ -1143,6 +1174,7 @@ async function searchInstitutions(args) {
     (nd.length ? nd : nw).slice(0, 3).forEach(w => urls.push(`${FDIC_BASE}/institutions?filters=NAME%3A*${encodeURIComponent(w)}*%20AND%20STALP%3A${loc.state}%20AND%20ACTIVE%3A1&fields=${fields}&limit=50&sort_by=ASSET&sort_order=DESC`));
   }
   loc.cities.forEach(c => urls.push(base(`CITY%3A%22${encodeURIComponent(c)}%22`, 100)));
+  urls.push(...fdicAliasUrls(FDIC_BASE, tw, fields, stateFilter)); // trade + former names ("Bank of Oklahoma" -> BOKF)
 
   let failures = 0;
   const get = u => fetchFDIC(u).catch(() => new Promise(r => setTimeout(r, 700)).then(() => fetchFDIC(u))).catch(() => { failures++; return { data: [] }; });
@@ -1154,14 +1186,14 @@ async function searchInstitutions(args) {
   const seen = new Map();
   results.forEach(r => (r.data || []).forEach(x => {
     const d = x.data; if (!d?.CERT) return;
-    const score = searchRelevance({ name: d.NAME, city: d.CITY, state: d.STALP }, stCode ? `${q} ${stCode}` : q);
-    if (!seen.has(d.CERT) || seen.get(d.CERT).score < score) seen.set(d.CERT, { d, score });
+    const { score, aka } = institutionRelevance(d, stCode ? `${q} ${stCode}` : q);
+    if (!seen.has(d.CERT) || seen.get(d.CERT).score < score) seen.set(d.CERT, { d, score, aka });
   }));
   return [...seen.values()]
     .filter(x => x.score >= 40)
     .sort((a, b) => b.score - a.score || (b.d.ASSET || 0) - (a.d.ASSET || 0))
     .slice(0, max)
-    .map(({ d, score }) => ({
+    .map(({ d, score, aka }) => ({
       cert: d.CERT,
       name: d.NAME,
       city: d.CITY,
@@ -1169,6 +1201,7 @@ async function searchInstitutions(args) {
       assets_thousands: d.ASSET,
       website: d.WEBADDR || null,
       match_score: score,
+      ...(aka ? { matched_name: aka.name, matched_name_type: aka.kind } : {}),
       profile_url: `https://vaultbot.ai/bank/${d.CERT}`,
     }));
 }

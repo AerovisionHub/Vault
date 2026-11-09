@@ -972,7 +972,11 @@ function thousands(n) {
 
 // Fuzzy search helper: score how well a name matches a query
 function fuzzyScore(name, query) {
-  const n = name.toLowerCase().replace(/^the\s+/, ''); // strip leading "The"
+  // Strip a leading "The" and trailing legal boilerplate (", National Association",
+  // ", N.A.", ", Inc.", ", FSB", ", SSB") so "Fidelity Bank" is an exact match for
+  // "Fidelity Bank, National Association" — people don't type the suffix.
+  const n = name.toLowerCase().replace(/^the\s+/, '')
+    .replace(/,?\s+(national association|n\.\s?a\.?|inc\.?|f\.?s\.?b\.?|s\.?s\.?b\.?)\s*$/, '').trim();
   const q = query.toLowerCase().trim().replace(/^the\s+/, '');
   if (n === q) return 100;
   if (n.startsWith(q)) return 90;
@@ -1065,23 +1069,54 @@ function searchRelevance(inst, query) {
   const stateName = Object.keys(STATE_NAME_TO_CODE).find(k => STATE_NAME_TO_CODE[k] === st) || '';
   let rest = ' ' + query.toLowerCase().replace(/\s+/g, ' ') + ' ';
   let located = false;
+  // The whole city name must appear: "Oklahoma" alone must not match "Oklahoma City".
   if (city && rest.includes(' ' + city + ' ')) { rest = rest.replace(' ' + city + ' ', ' '); located = true; }
-  else if (city) {
-    for (const w of city.split(' ')) if (w.length > 2 && rest.includes(' ' + w + ' ')) { rest = rest.replace(' ' + w + ' ', ' '); located = true; }
-  }
   if (stateName && rest.includes(' ' + stateName + ' ') && !rest.includes(' of ' + stateName + ' ') && !rest.includes(' ' + stateName + ' city ')) { rest = rest.replace(' ' + stateName + ' ', ' '); located = true; }
   const t = rest.trim().split(' ');
   if (st && t.length > 1 && t[t.length - 1] === st.toLowerCase()) { t.pop(); rest = ' ' + t.join(' ') + ' '; located = true; }
   if (!located) return full;
-  const remaining = rest.replace(/\b(of|the|in|near)\b/g, ' ').trim();
-  const loc = remaining ? fuzzyScore(name, remaining) : 55; // pure-location query, e.g. "Sapulpa"
+  const remaining = rest.replace(/\b(of|the|in|near)\b/g, ' ').replace(/\s+/g, ' ').trim();
+  // If only generic words are left ("bank", "state bank"), the location reading
+  // says little about the name, so it is capped low instead of matching every "Bank …".
+  const GENERIC = new Set(['bank','banks','trust','company','credit','union','savings','national','state','financial','and','&']);
+  const genericOnly = remaining && remaining.split(' ').every(w => GENERIC.has(w));
+  let loc = remaining ? fuzzyScore(name, remaining) : 55; // pure-location query, e.g. "Sapulpa"
+  if (genericOnly) loc = Math.min(loc, 55);
   // Capped at 95 so an exact full-name match ("Texas Capital Bank") still
   // outranks a location reading of the same words ("Capital Bank" in Texas).
   return Math.max(full, loc >= 40 ? Math.min(95, loc + 5) : 0);
 }
 
+// FDIC records carry trade names (TE01N529–TE10N529: "Bank of Oklahoma",
+// "Chase") and former names (PRIORNAME1–6). People search by brand, so an
+// institution scores by the best of its legal name, trade names and former
+// names. Trade names lose 3 points and former names 8, so a bank whose legal
+// name matches still wins a tie. These FDIC fields are case-sensitive in
+// filters (NAME is not), so alias queries title-case the words.
+const FDIC_ALIAS_FIELDS = ['TE01N529','TE02N529','TE03N529','TE04N529','TE05N529','TE06N529','TE07N529','TE08N529','TE09N529','TE10N529',
+  'PRIORNAME1','PRIORNAME2','PRIORNAME3','PRIORNAME4','PRIORNAME5','PRIORNAME6'];
+function institutionRelevance(d, query) {
+  const loc = { city: d.CITY, state: d.STALP };
+  let best = { score: searchRelevance({ ...loc, name: d.NAME || '' }, query), aka: null };
+  for (const f of FDIC_ALIAS_FIELDS) {
+    const alias = d[f];
+    if (!alias || typeof alias !== 'string' || alias === d.NAME) continue;
+    const trade = f.startsWith('TE');
+    const sc = searchRelevance({ ...loc, name: alias }, query) - (trade ? 3 : 8);
+    if (sc > best.score) best = { score: sc, aka: { name: alias, kind: trade ? 'trade name' : 'former name' } };
+  }
+  return best;
+}
+function fdicAliasUrls(base, words, fields, extraFilter = '') {
+  const w = words.filter(Boolean).map(x => encodeURIComponent(titleCase(x))).join('*');
+  if (!w) return [];
+  const or = (prefix, n) => '(' + Array.from({ length: n }, (_, i) => `${prefix}${String(i + 1).padStart(2, '0')}N529%3A*${w}*`).join('%20OR%20') + ')';
+  const orPrior = '(' + [1,2,3,4,5,6].map(i => `PRIORNAME${i}%3A*${w}*`).join('%20OR%20') + ')';
+  return [or('TE', 10), orPrior].map(f => `${base}/institutions?filters=${f}%20AND%20ACTIVE%3A1${extraFilter}&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC`);
+}
+
 async function searchFDIC(query) {
-  const fields = 'NAME,CERT,CITY,STALP,ASSET,REPDTE,ACTIVE,INSTCAT,WEBADDR';
+  const fields = 'NAME,CERT,CITY,STALP,ASSET,REPDTE,ACTIVE,INSTCAT,WEBADDR,' + FDIC_ALIAS_FIELDS.join(',');
   const q = query.trim();
   const qNoThe = q.replace(/^the\s+/i, '');
 
@@ -1100,8 +1135,8 @@ async function searchFDIC(query) {
   const merge = (seen, data, q) => {
     (data.data || []).forEach(d => {
       const cert = d.data?.CERT; if (!cert) return;
-      const score = searchRelevance({ name: d.data.NAME, city: d.data.CITY, state: d.data.STALP }, q);
-      if (!seen.has(cert) || seen.get(cert).score < score) seen.set(cert, { ...d, score });
+      const { score, aka } = institutionRelevance(d.data, q);
+      if (!seen.has(cert) || seen.get(cert).score < score) seen.set(cert, { ...d, score, aka });
     });
   };
 
@@ -1142,8 +1177,11 @@ async function searchFDIC(query) {
   }
   loc.cities.forEach(c => locUrls.push(`${FDIC_BASE}/institutions?filters=CITY%3A%22${encodeURIComponent(c)}%22%20AND%20ACTIVE%3A1&fields=${fields}&limit=100&sort_by=ASSET&sort_order=DESC`));
 
+  // Trade names and former names ("Bank of Oklahoma" -> BOKF, N.A.)
+  const aliasUrls = fdicAliasUrls(FDIC_BASE, tokenWords, fields);
+
   const seen = new Map();
-  const round1 = await Promise.all([...round1Urls, ...locUrls].map(get));
+  const round1 = await Promise.all([...round1Urls, ...locUrls, ...aliasUrls].map(get));
   round1.forEach(data => merge(seen, data, q));
 
   // Round 2: Contains-style wildcard (*word*) — catches mid-name words like "Chase", "Plains"
@@ -1172,6 +1210,7 @@ async function searchFDIC(query) {
     .sort((a, b) => b.score - a.score || (b.data?.ASSET || 0) - (a.data?.ASSET || 0))
     .map(d => ({
       score: d.score,
+      aka: d.aka || null,
       type: 'bank',
       id: d.data.CERT,
       name: d.data.NAME,
@@ -2497,6 +2536,7 @@ function renderResults() {
         <div class="result-item" data-id="${escAttr(r.id)}" data-type="${escAttr(r.type)}" data-name="${escAttr(r.name)}" data-assets="${escAttr(r.assets||0)}" data-members="${escAttr(r.members||0)}" data-cutype="${escAttr(r.cuType||r.type||'')}" data-city="${escAttr(r.city||'')}" data-state="${escAttr(r.state||'')}">
           <div>
             <div class="result-name">${r.name}</div>
+            ${r.aka ? `<div class="result-aka" style="font-size:12px;color:var(--accent);margin:2px 0 4px;">${r.aka.kind === 'trade name' ? 'Operates as' : 'Formerly'} ${escAttr(r.aka.name)}</div>` : ''}
             <div class="result-meta">${r.city || '—'}, ${r.state || '—'} · ${r.type === 'bank' ? 'CERT #' + r.id : 'CU #' + r.id}</div>
             ${r.type === 'bank' ? `<div id="leadership-peek-${escAttr(r.id)}" class="result-leadership" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:4px;min-height:14px;"></div>` : ''}
           </div>

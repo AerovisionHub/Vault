@@ -4,7 +4,7 @@ const { handler } = require('../functions/mcp.js');
 const cases = [['American Heritage Bank',4190,1],['American Heritage Oklahoma',4190,1],['American Heritage OK',4190,1],['American Heritage Sapulpa',4190,1],
  ['Heritage Sapulpa',4190,3],['american heritage',4190,3],['First Fidelity Bank',23473,5],['Sutton Bank',5962,5],['MidFirst Bank',4063,5],['Triad Bank',24677,5],
  ['Citizens Bank',17211,5],['Bank of the Plains',18118,5],['Wells Fargo',3511,5],['First National Bank Oklahoma',4211,5],['First National Bank of Oklahoma',4211,1],
- ['JPMorgan Chase',628,5],['Fidelity Bank',30895,5],['Legend Bank',3108,1],['Legend Bank Bowie',3108,1],['Texas Capital Bank',34383,1],['Pinnacle Bank TN',35583,1]];
+ ['JPMorgan Chase',628,5],['Fidelity Bank',30895,5],['Legend Bank',3108,1],['Legend Bank Bowie',3108,1],['Texas Capital Bank',34383,1],['Bank of Oklahoma',4214,1],['bank of oklahoma',4214,1],['Bank of Albuquerque',4214,1],['Chase',628,1],['Chase Manhattan',628,1],['Bank of Texas',4214,3],['Pinnacle Bank TN',35583,1]];
 const call = async (args) => { const r = await handler({ httpMethod:'POST', headers:{'x-vault-source':'qa'}, body: JSON.stringify({ jsonrpc:'2.0', id:1, method:'tools/call', params:{ name:'search_institutions', arguments: args } }) }, {});
   const j = JSON.parse(r.body); if (j.result?.isError) return { err: j.result.content[0].text }; return JSON.parse(j.result.content[0].text); };
 (async () => { let pass = 0;
