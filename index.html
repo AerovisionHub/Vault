@@ -990,7 +990,7 @@ function fuzzyScore(name, query) {
   // Common banking words that shouldn't drive score on their own
   const commonWords = new Set(['first','bank','national','federal','savings','trust','state',
     'community','commercial','peoples','heritage','home','liberty','union','american',
-    'united','citizens','central','western','eastern','northern','southern','premier']);
+    'united','citizens','central','western','eastern','northern','southern','premier','credit']);
   const qTokens = q.split(/\s+/).filter(t => t.length > 1);
   const distinctiveQ = qTokens.filter(t => !commonWords.has(t));
   // If query has distinctive words, require at least one to match
@@ -1120,17 +1120,50 @@ function fdicAliasUrls(base, words, fields, extraFilter = '') {
 // Union" (Navy Federal is an exception). Scored raw, "MSUFCU" or "American
 // Heritage Credit Union" never match. So a credit union scores by the better
 // of its stored name and its name with the suffix restored from its charter
-// type ("Federal CU" -> "Federal Credit Union", anything else -> "Credit Union").
+// type ("Federal CU" -> "Federal Credit Union", anything else -> "Credit Union"),
+// or by a trade name. Returns { score, aka } like institutionRelevance.
 function cuRelevance(cu, query) {
   const name = cu.name || '';
   const loc = { city: cu.city, state: cu.state };
-  let best = searchRelevance({ ...loc, name }, query);
+  let best = { score: searchRelevance({ ...loc, name }, query), aka: null };
   if (!/credit union|\bf?cu$/i.test(name.trim())) {
     const kind = String(cu.cuType || cu.type || '');
     const suffix = /federal/i.test(kind) ? ' Federal Credit Union' : ' Credit Union';
-    best = Math.max(best, searchRelevance({ ...loc, name: name + suffix }, query));
+    best.score = Math.max(best.score, searchRelevance({ ...loc, name: name + suffix }, query));
+  }
+  // NCUA TradeNames ("MSUFCU"), scored like FDIC trade names: 3 points under
+  // the legal name so a legal-name match still wins a tie.
+  for (const t of (cu.tradeNames || cu.trade_names || [])) {
+    const sc = searchRelevance({ ...loc, name: t }, query) - 3;
+    if (sc > best.score) best = { score: sc, aka: { name: t, kind: 'trade name' } };
   }
   return best;
+}
+
+// Derived NCUA 5300 metrics for one credit union (inputs in dollars, from the
+// ncua proxy). Shared verbatim with the MCP's get_credit_union_profile so the
+// website and AI clients always show the same numbers. null = input missing.
+function cuFinancials(cu) {
+  const n = v => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v))) ? null : Number(v);
+  const r2 = v => v === null ? null : Math.round(v * 100) / 100;
+  const assets = n(cu.assets), loans = n(cu.loans), shares = n(cu.shares), netWorth = n(cu.netWorth);
+  const netIncomeYtd = n(cu.netIncomeYtd), delinquentLoans = n(cu.delinquentLoans), allowance = n(cu.allowance);
+  const pct = (a, b) => (a !== null && b) ? r2(a / b * 100) : null;
+  const months = cu.asOf ? Number(String(cu.asOf).slice(5, 7)) : null;
+  const computed = pct(netWorth, assets);
+  // NCUA's own net worth ratio (account 998). Its unit (10.5 vs 0.105) is
+  // resolved against net worth / assets rather than assumed.
+  let reported = n(cu.netWorthRatio);
+  if (reported !== null && computed !== null && Math.abs(reported * 100 - computed) < Math.abs(reported - computed)) reported *= 100;
+  return {
+    assets, loans, shares, netWorth, netIncomeYtd, delinquentLoans, allowance,
+    netWorthRatioPct: reported !== null ? r2(reported) : computed,
+    netWorthToAssetsPct: computed,
+    roaPct: (netIncomeYtd !== null && assets && months) ? r2(netIncomeYtd / assets * (12 / months) * 100) : null,
+    loanToSharePct: pct(loans, shares),
+    delinquencyPct: pct(delinquentLoans, loans),
+    allowancePctOfLoans: pct(allowance, loans),
+  };
 }
 
 async function searchFDIC(query) {
@@ -1373,7 +1406,7 @@ async function searchNCUA(query, stateCode) {
           .map(d => ({ ...d, _score: fuzzyScore(d.name || '', query) }))
           .sort((a, b) => b._score - a._score);
         if (merged.length > 0) {
-          return merged.map(d => ({ type: 'cu', id: d.id, name: d.name, city: d.city, state: d.state, assets: d.assets, members: d.members, cuType: d.type }));
+          return merged.map(d => ({ type: 'cu', id: d.id, name: d.name, city: d.city, state: d.state, assets: d.assets, members: d.members, cuType: d.type, tradeNames: d.tradeNames || [] }));
         }
       }
     }
@@ -1394,6 +1427,7 @@ async function searchNCUA(query, stateCode) {
         assets: d.assets,
         members: d.members,
         cuType: d.type,
+        tradeNames: d.tradeNames || [],
       }));
   } catch(e) {
     console.warn('NCUA proxy error:', e.message);
@@ -2855,6 +2889,19 @@ function renderCUDetail(d) {
   const employeesPT = cu.employeesPartTime ?? null;
   const cuType = cu.type || '—';
   const website = cu.website || null;
+  const tradeNames = (cu.tradeNames || []).filter(Boolean);
+  const fin = cuFinancials(cu);
+  const pctTxt = v => v === null ? '—' : `${v.toFixed(2)}%`;
+  // NCUA prompt corrective action: 7% or more is well capitalized (12 CFR 702.102).
+  const nwrSub = fin.netWorthRatioPct === null ? 'NCUA 5300' : fin.netWorthRatioPct >= 7 ? 'Well capitalized (7%+)' : fin.netWorthRatioPct >= 6 ? 'Adequately capitalized' : 'Below adequately capitalized';
+  const finCards = [
+    fin.loans !== null && ['Total Loans', fmt$(fin.loans), 'Loans & leases'],
+    fin.shares !== null && ['Shares & Deposits', fmt$(fin.shares), 'Member deposits'],
+    fin.netWorthRatioPct !== null && ['Net Worth Ratio', pctTxt(fin.netWorthRatioPct), nwrSub],
+    fin.roaPct !== null && ['ROA', pctTxt(fin.roaPct), 'Annualized, year to date'],
+    fin.loanToSharePct !== null && ['Loan-to-Share', pctTxt(fin.loanToSharePct), 'Loans ÷ shares & deposits'],
+    fin.delinquencyPct !== null && ['Delinquency', pctTxt(fin.delinquencyPct), 'Delinquent loans ÷ total loans'],
+  ].filter(Boolean);
 
   // Derived metrics
   const assetsPerMember = assets && members ? assets / members : 0;
@@ -2867,6 +2914,7 @@ function renderCUDetail(d) {
     <div class="inst-header">
       <div>
         <h1 class="inst-name">${name}</h1>
+        ${tradeNames.length ? `<div class="result-aka" style="font-size:13px;color:var(--accent);margin:2px 0 6px;">Operates as ${tradeNames.map(escAttr).join(', ')}</div>` : ''}
         <div class="inst-meta-row">
           <span class="inst-meta-item"><strong>${city}, ${state}${zip ? ' ' + zip : ''}</strong></span>
           <span class="inst-meta-item">Charter <strong>${charter}</strong></span>
@@ -2914,6 +2962,17 @@ function renderCUDetail(d) {
       </div>
     </div>
 
+    ${finCards.length ? `
+    <div class="section-title" style="margin-top:8px;">Financial Health</div>
+    <div class="kpi-grid" id="cuFinancialHealth">
+      ${finCards.map(([label, value, sub]) => `
+      <div class="kpi-card">
+        <div class="kpi-label">${label}</div>
+        <div class="kpi-value kpi-neutral">${value}</div>
+        <div class="kpi-sub">${sub}</div>
+      </div>`).join('')}
+    </div>` : ''}
+
     <div class="section-title" style="margin-top:8px;">iDENTIFY Prospect Signals</div>
     <div class="kpi-grid" style="margin-bottom:40px;">
       <div class="kpi-card">
@@ -2945,7 +3004,7 @@ function renderCUDetail(d) {
           <canvas id="cuChart"></canvas>
         </div>
       </div>
-      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-align:right;padding:0 4px;">NCUA 5300 Q4 2025 · peer averages by asset tier</div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-align:right;padding:0 4px;">NCUA 5300 ${cuPeriodLabel(cu)} · peer averages by asset tier</div>
     </div>
 
     <div id="cuPeersContainer"><div class="peer-loading"><div class="spinner"></div> Loading market peers…</div></div>
@@ -2956,6 +3015,7 @@ function renderCUDetail(d) {
       <div class="section-title">Institution Details</div>
       <table class="data-table">
         <tr><td>Full Name</td><td>${name}</td></tr>
+        ${tradeNames.length ? `<tr><td>Trade Names</td><td>${tradeNames.map(escAttr).join(', ')}</td></tr>` : ''}
         <tr><td>Charter Number</td><td>${charter}</td></tr>
         <tr><td>Charter Type</td><td>${cuType}</td></tr>
         <tr><td>City</td><td>${city}</td></tr>
@@ -2963,6 +3023,10 @@ function renderCUDetail(d) {
         ${zip ? `<tr><td>ZIP Code</td><td>${zip}</td></tr>` : ''}
         <tr><td>Total Assets</td><td>${assets ? fmt$(assets) : '—'}</td></tr>
         ${members ? `<tr><td>Members</td><td>${fmtNum(members)}</td></tr>` : ''}
+        ${fin.loans !== null ? `<tr><td>Total Loans &amp; Leases</td><td>${fmt$(fin.loans)}</td></tr>` : ''}
+        ${fin.shares !== null ? `<tr><td>Shares &amp; Deposits</td><td>${fmt$(fin.shares)}</td></tr>` : ''}
+        ${fin.netWorth !== null ? `<tr><td>Net Worth</td><td>${fmt$(fin.netWorth)}</td></tr>` : ''}
+        ${fin.netIncomeYtd !== null ? `<tr><td>Net Income (YTD)</td><td>${fmt$(fin.netIncomeYtd)}</td></tr>` : ''}
         ${assetsPerMember ? `<tr><td>Assets per Member</td><td>${fmt$(assetsPerMember)}</td></tr>` : ''}
         ${website ? `<tr><td>Website</td><td><a href="https://${website}" target="_blank" style="color:var(--accent)">${website}</a></td></tr>` : ''}
         <tr><td>Data Period</td><td>${cuPeriodLabel(cu, true)}</td></tr>
@@ -3148,7 +3212,7 @@ async function performSearch(q) {
       const cuAll = [...cuSeen.values()];
       const cuFallback = cuAll.filter(r => r.ncuaFallback);
       const cuResults = cuAll.filter(r => !r.ncuaFallback)
-        .map(r => ({ ...r, score: cuRelevance(r, q) }))
+        .map(r => { const { score, aka } = cuRelevance(r, q); return { ...r, score, aka }; })
         .filter(r => r.score >= 40);
       // Relevance first, then size. Sorting by assets alone buried exact
       // name matches under bigger, loosely matching institutions.

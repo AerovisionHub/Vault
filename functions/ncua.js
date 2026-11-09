@@ -5,6 +5,8 @@ let cuCache = null;
 let lastFoicuHeaders = null; // diagnostic: real column names from the most recent FOICU.txt load
 let lastZipFileList = null;  // diagnostic: every file name found in the most recent quarterly ZIP
 let lastEmployeeSource = null; // diagnostic: which file ACCT_564A was actually found in (or null)
+let lastAccountSources = null; // diagnostic: { ACCT_xxx: 'FS220X.txt' | null } for PROFILE_ACCOUNTS
+let lastTradeNameInfo = null;  // diagnostic: TradeNames file, detected columns, row count
 let cacheTimestamp = 0; 
 const CACHE_TTL = 60 * 60 * 1000;
 // NCUA posts one ZIP per quarter at a predictable URL, ~10 weeks after the
@@ -213,6 +215,144 @@ function findEmployeeData(zipBuf, zipFileList, alreadyParsedFS220) {
   return null;
 }
 
+// ── Credit union financial profile (2026-11-09) ────────────────────────────
+// 5300 account codes from NCUA's own Call Report instructions / account
+// descriptions: 010 total assets, 025B total loans & leases (amount; 025A is
+// the count), 719 allowance for loan & lease losses, 661A net income (YTD),
+// 998 net worth ratio. 018 (total shares & deposits), 997 (total net worth)
+// and 041B (delinquent loans) are from secondary references and are verified
+// live: 997/010 must agree with NCUA's own 998, and 041B/018 must sit below
+// 025B/010. As with employees, WHICH FS220* file carries each code is located
+// at load time (AcctDesc.txt index first, then a bounded probe), never assumed.
+// A code that can't be located comes back null, not zero.
+const PROFILE_ACCOUNTS = {
+  shares: 'ACCT_018', loans: 'ACCT_025B', allowance: 'ACCT_719', delinquentLoans: 'ACCT_041B',
+  netWorth: 'ACCT_997', netWorthRatio: 'ACCT_998', netIncomeYtd: 'ACCT_661A',
+};
+
+// Map account codes -> the table/file NCUA's AcctDesc.txt says they live in.
+function lookupAccountTables(zipBuf, codes) {
+  const out = {};
+  try {
+    const buf = extractFromZip(zipBuf, 'AcctDesc.txt');
+    if (!buf) return out;
+    const rows = buf.toString('latin1').split('\n');
+    const header = parseCSVLine((rows[0] || '').replace('\r', '')).map(h => h.trim());
+    const acctIdx  = header.findIndex(h => /^acct(_?code|name)?$/i.test(h) || /account/i.test(h));
+    const tableIdx = header.findIndex(h => /table|file|schedule/i.test(h));
+    if (acctIdx === -1 || tableIdx === -1) return out;
+    const want = new Set(codes.map(c => c.replace(/^ACCT_/i, '').toUpperCase()));
+    for (const line of rows.slice(1)) {
+      const cells = parseCSVLine(line.replace('\r', ''));
+      const acct = (cells[acctIdx] || '').trim().replace(/^ACCT_/i, '').toUpperCase();
+      if (!want.has(acct)) continue;
+      const table = (cells[tableIdx] || '').trim();
+      if (table) out['ACCT_' + acct] = table.toLowerCase().endsWith('.txt') ? table : `${table}.txt`;
+    }
+  } catch (e) {
+    console.log('[ncua-profile] AcctDesc lookup failed:', e.message);
+  }
+  return out;
+}
+
+// Parse only the listed columns, keyed by CU_NUMBER (a full parseCSVtoMap of
+// every FS220* table would hold hundreds of columns per credit union in memory).
+function extractColumns(buf, cols) {
+  const lines = buf.toString('latin1').split('\n');
+  const header = parseCSVLine((lines[0] || '').replace('\r', ''));
+  const keyIdx = header.indexOf('CU_NUMBER');
+  const present = cols.map(c => [c, header.indexOf(c)]).filter(([, i]) => i !== -1);
+  const map = {};
+  if (keyIdx === -1 || !present.length) return { map, found: [] };
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].replace('\r', '');
+    if (!line.trim()) continue;
+    const v = parseCSVLine(line);
+    const row = map[v[keyIdx]] || (map[v[keyIdx]] = {});
+    for (const [c, idx] of present) row[c] = v[idx];
+  }
+  return { map, found: present.map(([c]) => c) };
+}
+
+function findProfileAccounts(zipBuf, zipFileList, fs220Map) {
+  const codes = Object.values(PROFILE_ACCOUNTS);
+  const data = {}; const sources = Object.fromEntries(codes.map(c => [c, null]));
+  const merge = (map, found, file) => {
+    for (const [cu, row] of Object.entries(map)) {
+      const dst = data[cu] || (data[cu] = {});
+      for (const c of found) if (row[c] !== undefined) dst[c] = row[c];
+    }
+    for (const c of found) sources[c] = file;
+  };
+  // 1. FS220.txt is already parsed.
+  const sample = Object.values(fs220Map || {})[0] || {};
+  const inFs220 = codes.filter(c => c in sample);
+  if (inFs220.length) merge(fs220Map, inFs220, 'FS220.txt');
+  const tryFile = (name, wanted) => {
+    const buf = extractFromZip(zipBuf, name);
+    if (!buf) return;
+    const { map, found } = extractColumns(buf, wanted);
+    if (found.length) merge(map, found, name);
+  };
+  // 2. NCUA's index says where the rest live.
+  let missing = codes.filter(c => !sources[c]);
+  const index = lookupAccountTables(zipBuf, missing);
+  const byFile = {};
+  for (const c of missing) if (index[c]) (byFile[index[c]] = byFile[index[c]] || []).push(c);
+  for (const [file, wanted] of Object.entries(byFile)) {
+    try { tryFile(file, wanted); } catch (e) { console.log('[ncua-profile] read failed', file, e.message); }
+  }
+  // 3. Bounded probe for anything still missing.
+  const started = Date.now();
+  for (const name of (zipFileList || []).filter(n => /^FS220.+\.txt$/i.test(n)).sort()) {
+    missing = codes.filter(c => !sources[c]);
+    if (!missing.length || Date.now() - started > PROBE_BUDGET_MS) break;
+    if (byFile[name]) continue;
+    try { tryFile(name, missing); } catch (e) { console.log('[ncua-profile] probe failed', name, e.message); }
+  }
+  lastAccountSources = sources;
+  console.log('[ncua-profile] account sources:', JSON.stringify(sources));
+  return data;
+}
+
+// TradeNames.txt (in the bundle since Sep 2013) lists each credit union's
+// trade names ("MSUFCU"). Its column layout is documented only inside the
+// ZIP, so columns are detected from the header; if detection fails, every
+// credit union simply has no trade names (never a wrong one).
+function parseTradeNames(zipBuf, zipFileList) {
+  const file = (zipFileList || []).find(n => /^trade_?names?\.txt$/i.test(n));
+  const info = { file: file || null, headers: null, keyCol: null, nameCol: null, rows: 0, cusWithTradeNames: 0 };
+  lastTradeNameInfo = info;
+  if (!file) return {};
+  try {
+    const lines = extractFromZip(zipBuf, file).toString('latin1').split('\n');
+    const header = parseCSVLine((lines[0] || '').replace('\r', ''));
+    info.headers = header;
+    const keyIdx = header.findIndex(h => /^cu_?number$/i.test(h));
+    const nameIdx = header.findIndex(h => /trade_?name/i.test(h) && !/(type|id|num|seq|date|cycle|web|url|site|code)/i.test(h.replace(/trade_?name/i, '')));
+    info.keyCol = header[keyIdx] || null; info.nameCol = header[nameIdx] || null;
+    if (keyIdx === -1 || nameIdx === -1) return {};
+    const map = {};
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].replace('\r', '');
+      if (!line.trim()) continue;
+      const v = parseCSVLine(line);
+      const cu = v[keyIdx], tn = (v[nameIdx] || '').trim();
+      if (!cu || !tn) continue;
+      info.rows++;
+      const list = map[cu] || (map[cu] = []);
+      if (!list.some(x => x.toLowerCase() === tn.toLowerCase())) list.push(tn);
+    }
+    info.cusWithTradeNames = Object.keys(map).length;
+    return map;
+  } catch (e) {
+    console.log('[ncua-tradenames] parse failed:', e.message);
+    return {};
+  }
+}
+
+const num = v => (v === undefined || v === null || String(v).trim() === '' ? null : (Number.isFinite(parseFloat(v)) ? parseFloat(v) : null));
+
 function parseCSVLine(line) {
   const vals = [];
   let cur = '';
@@ -373,6 +513,8 @@ function parseQuarter(zipBuf, period) {
   // Employee counts live on a different 5300 page than the financials and may
   // be in a different file in the bundle — locate it rather than assume.
   const employeeData = findEmployeeData(zipBuf, lastZipFileList, financials);
+  const profileData = findProfileAccounts(zipBuf, lastZipFileList, financials);
+  const tradeNames = parseTradeNames(zipBuf, lastZipFileList);
 
   // Join profiles + financials on CU_NUMBER
   return Object.values(profiles)
@@ -380,6 +522,9 @@ function parseQuarter(zipBuf, period) {
     .map(p => {
       const fin = financials[p.CU_NUMBER] || {};
       const emp = employeeData ? (employeeData[p.CU_NUMBER] || {}) : {};
+      const acct = profileData[p.CU_NUMBER] || {};
+      const fin5300 = Object.fromEntries(Object.entries(PROFILE_ACCOUNTS).map(([k, code]) => [k, num(acct[code])]));
+      const tns = (tradeNames[p.CU_NUMBER] || []).filter(t => t.toLowerCase() !== String(p.CU_NAME).toLowerCase());
       // ACCT_010 = total assets in $thousands, ACCT_730 = number of members
       const assets = Math.round(parseFloat(fin.ACCT_010 || '0')); // ACCT_010 already in dollars
       // Log full FS220 row for OneAZ on first load to find member field
@@ -409,6 +554,9 @@ function parseQuarter(zipBuf, period) {
         charterDate: charterDate?.iso || null,
         charterYear: charterDate?.year || null,
         website: p.STREET ? '' : '', // FOICU has no website field
+        tradeNames: tns,
+        // 5300 financials in dollars (netWorthRatio as NCUA reports it); null = not located.
+        ...fin5300,
         asOf,
       };
     });
@@ -497,6 +645,10 @@ exports.handler = async function(event, context) {
           // request instead of trusting the probe silently.
           employee_source_file: lastEmployeeSource,
           cus_with_employee_count: allCUs.filter(cu => cu.employees != null).length,
+          account_sources: lastAccountSources,
+          trade_names: lastTradeNameInfo,
+          profile_sample: allCUs.filter(cu => cu.loans != null).sort((a, b) => b.assets - a.assets).slice(0, 3)
+            .map(cu => ({ name: cu.name, assets: cu.assets, loans: cu.loans, shares: cu.shares, netWorth: cu.netWorth, netWorthRatio: cu.netWorthRatio, netIncomeYtd: cu.netIncomeYtd, delinquentLoans: cu.delinquentLoans, tradeNames: cu.tradeNames })),
           employee_sample: allCUs.filter(cu => cu.employees != null).slice(0, 5)
             .map(cu => ({ name: cu.name, employees: cu.employees, partTime: cu.employeesPartTime })),
         }),
@@ -559,7 +711,7 @@ exports.handler = async function(event, context) {
     let matched;
     if (q) {
       const scored = pool
-        .map(cu => ({ cu, score: fuzzyScore(q, cu.name) }))
+        .map(cu => ({ cu, score: Math.max(fuzzyScore(q, cu.name), ...(cu.tradeNames || []).map(t => fuzzyScore(q, t) - 3)) }))
         .filter(({ score }) => score >= 30);
       scored.sort((a, b) => b.score !== a.score ? b.score - a.score : (b.cu.assets || 0) - (a.cu.assets || 0));
       matched = scored.map(({ cu }) => cu);
@@ -597,7 +749,7 @@ exports.handler = async function(event, context) {
       // to matter, and none of it is used for building a slug.
       body: JSON.stringify(allMode
         ? { results: matched.slice(0, limit).map(c => ({ id: c.id, name: c.name, city: c.city, state: c.state })), totalResultCount: matched.length, asOf: periodEnd(dataPeriod) }
-        : { results: matched.slice(0, limit), totalResultCount: matched.length, asOf: periodEnd(dataPeriod) })
+        : { results: matched.slice(0, limit), totalResultCount: matched.length, asOf: periodEnd(dataPeriod), accountSources: lastAccountSources })
     };
   } catch(e) {
     console.error('NCUA error:', e.message);

@@ -11,7 +11,7 @@ def grab_fn(name):
 def grab_const(name):
     i=ui.index(f"const {name} ="); j=ui.index(";\n",i); return ui[i:j+1]
 names=['STATE_NAME_TO_CODE','VALID_STATE_CODES','fuzzyScore','SEARCH_STOP','SEARCH_COMMON','titleCase','parseSearchLocation','searchRelevance']
-if 'FDIC_ALIAS_FIELDS' in ui: names+=['FDIC_ALIAS_FIELDS','institutionRelevance','fdicAliasUrls','cuRelevance']
+if 'FDIC_ALIAS_FIELDS' in ui: names+=['FDIC_ALIAS_FIELDS','institutionRelevance','fdicAliasUrls','cuRelevance','cuFinancials']
 parts=[grab_fn(n) if n[0].islower() else grab_const(n) for n in names]
 hdr="// ── Search relevance — VERBATIM COPY of index.html (2026-11-09). Keep both in sync:\n// the website and the MCP must rank the same query the same way.\n"
 END="// ── end of verbatim search block ──\n"

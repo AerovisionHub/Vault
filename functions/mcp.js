@@ -2,7 +2,7 @@
 // Implements MCP (Model Context Protocol) over HTTP using JSON-RPC 2.0
 // Spec: https://modelcontextprotocol.io/
 
-const VAULT_MCP_VERSION = '1.27.1';
+const VAULT_MCP_VERSION = '1.28.0';
 const FDIC_BASE = 'https://api.fdic.gov/banks';
 // Summary of Deposits — separate FDIC dataset (annual branch-level census, as of each June 30).
 // Same query syntax as FDIC_BASE (filters=field%3Avalue&fields=...&limit=...&sort_by=...&sort_order=...).
@@ -56,7 +56,7 @@ const TOOLS = [
     name: 'search_institutions',
     title: 'Search banks & credit unions',
     annotations: { title: 'Search banks & credit unions', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    description: 'Search FDIC-insured banks AND NCUA-insured credit unions by name, trade name (\"Bank of Oklahoma\"), former name, acronym (\"MSUFCU\"), city, state or partial match (\"American Heritage Oklahoma\", \"Navy Federal\"). Returns up to 20 results ranked by relevance (match_score), then asset size. Each result has type \"bank\" (with an FDIC cert) or \"credit_union\" (with an NCUA charter_number and profile_url). The cert-based tools (get_bank_profile, get_loan_mix, etc.) cover banks only. A result with type \"notice\" means one data source was unreachable and its results are missing. Typically responds in 1-4 seconds. Use this first to get a CERT before calling other tools.',
+    description: 'Search FDIC-insured banks AND NCUA-insured credit unions by name, trade name (\"Bank of Oklahoma\"), former name, acronym (\"MSUFCU\"), city, state or partial match (\"American Heritage Oklahoma\", \"Navy Federal\"). Returns up to 20 results ranked by relevance (match_score), then asset size. Each result has type \"bank\" (with an FDIC cert) or \"credit_union\" (with an NCUA charter_number and profile_url). For a credit union, pass its charter_number to get_credit_union_profile; the cert-based tools (get_bank_profile, get_loan_mix, etc.) cover banks only. A result with type \"notice\" means one data source was unreachable and its results are missing. Typically responds in 1-4 seconds. Use this first to get a CERT before calling other tools.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -65,6 +65,19 @@ const TOOLS = [
         limit: { type: 'number', description: 'Max results (default 20, max 50)' },
       },
       required: ['query'],
+    },
+  },
+  {
+    name: 'get_credit_union_profile',
+    title: 'Credit union profile & financials',
+    annotations: { title: 'Credit union profile & financials', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    description: 'Get the profile and latest-quarter NCUA 5300 financials for one federally insured credit union by NCUA charter number: total assets, loans, shares and deposits, net worth, year-to-date net income, delinquent loans, members, employees, trade names, plus derived ratios (net worth ratio and capital category, annualized ROA, loan-to-share, delinquency rate). Get the charter_number from search_institutions (rows with type "credit_union"). Latest quarter only. Typically responds in 1-3 seconds.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        charter_number: { type: 'string', description: 'NCUA charter number (e.g. "5536" for Navy Federal). Get it from search_institutions.' },
+      },
+      required: ['charter_number'],
     },
   },
   {
@@ -1023,7 +1036,7 @@ function fuzzyScore(name, query) {
   // Common banking words that shouldn't drive score on their own
   const commonWords = new Set(['first','bank','national','federal','savings','trust','state',
     'community','commercial','peoples','heritage','home','liberty','union','american',
-    'united','citizens','central','western','eastern','northern','southern','premier']);
+    'united','citizens','central','western','eastern','northern','southern','premier','credit']);
   const qTokens = q.split(/\s+/).filter(t => t.length > 1);
   const distinctiveQ = qTokens.filter(t => !commonWords.has(t));
   // If query has distinctive words, require at least one to match
@@ -1139,15 +1152,45 @@ function fdicAliasUrls(base, words, fields, extraFilter = '') {
 function cuRelevance(cu, query) {
   const name = cu.name || '';
   const loc = { city: cu.city, state: cu.state };
-  let best = searchRelevance({ ...loc, name }, query);
+  let best = { score: searchRelevance({ ...loc, name }, query), aka: null };
   if (!/credit union|\bf?cu$/i.test(name.trim())) {
     const kind = String(cu.cuType || cu.type || '');
     const suffix = /federal/i.test(kind) ? ' Federal Credit Union' : ' Credit Union';
-    best = Math.max(best, searchRelevance({ ...loc, name: name + suffix }, query));
+    best.score = Math.max(best.score, searchRelevance({ ...loc, name: name + suffix }, query));
+  }
+  // NCUA TradeNames ("MSUFCU"), scored like FDIC trade names: 3 points under
+  // the legal name so a legal-name match still wins a tie.
+  for (const t of (cu.tradeNames || cu.trade_names || [])) {
+    const sc = searchRelevance({ ...loc, name: t }, query) - 3;
+    if (sc > best.score) best = { score: sc, aka: { name: t, kind: 'trade name' } };
   }
   return best;
 }
+
+function cuFinancials(cu) {
+  const n = v => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v))) ? null : Number(v);
+  const r2 = v => v === null ? null : Math.round(v * 100) / 100;
+  const assets = n(cu.assets), loans = n(cu.loans), shares = n(cu.shares), netWorth = n(cu.netWorth);
+  const netIncomeYtd = n(cu.netIncomeYtd), delinquentLoans = n(cu.delinquentLoans), allowance = n(cu.allowance);
+  const pct = (a, b) => (a !== null && b) ? r2(a / b * 100) : null;
+  const months = cu.asOf ? Number(String(cu.asOf).slice(5, 7)) : null;
+  const computed = pct(netWorth, assets);
+  // NCUA's own net worth ratio (account 998). Its unit (10.5 vs 0.105) is
+  // resolved against net worth / assets rather than assumed.
+  let reported = n(cu.netWorthRatio);
+  if (reported !== null && computed !== null && Math.abs(reported * 100 - computed) < Math.abs(reported - computed)) reported *= 100;
+  return {
+    assets, loans, shares, netWorth, netIncomeYtd, delinquentLoans, allowance,
+    netWorthRatioPct: reported !== null ? r2(reported) : computed,
+    netWorthToAssetsPct: computed,
+    roaPct: (netIncomeYtd !== null && assets && months) ? r2(netIncomeYtd / assets * (12 / months) * 100) : null,
+    loanToSharePct: pct(loans, shares),
+    delinquencyPct: pct(delinquentLoans, loans),
+    allowancePctOfLoans: pct(allowance, loans),
+  };
+}
 // ── end of verbatim search block ──
+
 
 
 // ── Credit unions in search_institutions (MCP 1.27.0) ──────────────────────
@@ -1173,7 +1216,7 @@ async function fetchNCUAProxy(q, stateCode, limit = 20, timeoutMs = 8000) {
     if (!r.ok) throw new Error(`NCUA proxy returned ${r.status}`);
     const data = await r.json();
     if (data.error) throw new Error(data.error);
-    return { results: data.results || [], asOf: data.asOf || null };
+    return { results: data.results || [], asOf: data.asOf || null, accountSources: data.accountSources || null };
   } finally { clearTimeout(timer); }
 }
 // Returns { rows, failed, asOf }. failed=true only when every NCUA call
@@ -1196,9 +1239,68 @@ async function searchCreditUnions(q, scoreQuery, stCode, loc) {
   const seen = new Map();
   ok.forEach(s => s.value.results.forEach(cu => { if (cu?.id != null && !seen.has(String(cu.id))) seen.set(String(cu.id), cu); }));
   const rows = [...seen.values()]
-    .map(cu => ({ cu, score: cuRelevance(cu, scoreQuery) }))
+    .map(cu => { const { score, aka } = cuRelevance(cu, scoreQuery); return { cu, score, aka }; })
     .filter(x => x.score >= 40);
   return { rows, failed: false, asOf: ok[0].value.asOf };
+}
+
+// get_credit_union_profile (MCP 1.28.0): the credit-union counterpart to
+// get_bank_profile. Latest NCUA 5300 quarter only (the proxy loads one
+// quarter); history is a later build. Ratios come from the shared
+// cuFinancials, so they match the website's Financial Health row exactly.
+async function getCreditUnionProfile(args) {
+  const raw = String((args || {}).charter_number ?? (args || {}).charter ?? '').trim();
+  if (!/^\d+$/.test(raw)) throw new Error('Required parameter "charter_number" missing or not numeric. Get it from search_institutions (rows with type "credit_union").');
+  const { results, asOf, accountSources } = await fetchNCUAProxy(raw, null, 5, 9000);
+  // Exact charter match only: a digit query can also name-match ("1199 SEIU"), see bug #40.
+  const cu = results.find(c => String(c.id) === raw || parseInt(c.id, 10) === parseInt(raw, 10));
+  if (!cu) throw new Error(`No credit union found with NCUA charter number ${raw}. Verify with search_institutions.`);
+  const f = cuFinancials({ ...cu, asOf: cu.asOf || asOf });
+  const k = v => v === null ? null : Math.round(v / 1000);
+  const nwr = f.netWorthRatioPct;
+  // NCUA prompt corrective action categories (12 CFR 702.102). Credit unions
+  // under 10 years old with <= $10M in assets follow 702 subpart C instead.
+  const capitalCategory = nwr === null ? null : nwr >= 7 ? 'well capitalized' : nwr >= 6 ? 'adequately capitalized'
+    : nwr >= 4 ? 'undercapitalized' : nwr >= 2 ? 'significantly undercapitalized' : 'critically undercapitalized';
+  const isFederal = /federal/i.test(cu.type || '');
+  const fullName = isFederal && !/credit union/i.test(cu.name || '')
+    ? `${cu.name}${/[a-z]/.test(cu.name) ? ' Federal Credit Union' : ' FEDERAL CREDIT UNION'}` : cu.name;
+  const missing = Object.entries({ total_loans: f.loans, shares_and_deposits: f.shares, net_worth: f.netWorth, net_income_ytd: f.netIncomeYtd, delinquent_loans: f.delinquentLoans })
+    .filter(([, v]) => v === null).map(([key]) => key);
+  return {
+    type: 'credit_union',
+    charter_number: String(cu.id),
+    name: cu.name,
+    full_name: fullName,
+    trade_names: cu.tradeNames || [],
+    charter_type: cu.type || null,
+    city: cu.city, state: cu.state, zip: cu.zip || null,
+    year_opened: cu.charterYear || null,
+    data_as_of: cu.asOf || asOf,
+    members: cu.members || null,
+    employees_full_time: cu.employees ?? null,
+    employees_part_time: cu.employeesPartTime ?? null,
+    financials_thousands: {
+      total_assets: k(f.assets), total_loans: k(f.loans), shares_and_deposits: k(f.shares),
+      net_worth: k(f.netWorth), net_income_ytd: k(f.netIncomeYtd), delinquent_loans: k(f.delinquentLoans),
+      allowance_for_loan_losses: k(f.allowance),
+    },
+    ratios_pct: {
+      net_worth_ratio: nwr, net_worth_to_assets: f.netWorthToAssetsPct, roa_annualized: f.roaPct,
+      loan_to_share: f.loanToSharePct, delinquency_rate: f.delinquencyPct, allowance_to_loans: f.allowancePctOfLoans,
+    },
+    capital_category: capitalCategory,
+    assets_per_member: f.assets && cu.members ? Math.round(f.assets / cu.members) : null,
+    profile_url: `https://vaultbot.ai${cuSlugPath(cu)}`,
+    source: `NCUA 5300 Call Report, quarter ending ${cu.asOf || asOf}`,
+    notes: [
+      'Latest quarter only. NCUA call reports are quarterly; net income is year-to-date and ROA is annualized from it.',
+      'net_worth_ratio is NCUA\u2019s own reported ratio (account 998); net_worth_to_assets is net worth / total assets.',
+      'FDIC cert-based tools (get_bank_profile, get_loan_mix, get_branch_data, etc.) cover banks only.',
+      ...(missing.length ? [`Not available in this NCUA file: ${missing.join(', ')}.`] : []),
+    ],
+    ...(accountSources ? { _ncua_source_files: accountSources } : {}),
+  };
 }
 
 async function searchInstitutions(args) {
@@ -1275,7 +1377,7 @@ async function searchInstitutions(args) {
       profile_url: `https://vaultbot.ai/bank/${d.CERT}`,
       _assets: Number(d.ASSET) || 0,
     }));
-  const creditUnions = cu.rows.map(({ cu: c, score }) => ({
+  const creditUnions = cu.rows.map(({ cu: c, score, aka }) => ({
     type: 'credit_union',
     charter_number: String(c.id),
     name: c.name,
@@ -1284,6 +1386,8 @@ async function searchInstitutions(args) {
     assets_thousands: c.assets != null ? Math.round(Number(c.assets) / 1000) : null, // NCUA reports dollars; banks are in thousands
     members: c.members ?? null,
     match_score: score,
+    ...(aka ? { matched_name: aka.name, matched_name_type: aka.kind } : {}),
+    ...((c.tradeNames || []).length ? { trade_names: c.tradeNames } : {}),
     data_as_of: cu.asOf,
     profile_url: `https://vaultbot.ai${cuSlugPath(c)}`,
     _assets: (Number(c.assets) || 0) / 1000,
@@ -3135,6 +3239,7 @@ async function getHmdaLending(args) {
 
 const TOOL_HANDLERS = {
   search_institutions: searchInstitutions,
+  get_credit_union_profile: getCreditUnionProfile,
   get_bank_profile: getBankProfile,
   get_industry_metrics: getIndustryMetrics,
   get_recent_charters: getRecentCharters,

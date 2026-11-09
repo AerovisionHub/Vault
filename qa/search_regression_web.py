@@ -37,12 +37,20 @@ def fz(q,t):  # port of functions/ncua.js fuzzyScore(query, target)
         if qi<len(q) and ch==q[qi]: qi+=1
     if qi==len(q): return 30+int(len(q)/len(t)*20)
     return 0
+TRADE_NAMES = {'23279': ['MSUFCU']}
 async def ncua(route):
+    # Same matching as functions/ncua.js: name or trade name (-3); numeric query hoists the exact charter.
     qs=parse_qs(urlparse(route.request.url).query); q=(qs.get('q',[''])[0]); st=qs.get('state',[None])[0]; lim=int(qs.get('limit',['20'])[0])
     pool=[c for c in CUS if not st or c[3]==st]
-    sc=sorted([(fz(q,c[1]),c) for c in pool if fz(q,c[1])>=30], key=lambda x:(-x[0],-x[1][4]))
-    res=[{'id':c[0],'name':c[1],'city':c[2],'state':c[3],'assets':c[4],'members':0,'type':c[5]} for _,c in sc][:lim]
-    await route.fulfill(status=200, content_type='application/json', body=json.dumps({'results':res,'totalResultCount':len(sc)}))
+    def score(c): return max([fz(q,c[1])]+[fz(q,t)-3 for t in TRADE_NAMES.get(c[0],[])])
+    sc=sorted([(score(c),c) for c in pool if score(c)>=30], key=lambda x:(-x[0],-x[1][4]))
+    if q.isdigit():
+        hit=[c for c in CUS if c[0]==q]
+        if hit: sc=[(100,hit[0])]+sc
+    res=[{'id':c[0],'name':c[1],'city':c[2],'state':c[3],'assets':c[4],'members':50000,'type':c[5],'tradeNames':TRADE_NAMES.get(c[0],[]),
+          'loans':c[4]*0.7,'shares':c[4]*0.85,'netWorth':c[4]*0.105,'netWorthRatio':10.5,'netIncomeYtd':c[4]*0.004,'delinquentLoans':c[4]*0.7*0.006,'allowance':c[4]*0.7*0.012,
+          'asOf':'2026-06-30'} for _,c in sc][:lim]
+    await route.fulfill(status=200, content_type='application/json', body=json.dumps({'results':res,'totalResultCount':len(sc),'asOf':'2026-06-30'}))
 CASES = [  # query, expected id, must be within top N
  ('American Heritage Bank','4190',1), ('American Heritage Oklahoma','4190',1), ('American Heritage OK','4190',1),
  ('American Heritage Sapulpa','4190',1), ('Heritage Sapulpa','4190',3), ('american heritage','4190',3),
@@ -52,7 +60,7 @@ CASES = [  # query, expected id, must be within top N
  ('First National Bank Oklahoma','4211',5), ('First National Bank of Oklahoma','4211',1), ('JPMorgan Chase','628',5), ('Fidelity Bank','30895',5),
  ('Bank of Oklahoma','4214',1), ('bank of oklahoma','4214',1), ('Bank of Albuquerque','4214',1), ('Chase','628',1), ('Chase Manhattan','628',1), ('Bank of Texas','4214',3),
  ('Navy Federal Credit Union','5536',1), ('Heritage Valley Federal Credit Union','61010',1), ('Oklahoma Central Credit Union','7016',1),
- ('Legend Bank','3108',1), ('Legend Bank Bowie','3108',1), ('MSUFCU','23279',1), ('Navy Federal','5536',1), ('Tinker','19914',1),
+ ('Legend Bank','3108',1), ('Legend Bank Bowie','3108',1), ('MSUFCU','23279',1), ('msufcu','23279',1), ('Navy Federal','5536',1), ('Tinker','19914',1),
 ]
 async def main():
     async with async_playwright() as p:

@@ -5,7 +5,7 @@
 .pass{color:#4ade80;} .fail{color:#f87171;}
 h3{color:#4db8ff;margin:14px 0 4px;}</style></head><body>
 <h2 style="color:#4db8ff">MCP Health Check — Live Test</h2>
-<p style="color:#9ca3af;font-size:11px;">Testing all 17 tools + protocol methods on the live endpoint</p>
+<p style="color:#9ca3af;font-size:11px;">Testing all 18 tools + protocol methods on the live endpoint</p>
 <div id="out">Loading…</div>
 <script>
 const MCP = '/.netlify/functions/mcp';
@@ -36,12 +36,14 @@ async function run() {
 
   // 2. tools/list
   const list = await rpc('tools/list');
-  log(list.data?.result?.tools?.length === 17, 'tools/list returns 17 tools', list.raw.slice(0,200));
+  log(list.data?.result?.tools?.length === 18, 'tools/list returns 18 tools', list.raw.slice(0,200));
 
   // 3-10. Each tool
-  document.getElementById('out').innerHTML += '<h3>All 17 tools</h3>';
+  document.getElementById('out').innerHTML += '<h3>All 18 tools</h3>';
   const tests = [
     ['search_institutions', { query: 'Sutton Bank', limit: 1 }],
+    ['search_institutions (credit unions)', { query: 'Navy Federal', limit: 1 }],
+    ['get_credit_union_profile', { charter_number: '5536' }],
     ['get_bank_profile', { cert: '5962' }],
     ['get_industry_metrics', {}],
     ['get_recent_charters', { year: 2025 }],

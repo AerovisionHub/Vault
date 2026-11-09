@@ -27,6 +27,30 @@ const call = async (args) => { const r = await handler({ httpMethod:'POST', head
   const downOk = down[0]?.cert === 4190 && down.some(r => r.type === 'notice' && /credit union/i.test(r.message));
   console.log(`${downOk ? 'PASS' : 'FAIL'} NCUA down: top=${down[0]?.name} notice=${!!down.find(r => r.type === 'notice')}`); pass += downOk;
   ncuaMock.setMode('ok');
-  console.log(`\n${pass}/${cases.length + 2}`);
+  // Trade-name match surfaces on the row
+  const tnr = (await call({ query: 'msufcu' }))[0];
+  const tnOk = tnr?.charter_number === '23279' && tnr.matched_name === 'MSUFCU' && tnr.trade_names?.includes('MSUFCU');
+  console.log(`${tnOk ? 'PASS' : 'FAIL'} trade name row: ${tnr?.name} matched_name=${tnr?.matched_name}`); pass += tnOk;
+  // Noise: a shared generic word ("credit") must not pull in unrelated credit unions
+  const noise = await call({ query: 'American Heritage Credit Union' });
+  const noiseOk = !noise.some(r => r.charter_number === '5536');
+  console.log(`${noiseOk ? 'PASS' : 'FAIL'} noise: Navy Federal absent from "American Heritage Credit Union" (${noise.length} rows)`); pass += noiseOk;
+  // get_credit_union_profile
+  const prof = async a => { const r = await handler({ httpMethod:'POST', headers:{'x-vault-source':'qa'}, body: JSON.stringify({ jsonrpc:'2.0', id:1, method:'tools/call', params:{ name:'get_credit_union_profile', arguments: a } }) }, {});
+    const j = JSON.parse(r.body); if (j.error) return { err: j.error.message }; return j.result?.isError ? { err: j.result.content[0].text } : JSON.parse(j.result.content[0].text); };
+  const nf = await prof({ charter_number: '5536' });
+  const nfOk = nf.name === 'NAVY FEDERAL CREDIT UNION' && nf.financials_thousands.total_loans === 126000000 && nf.ratios_pct.net_worth_ratio === 10.5
+    && nf.ratios_pct.roa_annualized === 0.8 && nf.ratios_pct.loan_to_share === 82.35 && nf.capital_category === 'well capitalized' && nf._vault_meta?.mcp_version;
+  console.log(`${nfOk ? 'PASS' : 'FAIL'} profile 5536: loans_k=${nf.financials_thousands?.total_loans} nwr=${nf.ratios_pct?.net_worth_ratio} roa=${nf.ratios_pct?.roa_annualized} lts=${nf.ratios_pct?.loan_to_share} cat=${nf.capital_category} v=${nf._vault_meta?.mcp_version}`); pass += !!nfOk;
+  const msu = await prof({ charter_number: '23279' });
+  const msuOk = msu.full_name === 'MICHIGAN STATE UNIVERSITY FEDERAL CREDIT UNION' && msu.trade_names[0] === 'MSUFCU' && msu.profile_url.endsWith('/cu/michigan-state-university-east-lansing-mi-23279');
+  console.log(`${msuOk ? 'PASS' : 'FAIL'} profile 23279: full_name=${msu.full_name} trade=${msu.trade_names}`); pass += msuOk;
+  const inc = await prof({ charter_number: '9999' });
+  const incOk = inc.financials_thousands.total_loans === null && inc.ratios_pct.net_worth_ratio === null && inc.capital_category === null && inc.notes.some(n => /Not available/.test(n));
+  console.log(`${incOk ? 'PASS' : 'FAIL'} profile with missing accounts -> nulls + note`); pass += incOk;
+  const bad = await prof({ charter_number: '424242' }); const bad2 = await prof({ charter_number: 'navy' });
+  const badOk = /No credit union found/.test(bad.err || '') && /not numeric/.test(bad2.err || '');
+  console.log(`${badOk ? 'PASS' : 'FAIL'} profile errors: unknown + non-numeric charter`); pass += badOk;
+  console.log(`\n${pass}/${cases.length + 8}`);
   const s = await call({ query: 'American Heritage', state: 'OK' }); console.log('state arg OK ->', (Array.isArray(s) ? s : []).slice(0,2).map(r => `${r.name} ${r.city} [${r.match_score}]`).join(' ; '));
 })();

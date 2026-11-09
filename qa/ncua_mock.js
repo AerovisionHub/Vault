@@ -28,6 +28,8 @@ function fz(q, t) {
   let qi = 0; for (const ch of t) if (qi < q.length && ch === q[qi]) qi++;
   return qi === q.length ? 30 + Math.floor(q.length / t.length * 20) : 0;
 }
+const TRADE_NAMES = { '23279': ['MSUFCU'] };
+const INCOMPLETE = new Set(['9999']); // a CU whose 5300 accounts weren't located
 let mode = 'ok'; // 'ok' | 'down'
 const realFetch = global.fetch;
 const calls = [];
@@ -36,9 +38,15 @@ global.fetch = async (url, opts) => {
   const u = new URL(url); calls.push(u.search);
   if (mode === 'down') return new Response('Bad Gateway', { status: 502 });
   const q = u.searchParams.get('q') || '', st = u.searchParams.get('state'), lim = +(u.searchParams.get('limit') || 20);
-  const sc = CUS.filter(c => !st || c[3] === st).map(c => [fz(q, c[1]), c]).filter(x => x[0] >= 30)
+  // Same matching as functions/ncua.js: name or trade name (-3); a numeric query hoists the exact charter.
+  const tn = c => TRADE_NAMES[c[0]] || [];
+  const sc = CUS.filter(c => !st || c[3] === st).map(c => [Math.max(fz(q, c[1]), ...tn(c).map(t => fz(q, t) - 3)), c]).filter(x => x[0] >= 30)
     .sort((a, b) => b[0] - a[0] || b[1][4] - a[1][4]);
-  const results = sc.slice(0, lim).map(([, c]) => ({ id: c[0], name: c[1], city: c[2], state: c[3], assets: c[4], members: 0, type: c[5] }));
-  return new Response(JSON.stringify({ results, totalResultCount: sc.length, asOf: '2026-06-30' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  if (/^\d+$/.test(q)) { const hit = CUS.find(c => c[0] === q); if (hit) sc.unshift([100, hit]); }
+  const results = sc.slice(0, lim).map(([, c]) => ({ id: c[0], name: c[1], city: c[2], state: c[3], assets: c[4], members: 50000, type: c[5],
+    tradeNames: tn(c), ...(INCOMPLETE.has(c[0]) ? { loans: null, shares: null, netWorth: null, netWorthRatio: null, netIncomeYtd: null, delinquentLoans: null, allowance: null }
+      : { loans: c[4] * 0.7, shares: c[4] * 0.85, netWorth: c[4] * 0.105, netWorthRatio: 10.5, netIncomeYtd: c[4] * 0.004, delinquentLoans: c[4] * 0.7 * 0.006, allowance: c[4] * 0.7 * 0.012 }),
+    asOf: '2026-06-30' }));
+  return new Response(JSON.stringify({ results, totalResultCount: sc.length, asOf: '2026-06-30', accountSources: { ACCT_018: 'FS220.txt', ACCT_025B: 'FS220A.txt' } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 };
 module.exports = { setMode: m => { mode = m; }, calls };
