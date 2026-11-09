@@ -48,7 +48,7 @@ async def ncua(route):
         hit=[c for c in CUS if c[0]==q]
         if hit: sc=[(100,hit[0])]+sc
     res=[{'id':c[0],'name':c[1],'city':c[2],'state':c[3],'assets':c[4],'members':50000,'type':c[5],'tradeNames':TRADE_NAMES.get(c[0],[]),
-          'loans':c[4]*0.7,'shares':c[4]*0.85,'netWorth':c[4]*0.105,'netWorthRatio':10.5,'netIncomeYtd':c[4]*0.004,'delinquentLoans':c[4]*0.7*0.006,'allowance':c[4]*0.7*0.012,
+          'loans':c[4]*0.7,'shares':c[4]*0.85,'netWorth':c[4]*0.105,'netWorthRatio':1050,'netIncomeYtd':c[4]*0.004,'delinquentLoans':c[4]*0.7*0.006,'allowance':c[4]*0.7*0.012,
           'asOf':'2026-06-30'} for _,c in sc][:lim]
     await route.fulfill(status=200, content_type='application/json', body=json.dumps({'results':res,'totalResultCount':len(sc),'asOf':'2026-06-30'}))
 CASES = [  # query, expected id, must be within top N

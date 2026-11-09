@@ -45,7 +45,7 @@ global.fetch = async (url, opts) => {
   if (/^\d+$/.test(q)) { const hit = CUS.find(c => c[0] === q); if (hit) sc.unshift([100, hit]); }
   const results = sc.slice(0, lim).map(([, c]) => ({ id: c[0], name: c[1], city: c[2], state: c[3], assets: c[4], members: 50000, type: c[5],
     tradeNames: tn(c), ...(INCOMPLETE.has(c[0]) ? { loans: null, shares: null, netWorth: null, netWorthRatio: null, netIncomeYtd: null, delinquentLoans: null, allowance: null }
-      : { loans: c[4] * 0.7, shares: c[4] * 0.85, netWorth: c[4] * 0.105, netWorthRatio: 10.5, netIncomeYtd: c[4] * 0.004, delinquentLoans: c[4] * 0.7 * 0.006, allowance: c[4] * 0.7 * 0.012 }),
+      : { loans: c[4] * 0.7, shares: c[4] * 0.85, netWorth: c[4] * 0.105, netWorthRatio: 1050, netIncomeYtd: c[4] * 0.004, delinquentLoans: c[4] * 0.7 * 0.006, allowance: c[4] * 0.7 * 0.012 }),
     asOf: '2026-06-30' }));
   return new Response(JSON.stringify({ results, totalResultCount: sc.length, asOf: '2026-06-30', accountSources: { ACCT_018: 'FS220.txt', ACCT_025B: 'FS220A.txt' } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 };

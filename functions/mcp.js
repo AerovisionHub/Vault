@@ -2,7 +2,7 @@
 // Implements MCP (Model Context Protocol) over HTTP using JSON-RPC 2.0
 // Spec: https://modelcontextprotocol.io/
 
-const VAULT_MCP_VERSION = '1.28.0';
+const VAULT_MCP_VERSION = '1.28.1';
 const FDIC_BASE = 'https://api.fdic.gov/banks';
 // Summary of Deposits — separate FDIC dataset (annual branch-level census, as of each June 30).
 // Same query syntax as FDIC_BASE (filters=field%3Avalue&fields=...&limit=...&sort_by=...&sort_order=...).
@@ -1175,10 +1175,18 @@ function cuFinancials(cu) {
   const pct = (a, b) => (a !== null && b) ? r2(a / b * 100) : null;
   const months = cu.asOf ? Number(String(cu.asOf).slice(5, 7)) : null;
   const computed = pct(netWorth, assets);
-  // NCUA's own net worth ratio (account 998). Its unit (10.5 vs 0.105) is
-  // resolved against net worth / assets rather than assumed.
+  // NCUA's own net worth ratio (account 998). Live data stores it in basis
+  // points (Navy Federal: 1165 = 11.65%, matching 997/010 exactly). The unit
+  // is still resolved against net worth / assets (bps, percent or decimal,
+  // whichever lands closest) rather than assumed; with no net worth to check
+  // against, anything over 100 is read as basis points.
   let reported = n(cu.netWorthRatio);
-  if (reported !== null && computed !== null && Math.abs(reported * 100 - computed) < Math.abs(reported - computed)) reported *= 100;
+  if (reported !== null) {
+    const options = [reported / 100, reported, reported * 100];
+    reported = computed !== null
+      ? options.reduce((best, v) => Math.abs(v - computed) < Math.abs(best - computed) ? v : best)
+      : (Math.abs(reported) > 100 ? reported / 100 : reported);
+  }
   return {
     assets, loans, shares, netWorth, netIncomeYtd, delinquentLoans, allowance,
     netWorthRatioPct: reported !== null ? r2(reported) : computed,
@@ -1190,6 +1198,7 @@ function cuFinancials(cu) {
   };
 }
 // ── end of verbatim search block ──
+
 
 
 
