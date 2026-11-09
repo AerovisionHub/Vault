@@ -2,7 +2,7 @@
 // Implements MCP (Model Context Protocol) over HTTP using JSON-RPC 2.0
 // Spec: https://modelcontextprotocol.io/
 
-const VAULT_MCP_VERSION = '1.26.1';
+const VAULT_MCP_VERSION = '1.27.0';
 const FDIC_BASE = 'https://api.fdic.gov/banks';
 // Summary of Deposits — separate FDIC dataset (annual branch-level census, as of each June 30).
 // Same query syntax as FDIC_BASE (filters=field%3Avalue&fields=...&limit=...&sort_by=...&sort_order=...).
@@ -56,7 +56,7 @@ const TOOLS = [
     name: 'search_institutions',
     title: 'Search banks & credit unions',
     annotations: { title: 'Search banks & credit unions', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    description: 'Search FDIC-insured banks by name, trade name (\"Bank of Oklahoma\"), former name, city, state or partial match (\"American Heritage Oklahoma\", \"Heritage Sapulpa\", \"Pinnacle Bank TN\"). Returns up to 20 results ranked by relevance (match_score), then asset size. Credit unions are not covered by this tool yet. Typically responds in 2-4 seconds. Use this first to get a CERT number before calling other tools.',
+    description: 'Search FDIC-insured banks AND NCUA-insured credit unions by name, trade name (\"Bank of Oklahoma\"), former name, acronym (\"MSUFCU\"), city, state or partial match (\"American Heritage Oklahoma\", \"Navy Federal\"). Returns up to 20 results ranked by relevance (match_score), then asset size. Each result has type \"bank\" (with an FDIC cert) or \"credit_union\" (with an NCUA charter_number and profile_url). The cert-based tools (get_bank_profile, get_loan_mix, etc.) cover banks only. A result with type \"notice\" means one data source was unreachable and its results are missing. Typically responds in 1-4 seconds. Use this first to get a CERT before calling other tools.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1136,6 +1136,52 @@ function fdicAliasUrls(base, words, fields, extraFilter = '') {
   return [or('TE', 10), orPrior].map(f => `${base}/institutions?filters=${f}%20AND%20ACTIVE%3A1${extraFilter}&fields=${fields}&limit=20&sort_by=ASSET&sort_order=DESC`);
 }
 
+// ── Credit unions in search_institutions (MCP 1.27.0) ──────────────────────
+// The MCP used to search FDIC banks only, while its title promised credit
+// unions too. It now asks the same NCUA proxy the website uses
+// (functions/ncua.js), which keeps the full NCUA quarterly roster warm in
+// memory. Loading that ZIP inside mcp.js would add a cold multi-second
+// download to every new instance, so this is an HTTP call, not a require().
+// Results are scored with the shared searchRelevance and the same >=40
+// cutoff as banks, so both lists merge on one scale.
+function cuSlugPath(cu) {
+  const slug = `${cu.name || ''} ${cu.city || ''} ${cu.state || ''}`.toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  return slug ? `/cu/${slug}-${cu.id}` : `/cu/${cu.id}`;
+}
+async function fetchNCUAProxy(q, stateCode, limit = 20, timeoutMs = 8000) {
+  const siteUrl = process.env.URL || 'https://vaultbot.ai';
+  const url = `${siteUrl}/.netlify/functions/ncua?q=${encodeURIComponent(q)}&limit=${limit}${stateCode ? `&state=${encodeURIComponent(stateCode)}` : ''}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const r = await fetch(url, { signal: controller.signal, headers: { 'X-Vault-Source': 'mcp-internal' } });
+    if (!r.ok) throw new Error(`NCUA proxy returned ${r.status}`);
+    const data = await r.json();
+    if (data.error) throw new Error(data.error);
+    return { results: data.results || [], asOf: data.asOf || null };
+  } finally { clearTimeout(timer); }
+}
+// Returns { rows, failed, asOf }. failed=true only when every NCUA call
+// failed, so the caller can say so instead of implying "no credit unions".
+async function searchCreditUnions(q, scoreQuery, stCode, loc) {
+  const calls = [fetchNCUAProxy(q, stCode)];
+  // "Navy Federal Virginia": also search the name part within the stated state.
+  if (!stCode && loc.state && loc.nameQuery && loc.nameQuery !== q) calls.push(fetchNCUAProxy(loc.nameQuery, loc.state));
+  const settled = await Promise.allSettled(calls);
+  const ok = settled.filter(s => s.status === 'fulfilled');
+  if (!ok.length) {
+    console.log('[vault-search] NCUA proxy unavailable:', settled.map(s => s.reason?.message).join(' | '));
+    return { rows: [], failed: true, asOf: null };
+  }
+  const seen = new Map();
+  ok.forEach(s => s.value.results.forEach(cu => { if (cu?.id != null && !seen.has(String(cu.id))) seen.set(String(cu.id), cu); }));
+  const rows = [...seen.values()]
+    .map(cu => ({ cu, score: searchRelevance({ name: cu.name, city: cu.city, state: cu.state }, scoreQuery) }))
+    .filter(x => x.score >= 40);
+  return { rows, failed: false, asOf: ok[0].value.asOf };
+}
+
 async function searchInstitutions(args) {
   const { query, state, limit = 20 } = args || {};
   if (!query || typeof query !== 'string' || !query.trim()) {
@@ -1176,24 +1222,29 @@ async function searchInstitutions(args) {
   loc.cities.forEach(c => urls.push(base(`CITY%3A%22${encodeURIComponent(c)}%22`, 100)));
   urls.push(...fdicAliasUrls(FDIC_BASE, tw, fields, stateFilter)); // trade + former names ("Bank of Oklahoma" -> BOKF)
 
+  const scoreQuery = stCode ? `${q} ${stCode}` : q;
+  const cuPromise = searchCreditUnions(q, scoreQuery, stCode, loc)
+    .catch(e => ({ rows: [], failed: true, asOf: null, error: e.message }));
+
   let failures = 0;
   const get = u => fetchFDIC(u).catch(() => new Promise(r => setTimeout(r, 700)).then(() => fetchFDIC(u))).catch(() => { failures++; return { data: [] }; });
   const results = await Promise.all(urls.map(get));
-  if (failures === urls.length) throw new Error('The FDIC API is busy right now. Please retry in a few seconds.');
+  const cu = await cuPromise;
+  const fdicFailed = failures === urls.length;
+  if (fdicFailed && cu.failed) throw new Error('The FDIC and NCUA data sources are both busy right now. Please retry in a few seconds.');
 
   // Score every candidate (the old version returned them in asset order with
   // no scoring, so 50 large "American…" banks crowded out "American Heritage Bank").
   const seen = new Map();
   results.forEach(r => (r.data || []).forEach(x => {
     const d = x.data; if (!d?.CERT) return;
-    const { score, aka } = institutionRelevance(d, stCode ? `${q} ${stCode}` : q);
+    const { score, aka } = institutionRelevance(d, scoreQuery);
     if (!seen.has(d.CERT) || seen.get(d.CERT).score < score) seen.set(d.CERT, { d, score, aka });
   }));
-  return [...seen.values()]
+  const banks = [...seen.values()]
     .filter(x => x.score >= 40)
-    .sort((a, b) => b.score - a.score || (b.d.ASSET || 0) - (a.d.ASSET || 0))
-    .slice(0, max)
     .map(({ d, score, aka }) => ({
+      type: 'bank',
       cert: d.CERT,
       name: d.NAME,
       city: d.CITY,
@@ -1203,7 +1254,31 @@ async function searchInstitutions(args) {
       match_score: score,
       ...(aka ? { matched_name: aka.name, matched_name_type: aka.kind } : {}),
       profile_url: `https://vaultbot.ai/bank/${d.CERT}`,
+      _assets: Number(d.ASSET) || 0,
     }));
+  const creditUnions = cu.rows.map(({ cu: c, score }) => ({
+    type: 'credit_union',
+    charter_number: String(c.id),
+    name: c.name,
+    city: c.city,
+    state: c.state,
+    assets_thousands: c.assets != null ? Math.round(Number(c.assets) / 1000) : null, // NCUA reports dollars; banks are in thousands
+    members: c.members ?? null,
+    match_score: score,
+    data_as_of: cu.asOf,
+    profile_url: `https://vaultbot.ai${cuSlugPath(c)}`,
+    _assets: (Number(c.assets) || 0) / 1000,
+  }));
+  // Relevance first, then size (both in thousands of dollars).
+  const merged = [...banks, ...creditUnions]
+    .sort((a, b) => b.match_score - a.match_score || b._assets - a._assets)
+    .slice(0, max)
+    .map(({ _assets, ...r }) => r);
+  // Partial failure is reported, never silent (bug #15): an AI client must not
+  // read "no credit unions" when NCUA was simply unreachable.
+  if (cu.failed) merged.push({ type: 'notice', message: 'Credit union results are unavailable right now (NCUA data source unreachable). Bank results above are complete; retry for credit unions.' });
+  if (fdicFailed) merged.push({ type: 'notice', message: 'Bank results are unavailable right now (FDIC API busy). Credit union results above are complete; retry for banks.' });
+  return merged;
 }
 
 // Parse an FDIC REPDTE (YYYYMMDD) into period metadata for the history
