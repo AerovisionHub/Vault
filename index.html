@@ -1254,6 +1254,15 @@ async function searchNCUA(query) {
 }
 
 
+function cuPeriodLabel(raw, long) {
+  // NCUA quarter actually loaded by the proxy (functions/ncua.js picks the
+  // newest published file). Falls back to a generic label, never a stale one.
+  const d = raw?.asOf ? new Date(raw.asOf + 'T00:00:00Z') : null;
+  if (!d || isNaN(d)) return long ? 'Latest NCUA 5300 filing' : 'latest quarter';
+  const q = `Q${Math.floor(d.getUTCMonth() / 3) + 1} ${d.getUTCFullYear()}`;
+  return long ? `${q} (${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })})` : q;
+}
+
 async function getNCUADetail(cuNumber) {
   // Use our proxy to get detail for a specific charter number
   try {
@@ -1261,7 +1270,10 @@ async function getNCUADetail(cuNumber) {
     const r = await fetch(url);
     if (!r.ok) throw new Error(`Proxy returned ${r.status}`);
     const data = await r.json();
-    return data.results?.[0] || null;
+    // Exact charter match only — the proxy also returns name matches for
+    // digit queries, which would show a different credit union on this URL.
+    const hit = (data.results || []).find(x => String(x.id) === String(cuNumber) || parseInt(x.id, 10) === parseInt(cuNumber, 10));
+    return hit ? { ...hit, asOf: hit.asOf || data.asOf || null } : null;
   } catch(e) {
     console.warn('NCUA detail error:', e.message);
     return null;
@@ -2183,7 +2195,7 @@ function renderSearch() {
         <div class="home-stat-label">FDIC Banks</div>
       </div>
       <div class="home-stat">
-        <div class="home-stat-value">4,900+</div>
+        <div class="home-stat-value">4,200+</div>
         <div class="home-stat-label">Credit Unions</div>
       </div>
       <div class="home-stat">
@@ -2701,7 +2713,7 @@ function renderCUDetail(d) {
         <div class="inst-meta-row">
           <span class="inst-meta-item"><strong>${city}, ${state}${zip ? ' ' + zip : ''}</strong></span>
           <span class="inst-meta-item">Charter <strong>${charter}</strong></span>
-          <span class="inst-meta-item">As of <strong>Q4 2025</strong></span>
+          <span class="inst-meta-item">As of <strong>${cuPeriodLabel(cu)}</strong></span>
           ${website ? `<span class="inst-meta-item"><a href="https://${website}" target="_blank" style="color:var(--accent)">${website}</a></span>` : ''}
           <span class="inst-meta-item"><span style="font-family:var(--mono);font-size:10px;padding:2px 8px;background:rgba(139,92,246,0.12);border:1px solid rgba(139,92,246,0.25);border-radius:6px;color:#a78bfa;">🤝 Credit Union</span></span>
           ${cuType !== '—' ? `<span class="inst-meta-item"><span style="font-family:var(--mono);font-size:10px;padding:2px 8px;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.2);border-radius:6px;color:#60a5fa;">${cuType}</span></span>` : ''}
@@ -2765,7 +2777,7 @@ function renderCUDetail(d) {
       <div class="kpi-card">
         <div class="kpi-label">Data Source</div>
         <div class="kpi-value kpi-neutral" style="font-size:13px">NCUA 5300</div>
-        <div class="kpi-sub">Q4 2025 Call Report</div>
+        <div class="kpi-sub">${cuPeriodLabel(cu)} Call Report</div>
       </div>
     </div>
 
@@ -2796,7 +2808,7 @@ function renderCUDetail(d) {
         ${members ? `<tr><td>Members</td><td>${fmtNum(members)}</td></tr>` : ''}
         ${assetsPerMember ? `<tr><td>Assets per Member</td><td>${fmt$(assetsPerMember)}</td></tr>` : ''}
         ${website ? `<tr><td>Website</td><td><a href="https://${website}" target="_blank" style="color:var(--accent)">${website}</a></td></tr>` : ''}
-        <tr><td>Data Period</td><td>Q4 2025 (Dec 31, 2025)</td></tr>
+        <tr><td>Data Period</td><td>${cuPeriodLabel(cu, true)}</td></tr>
         <tr><td>Regulator</td><td>NCUA</td></tr>
       </table>
     </div>`;

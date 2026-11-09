@@ -123,6 +123,8 @@ td a:hover{text-decoration:underline;}
 .links a{background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:7px;
 padding:6px 11px;color:#4db8ff;text-decoration:none;font-size:13px;}
 footer{border-top:1px solid rgba(255,255,255,0.1);padding:18px 20px;font-size:12px;color:rgba(255,255,255,0.6);}
+ul.ins{margin:10px 0 10px 20px;color:rgba(255,255,255,0.85);}ul.ins li{margin:6px 0;}
+.tw{overflow-x:auto;-webkit-overflow-scrolling:touch;}
 footer a{color:#4db8ff;}
 @media(max-width:600px){h1{font-size:24px;}table{font-size:13px;}th,td{padding:7px 6px;}}
 </style>
@@ -241,117 +243,294 @@ paywall. The same data is available to AI agents through a public Model Context 
 function countySlugOf(c) {
   return String(c || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
-async function resolveCountyName(countySlug, abbr) {
-  const r = await j(`${FDIC_BASE}/sod?filters=STALPBR%3A%22${abbr}%22&fields=CNTYNAMB,YEAR&limit=10000&sort_by=YEAR&sort_order=DESC`);
-  const hit = (r?.data || []).map(d => d.data).find(x => x && x.CNTYNAMB && countySlugOf(x.CNTYNAMB) === countySlug);
-  return hit ? hit.CNTYNAMB : null;
+// Returns { name, fips, year } — the state's latest SOD year comes back with
+// the same query, so the county page needs no separate "latest year" probe.
+async function resolveCounty(countySlug, abbr) {
+  const r = await j(`${FDIC_BASE}/sod?filters=STALPBR%3A%22${abbr}%22&fields=CNTYNAMB,STCNTYBR,YEAR&limit=10000&sort_by=YEAR&sort_order=DESC`);
+  const rows = (r?.data || []).map(d => d.data).filter(Boolean);
+  const hit = rows.find(x => x.CNTYNAMB && countySlugOf(x.CNTYNAMB) === countySlug);
+  if (!hit) return null;
+  return { name: hit.CNTYNAMB, fips: String(hit.STCNTYBR ?? '').padStart(5, '0'), year: Number(rows[0].YEAR) || Number(hit.YEAR) };
+}
+
+// SOD's CNTYNAMB is the bare name ("Tulsa", "East Baton Rouge", "Alexandria
+// (City)"). Appending "County" to everything produced "Alexandria (City)
+// County, VA" and "Caddo County" for a Louisiana parish. Census NAME is the
+// authority when we have it; this is the fallback.
+function placeLabel(cnty, abbr, censusName) {
+  if (censusName) return String(censusName).split(',')[0].trim();
+  const n = String(cnty || '').trim();
+  const city = n.match(/^(.*) \(City\)$/);
+  if (city) return abbr === 'VA' && /^(Charles|James)$/.test(city[1]) ? `${city[1]} City County` : `${city[1]} City`;
+  if (abbr === 'LA') return `${n} Parish`;
+  if (abbr === 'AK' || abbr === 'PR') return n;
+  return `${n} County`;
+}
+
+const CENSUS_DETAIL = {
+  B01003_001E: 'pop', B19013_001E: 'hhInc', B19113_001E: 'famInc', B25077_001E: 'home',
+  B25001_001E: 'units', B25003_002E: 'owner', B17001_002E: 'poor',
+};
+function censusKeyOk() {
+  const k = (process.env.CENSUS_API_KEY || '').trim();
+  return /^[0-9a-f]{40}$/i.test(k) ? k : null;
+}
+async function censusRow(base, vars, geo, key) {
+  const d = await j(`${base}?get=NAME,${vars.join(',')}&${geo}&key=${key}`, 6000);
+  if (!Array.isArray(d) || d.length < 2) return null;
+  const o = Object.fromEntries(d[0].map((h, i) => [h, d[1][i]]));
+  return o;
+}
+// Census encodes "not available" as large negative sentinels (-666666666 etc.).
+const cnum = (v) => { const n = Number(v); return isFinite(n) && n > -100000000 ? n : null; };
+
+// Same variables the MCP's get_county_demographics uses (verified against the
+// live Census variables endpoint there) plus the state median family income
+// for context. Optional: no key or a Census outage drops the section only.
+async function countyCensus(fips) {
+  const key = censusKeyOk();
+  if (!key || !/^\d{5}$/.test(fips)) return null;
+  const base = `https://api.census.gov/data/${CENSUS_VINTAGE}/acs/acs5`;
+  const [c, sub, st] = await Promise.all([
+    censusRow(base, Object.keys(CENSUS_DETAIL), `for=county:${fips.slice(2)}&in=state:${fips.slice(0, 2)}`, key),
+    censusRow(`${base}/subject`, ['S2301_C04_001E'], `for=county:${fips.slice(2)}&in=state:${fips.slice(0, 2)}`, key),
+    censusRow(base, ['B19113_001E'], `for=state:${fips.slice(0, 2)}`, key),
+  ]);
+  if (!c) return null;
+  const out = { name: c.NAME };
+  for (const [code, k] of Object.entries(CENSUS_DETAIL)) out[k] = cnum(c[code]);
+  out.unemp = sub ? cnum(sub.S2301_C04_001E) : null;
+  out.stateFamInc = st ? cnum(st.B19113_001E) : null;
+  out.ownerPct = out.owner != null && out.units ? out.owner / out.units * 100 : null;
+  out.povPct = out.poor != null && out.pop ? out.poor / out.pop * 100 : null;
+  return out;
+}
+
+function hhiOf(byCert, total) {
+  if (!total) return null;
+  let h = 0;
+  for (const b of byCert.values()) { const s = b.dep / total * 100; h += s * s; }
+  return Math.round(h);
+}
+function groupYear(rows, yr) {
+  const m = new Map();
+  for (const r of rows) {
+    if (Number(r.YEAR) !== yr) continue;
+    const k = String(r.CERT);
+    const e = m.get(k) || { cert: k, name: r.NAMEFULL, dep: 0, br: 0 };
+    e.dep += Number(r.DEPSUMBR) || 0; e.br += 1;
+    m.set(k, e);
+  }
+  return m;
+}
+const pctTxt = (x, d = 1) => `${x >= 0 ? '+' : '−'}${Math.abs(x).toFixed(d)}%`;
+
+// Server-rendered bar chart (no JS: it must exist for crawlers and for the
+// page's no-script audience). Vault palette.
+function trendSvg(trend) {
+  if (trend.length < 2) return '';
+  const W = 640, H = 230, pad = { l: 8, r: 8, t: 16, b: 34 };
+  const max = Math.max(...trend.map(t => t.dep)) || 1;
+  const bw = (W - pad.l - pad.r) / trend.length;
+  const bars = trend.map((t, i) => {
+    const h = Math.max(2, (t.dep / max) * (H - pad.t - pad.b));
+    const x = pad.l + i * bw + bw * 0.15, y = H - pad.b - h;
+    const last = i === trend.length - 1;
+    const lbl = (i === 0 || last || trend.length <= 8 || i % 2 === 0)
+      ? `<text x="${(x + bw * 0.35).toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="18" fill="rgba(255,255,255,0.7)">${t.year}</text>` : '';
+    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${(bw * 0.7).toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${last ? '#4db8ff' : 'rgba(77,184,255,0.45)'}"><title>${t.year}: ${fmtUSD(t.dep)}</title></rect>${lbl}`;
+  }).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Total deposits by year, ${trend[0].year} to ${trend[trend.length - 1].year}" style="max-width:${W}px;display:block;margin:12px 0;">${bars}</svg>`;
 }
 
 async function buildCounty(countySlug, abbr) {
   const [stateName] = STATES[abbr];
-  const countyGuess = (await resolveCountyName(countySlug, abbr))
-    || countySlug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-
-  const sod = await j(`${FDIC_BASE}/sod?filters=CNTYNAMB%3A%22${encodeURIComponent(countyGuess)}%22%20AND%20STALPBR%3A%22${abbr}%22&fields=CERT,NAMEFULL,CNTYNAMB,STCNTYBR,DEPSUMBR,YEAR&limit=2000&sort_by=YEAR&sort_order=DESC`);
-  const rows = (sod?.data || []).map(d => d.data).filter(Boolean);
-  if (!rows.length) return null;
-
-  const year = Math.max(...rows.map(r => Number(r.YEAR) || 0));
-  const cur = rows.filter(r => Number(r.YEAR) === year);
-  const countyName = cur[0].CNTYNAMB;
-  // FDIC returns STCNTYBR as a NUMBER, not a string. Beyond the obvious
-  // crash on .slice(), the numeric form silently drops the leading zero for
-  // states with a FIPS below 10 — Alabama's 01003 arrives as 1003 — so this
-  // must be padded back to five digits, not merely coerced.
-  const fips = String(cur[0].STCNTYBR ?? '').padStart(5, '0');
-
-  const byCert = new Map();
-  for (const r of cur) {
-    const k = String(r.CERT);
-    const e = byCert.get(k) || { cert: k, name: r.NAMEFULL, dep: 0, br: 0 };
-    e.dep += Number(r.DEPSUMBR) || 0; e.br += 1;
-    byCert.set(k, e);
+  let loc = await resolveCounty(countySlug, abbr);
+  if (!loc) {
+    // Fallback for a slug the state scan missed: try the title-cased guess.
+    const guess = countySlug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    const g = await j(`${FDIC_BASE}/sod?filters=CNTYNAMB%3A%22${encodeURIComponent(guess)}%22%20AND%20STALPBR%3A%22${abbr}%22&fields=CNTYNAMB,STCNTYBR,YEAR&limit=1&sort_by=YEAR&sort_order=DESC`);
+    const r = g?.data?.[0]?.data;
+    if (!r) return null;
+    loc = { name: r.CNTYNAMB, fips: String(r.STCNTYBR ?? '').padStart(5, '0'), year: Number(r.YEAR) };
   }
-  const banks = [...byCert.values()].sort((a, b) => b.dep - a.dep);
+  const { fips } = loc;
+  const fq = `STCNTYBR%3A${Number(fips)}`;
+
+  // Everything below is independent, so it runs in parallel. Only the
+  // current-year rows are required; every other block is optional.
+  const [agg, rowsRes, census] = await Promise.all([
+    j(`${FDIC_BASE}/sod?filters=${fq}&agg_by=YEAR&agg_sum_fields=DEPSUMBR&agg_limit=40&limit=0`),
+    j(`${FDIC_BASE}/sod?filters=${fq}%20AND%20(YEAR%3A${loc.year}%20OR%20YEAR%3A${loc.year - 5})&fields=CERT,NAMEFULL,CNTYNAMB,DEPSUMBR,YEAR&limit=10000`),
+    countyCensus(fips).catch(() => null),
+  ]);
+  const rows = (rowsRes?.data || []).map(d => d.data).filter(Boolean);
+  // The state scan's latest year can run ahead of a county with no branches
+  // that year; fall back to the newest year this county actually has.
+  let year = loc.year;
+  if (!rows.some(r => Number(r.YEAR) === year)) {
+    const ys = (agg?.data || []).map(d => Number(d.data?.YEAR)).filter(Boolean);
+    if (!ys.length) return null;
+    year = Math.max(...ys);
+    const again = await j(`${FDIC_BASE}/sod?filters=${fq}%20AND%20(YEAR%3A${year}%20OR%20YEAR%3A${year - 5})&fields=CERT,NAMEFULL,CNTYNAMB,DEPSUMBR,YEAR&limit=10000`);
+    rows.splice(0, rows.length, ...((again?.data || []).map(d => d.data).filter(Boolean)));
+  }
+  const curMap = groupYear(rows, year);
+  if (!curMap.size) return null;
+  const prevYear = year - 5;
+  const prevMap = groupYear(rows, prevYear);
+
+  const banks = [...curMap.values()].sort((a, b) => b.dep - a.dep);
   const totalDep = banks.reduce((s, b) => s + b.dep, 0);
+  const branches = banks.reduce((s, b) => s + b.br, 0);
+  const prevBanks = [...prevMap.values()].sort((a, b) => b.dep - a.dep);
+  const prevTotal = prevBanks.reduce((s, b) => s + b.dep, 0);
+  const prevBranches = prevBanks.reduce((s, b) => s + b.br, 0);
 
-  // Census adds the market context no competitor page carries alongside
-  // deposit share. Optional — a missing key must not break the page.
-  let demo = null;
-  const key = (process.env.CENSUS_API_KEY || '').trim();
-  if (key && /^[0-9a-f]{40}$/i.test(key) && fips) {
-    const d = await j(`https://api.census.gov/data/${CENSUS_VINTAGE}/acs/acs5?get=NAME,B01003_001E,B19113_001E,B25077_001E&for=county:${fips.slice(2)}&in=state:${fips.slice(0, 2)}&key=${key}`);
-    if (Array.isArray(d) && d.length > 1) {
-      const [h, v] = [d[0], d[1]];
-      const o = Object.fromEntries(h.map((k2, i) => [k2, v[i]]));
-      const n = (x) => { const num = Number(o[x]); return isFinite(num) && num > -666666666 ? num : null; };
-      demo = { pop: n('B01003_001E'), famInc: n('B19113_001E'), home: n('B25077_001E') };
-    }
+  const place = placeLabel(loc.name, abbr, census?.name);
+  const placeFull = `${place}, ${stateName}`;
+
+  // Bank links in the canonical slug form. SOD rows carry no HQ city, and a
+  // bare /bank/{cert} link is a canonicalised alternate (Search Console
+  // "Alternate page with proper canonical tag") — one batch lookup fixes it.
+  const linkCerts = [...new Set([...banks.slice(0, 60).map(b => b.cert)])];
+  const instRes = linkCerts.length
+    ? await j(`${FDIC_BASE}/institutions?filters=CERT%3A(${linkCerts.join('%20OR%20')})&fields=CERT,NAME,CITY,STALP&limit=${linkCerts.length}`)
+    : null;
+  const slugByCert = new Map(((instRes?.data) || []).map(d => d.data).filter(Boolean)
+    .map(i => [String(i.CERT), `/bank/${slugify(i.NAME, i.CITY, i.STALP)}-${i.CERT}`]));
+  const href = (cert) => slugByCert.get(String(cert)) || `/bank/${cert}`;
+
+  // ── Insights (plain English, every one computed from the figures shown) ──
+  const trend = (agg?.data || []).map(d => d.data).filter(Boolean)
+    .map(t => ({ year: Number(t.YEAR), dep: Number(t.sum_DEPSUMBR) || 0, br: Number(t.count) || 0 }))
+    .filter(t => t.year && t.year <= year).sort((a, b) => a.year - b.year).slice(-10);
+  const hhi = hhiOf(curMap, totalDep);
+  const prevHhi = prevMap.size ? hhiOf(prevMap, prevTotal) : null;
+  const insights = [];
+  if (prevTotal > 0) {
+    const g = (totalDep / prevTotal - 1) * 100;
+    const cagr = (Math.pow(totalDep / prevTotal, 1 / 5) - 1) * 100;
+    insights.push(`Deposits held in ${esc(place)} branches ${g >= 0 ? 'grew' : 'fell'} ${Math.abs(g).toFixed(1)}% from ${prevYear} to ${year} (${fmtUSD(prevTotal)} → ${fmtUSD(totalDep)}), ${pctTxt(cagr)} a year.`);
+  }
+  if (prevBranches) {
+    insights.push(prevBranches === branches
+      ? `The branch count is unchanged at ${branches} since ${prevYear}.`
+      : `Bank branches went from ${prevBranches} in ${prevYear} to ${branches} in ${year} (${branches > prevBranches ? '+' : '−'}${Math.abs(branches - prevBranches)}).`);
+  }
+  if (hhi != null) {
+    const lvl = hhi > 1800 ? 'above the 1,800 level the 2023 DOJ/FTC Merger Guidelines treat as highly concentrated'
+      : 'below the 1,800 level the 2023 DOJ/FTC Merger Guidelines treat as highly concentrated';
+    insights.push(`Market concentration (HHI) is ${hhi.toLocaleString()}, ${lvl}${prevHhi != null ? `; it was ${prevHhi.toLocaleString()} in ${prevYear}` : ''}.`);
+  }
+  if (prevBanks.length && banks.length) {
+    insights.push(prevBanks[0].cert === banks[0].cert
+      ? `${esc(banks[0].name)} has held the largest deposit share since at least ${prevYear}.`
+      : `The deposit leader changed: ${esc(prevBanks[0].name)} led in ${prevYear}; ${esc(banks[0].name)} leads in ${year}.`);
+    const movers = banks.filter(b => prevMap.has(b.cert)).map(b => ({ b, d: b.dep / totalDep * 100 - prevMap.get(b.cert).dep / prevTotal * 100 }));
+    movers.sort((a, b) => b.d - a.d);
+    if (movers.length >= 2 && movers[0].d >= 0.5) insights.push(`Biggest share gain since ${prevYear}: ${esc(movers[0].b.name)} (${movers[0].d >= 0 ? '+' : '−'}${Math.abs(movers[0].d).toFixed(1)} points).`);
+    const lo = movers[movers.length - 1];
+    if (movers.length >= 2 && lo.d <= -0.5) insights.push(`Biggest share loss: ${esc(lo.b.name)} (−${Math.abs(lo.d).toFixed(1)} points).`);
+    const entrants = banks.filter(b => !prevMap.has(b.cert)).length;
+    const exits = prevBanks.filter(b => !curMap.has(b.cert)).length;
+    if (entrants || exits) insights.push(`${entrants} bank${entrants === 1 ? '' : 's'} entered the county and ${exits} left or were acquired between ${prevYear} and ${year}.`);
+  }
+  if (census?.pop && totalDep) {
+    insights.push(`That is about $${Math.round(totalDep * 1000 / census.pop).toLocaleString()} in branch deposits per resident (deposits are booked where the branch is, so commuter and business centers run high).`);
   }
 
-  const rowsHtml = banks.slice(0, 60).map((b, i) => `<tr>
+  const rowsHtml = banks.slice(0, 60).map((b, i) => {
+    const p = prevMap.get(b.cert);
+    const chg = p && prevTotal ? (b.dep / totalDep - p.dep / prevTotal) * 100 : null;
+    return `<tr>
 <td class="num">${i + 1}</td>
-<td><a href="/bank/${esc(b.cert)}">${esc(b.name)}</a></td>
+<td><a href="${esc(href(b.cert))}">${esc(b.name)}</a></td>
 <td class="num">${fmtUSD(b.dep)}</td>
 <td class="num">${totalDep > 0 ? (b.dep / totalDep * 100).toFixed(2) + '%' : '—'}</td>
-<td class="num">${b.br}</td></tr>`).join('');
+<td class="num">${chg == null ? 'new' : (chg >= 0 ? '+' : '−') + Math.abs(chg).toFixed(1)}</td>
+<td class="num">${b.br}</td></tr>`;
+  }).join('');
+
+  const trendRows = trend.slice().reverse().map(t => `<tr><td>${t.year}</td><td class="num">${fmtUSD(t.dep)}</td><td class="num">${t.br}</td></tr>`).join('');
 
   const top = banks[0];
-  const title = `Banks in ${countyName} County, ${abbr} — Deposit Market Share ${year} | Vault`;
-  const desc = `${banks.length} banks hold ${fmtUSD(totalDep)} in deposits across ${countyName} County, ${stateName}. Market share rankings from FDIC Summary of Deposits ${year}. Free, no login.`;
+  const title = `Banks in ${place}, ${abbr} — Deposit Market Share ${year} | Vault`;
+  const desc = `${banks.length} banks hold ${fmtUSD(totalDep)} in deposits across ${placeFull}${prevTotal ? ` (${pctTxt((totalDep / prevTotal - 1) * 100)} since ${prevYear})` : ''}. Market share, concentration and 10-year trend from the FDIC Summary of Deposits. Free, no login.`;
+
+  const c = census;
+  const demoRows = c ? [
+    ['Population', c.pop != null ? c.pop.toLocaleString() : null],
+    ['Median household income', c.hhInc != null ? `$${c.hhInc.toLocaleString()}` : null],
+    ['Median family income', c.famInc != null ? `$${c.famInc.toLocaleString()}${c.stateFamInc ? ` (${Math.round(c.famInc / c.stateFamInc * 100)}% of the ${esc(stateName)} median)` : ''}` : null],
+    ['Median home value', c.home != null ? `$${c.home.toLocaleString()}` : null],
+    ['Owner-occupied housing', c.ownerPct != null ? `${c.ownerPct.toFixed(1)}%` : null],
+    ['Poverty rate', c.povPct != null ? `${c.povPct.toFixed(1)}%` : null],
+    ['Unemployment rate', c.unemp != null ? `${c.unemp.toFixed(1)}%` : null],
+  ].filter(([, v]) => v).map(([k, v]) => `<tr><th scope="row">${k}</th><td class="num">${v}</td></tr>`).join('') : '';
 
   const body = `
-<nav class="crumbs"><a href="/">Vault</a> → <a href="/banks-in-${esc(stateName.toLowerCase().replace(/\s+/g, '-'))}">Banks in ${esc(stateName)}</a> → ${esc(countyName)} County</nav>
-<h1>Banks in ${esc(countyName)} County, ${esc(abbr)}</h1>
-<p><strong>${banks.length}</strong> FDIC-insured banks operate ${cur.length} branches in
-${esc(countyName)} County, ${esc(stateName)}, holding <strong>${fmtUSD(totalDep)}</strong> in total
+<nav class="crumbs"><a href="/">Vault</a> → <a href="/banks-in-${esc(stateName.toLowerCase().replace(/\s+/g, '-'))}">Banks in ${esc(stateName)}</a> → ${esc(place)}</nav>
+<h1>Banks in ${esc(place)}, ${esc(abbr)}</h1>
+<p><strong>${banks.length}</strong> FDIC-insured banks operate ${branches} branches in
+${esc(placeFull)}, holding <strong>${fmtUSD(totalDep)}</strong> in total
 deposits as of the ${year} FDIC Summary of Deposits.
 ${top ? `${esc(top.name)} leads the market with ${(top.dep / totalDep * 100).toFixed(1)}% share.` : ''}
 Deposit market share is the clearest available measure of competitive position in a local market:
 it reflects where households and businesses actually keep their money, rather than where
 institutions advertise or how many branches they operate.</p>
 
-${demo ? `<h2>${esc(countyName)} County market profile</h2>
+${insights.length ? `<h2>Key insights for ${esc(place)}</h2>
+<ul class="ins">${insights.map(t => `<li>${t}</li>`).join('')}</ul>` : ''}
+
+${trend.length >= 2 ? `<h2>Deposit trend, ${trend[0].year}–${trend[trend.length - 1].year}</h2>
+<p>Total deposits booked at bank branches in ${esc(place)} each June 30, with the number of branches
+reporting. Year-to-year swings in small markets often reflect a single large depositor or one bank
+re-booking balances between branches, so the multi-year direction says more than any one year.</p>
+${trendSvg(trend)}
+<div class="tw"><table><thead><tr><th>Year</th><th class="num">Deposits</th><th class="num">Branches</th></tr></thead><tbody>${trendRows}</tbody></table></div>` : ''}
+
+${c && demoRows ? `<h2>${esc(place)} market profile</h2>
 <p>Understanding a deposit market requires knowing the market itself. These figures come from the
 US Census Bureau American Community Survey ${CENSUS_VINTAGE} five-year estimates. Median family
 income is the measure federal regulators use to define low- and moderate-income thresholds under
 the Community Reinvestment Act, which is why it is reported here separately from household income.</p>
-<table><tbody>
-${demo.pop ? `<tr><th scope="row">Population</th><td class="num">${demo.pop.toLocaleString()}</td></tr>` : ''}
-${demo.famInc ? `<tr><th scope="row">Median family income</th><td class="num">$${demo.famInc.toLocaleString()}</td></tr>` : ''}
-${demo.home ? `<tr><th scope="row">Median home value</th><td class="num">$${demo.home.toLocaleString()}</td></tr>` : ''}
-<tr><th scope="row">Banks operating in county</th><td class="num">${banks.length}</td></tr>
-<tr><th scope="row">Bank branches</th><td class="num">${cur.length}</td></tr>
-</tbody></table>` : ''}
+<div class="tw"><table><tbody>${demoRows}
+<tr><th scope="row">Banks operating here</th><td class="num">${banks.length}</td></tr>
+<tr><th scope="row">Bank branches</th><td class="num">${branches}</td></tr>
+</tbody></table></div>` : ''}
 
-<h2>Deposit market share in ${esc(countyName)} County</h2>
+<h2>Deposit market share in ${esc(place)}</h2>
 <p>Ranked by deposits held within county borders. A bank's county deposits are the sum across all
-of its branches in that county, so an institution with several locations appears once. Figures are
-as of June 30, ${year}, the annual reporting date for the FDIC Summary of Deposits.</p>
-<table><thead><tr><th>Rank</th><th>Bank</th><th class="num">Deposits</th><th class="num">Share</th><th class="num">Branches</th></tr></thead>
-<tbody>${rowsHtml}</tbody></table>
+of its branches in the county, so an institution with several locations appears once. Figures are
+as of June 30, ${year}, the annual reporting date for the FDIC Summary of Deposits. "Change" is the
+movement in share, in percentage points, since ${prevYear}.</p>
+<div class="tw"><table><thead><tr><th>Rank</th><th>Bank</th><th class="num">Deposits</th><th class="num">Share</th><th class="num">Change</th><th class="num">Branches</th></tr></thead>
+<tbody>${rowsHtml}</tbody></table></div>
 ${banks.length > 60 ? `<p>Showing the top 60 of ${banks.length} institutions.</p>` : ''}
 
 <h2>About this data</h2>
 <p>The FDIC Summary of Deposits is an annual survey of branch office deposits filed by every
 FDIC-insured institution as of June 30 each year. It is the authoritative source for local deposit
 market share and is the dataset regulators use when assessing competitive effects of bank mergers.
-Because it is annual, it reflects a point in time rather than current balances. Vault republishes
-it without modification, free to access and free to cite. Available to AI agents at
-<a href="/mcp">vaultbot.ai/mcp</a>.</p>`;
+Because it is annual, it reflects a point in time rather than current balances. The concentration
+index (HHI) is the sum of squared market shares, the same calculation used in merger screening.
+Vault republishes the underlying data without modification, free to access and free to cite.
+Available to AI agents at <a href="/mcp">vaultbot.ai/mcp</a>.</p>`;
 
   const jsonld = {
     '@context': 'https://schema.org',
     '@type': 'Dataset',
-    name: `Deposit market share, ${countyName} County, ${stateName}`,
+    name: `Deposit market share, ${placeFull}`,
     description: desc,
     creator: { '@type': 'Organization', name: 'Federal Deposit Insurance Corporation' },
     // FDIC filings are US federal government works and therefore public
     // domain. Google flagged this field as missing site-wide.
     license: 'https://www.usa.gov/government-works',
     isAccessibleForFree: true,
-    temporalCoverage: String(year),
-    spatialCoverage: { '@type': 'Place', name: `${countyName} County, ${stateName}` },
+    temporalCoverage: trend.length >= 2 ? `${trend[0].year}/${trend[trend.length - 1].year}` : String(year),
+    spatialCoverage: { '@type': 'Place', name: placeFull },
+    variableMeasured: ['Deposits by institution', 'Deposit market share', 'Branch count', 'Herfindahl-Hirschman Index'],
   };
 
   return shell({ title, desc, canonical: `https://vaultbot.ai/banks-in-${countySlug}-county-${abbr.toLowerCase()}`, body, jsonld });
@@ -364,7 +543,9 @@ exports.handler = async (event) => {
   if (!m) return { statusCode: 404, headers: { 'Content-Type': 'text/html' }, body: '<h1>Not found</h1>' };
 
   const slug = m[1].toLowerCase();
-  const cacheKey = `hub-${slug}`;
+  // v2 (2026-11-09): county pages gained trend/HHI/insights; bump so the
+  // 12h Blobs cache can't keep serving the old thin markup.
+  const cacheKey = `hub2-${slug}`;
   const store = await getStore();
   // ?refresh=1 bypasses the cache. Without it a fix to page markup stays
   // invisible for up to 12 hours with no way to force it through — which is

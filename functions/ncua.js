@@ -7,7 +7,31 @@ let lastZipFileList = null;  // diagnostic: every file name found in the most re
 let lastEmployeeSource = null; // diagnostic: which file ACCT_564A was actually found in (or null)
 let cacheTimestamp = 0; 
 const CACHE_TTL = 60 * 60 * 1000;
-const BULK_URL = 'https://ncua.gov/files/publications/analysis/call-report-data-2025-12.zip';
+// NCUA posts one ZIP per quarter at a predictable URL, ~10 weeks after the
+// quarter ends (Q2 2026 landed 2026-09-14). The URL was hardcoded to 2025-12
+// and silently went two quarters stale. Now: probe the most recent quarter-ends
+// newest-first and take the first file that downloads AND parses to a sane
+// roster; the last known-good quarter stays in the list as a floor.
+const NCUA_BASE = process.env.NCUA_BASE || 'https://ncua.gov/files/publications/analysis';
+const KNOWN_GOOD = '2025-12';
+let dataPeriod = null; // 'YYYY-MM' of the file actually loaded
+function candidatePeriods(now = new Date()) {
+  const out = [];
+  let y = now.getUTCFullYear(), m = now.getUTCMonth() + 1; // 1-12
+  // Step back to the most recent completed quarter-end month.
+  m = Math.floor((m - 1) / 3) * 3; if (m === 0) { m = 12; y -= 1; }
+  for (let i = 0; i < 4; i++) {
+    out.push(`${y}-${String(m).padStart(2, '0')}`);
+    m -= 3; if (m <= 0) { m += 12; y -= 1; }
+  }
+  if (!out.includes(KNOWN_GOOD)) out.push(KNOWN_GOOD);
+  return out;
+}
+function periodEnd(p) {
+  const [y, m] = String(p || '').split('-').map(Number);
+  if (!y || !m) return null;
+  return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10); // last day of month
+}
 
 // CU_TYPE codes from NCUA data dictionary
 const CU_TYPE_MAP = {
@@ -23,6 +47,10 @@ function fetchBuffer(url) {
       mod.get(u, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location)
           return get(res.headers.location, redirects + 1);
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          res.resume();
+          return reject(new Error(`HTTP ${res.statusCode} for ${u}`));
+        }
         const chunks = [];
         res.on('data', c => chunks.push(c));
         res.on('end', () => resolve(Buffer.concat(chunks)));
@@ -288,8 +316,35 @@ function parseCharterDate(raw, mode = 'date') {
 
 async function loadCUData() {
   if (cuCache && (Date.now() - cacheTimestamp) < CACHE_TTL) return cuCache;
+  const tried = [];
+  for (const period of candidatePeriods()) {
+    const url = `${NCUA_BASE}/call-report-data-${period}.zip`;
+    try {
+      const zipBuf = await fetchBuffer(url);
+      // NCUA serves an HTML page for some missing files — require ZIP magic.
+      if (!zipBuf || zipBuf.length < 1000 || zipBuf[0] !== 0x50 || zipBuf[1] !== 0x4b) throw new Error('not a ZIP');
+      const rows = parseQuarter(zipBuf, period);
+      const n = rows.length;
+      const withAssets = rows.filter(r => r.assets > 0).length;
+      const withMembers = rows.filter(r => r.members > 0).length;
+      const withEmp = rows.filter(r => r.employees != null).length;
+      console.log(`[ncua] ${period} parsed cus=${n} assets=${(withAssets / Math.max(n, 1) * 100).toFixed(1)}% members=${(withMembers / Math.max(n, 1) * 100).toFixed(1)}% employees=${(withEmp / Math.max(n, 1) * 100).toFixed(1)}% tried=${tried.join(',') || 'none'}`);
+      // A renamed account code would zero a column rather than throw; refuse a
+      // quarter that parses to a broken roster and fall back to an older one.
+      if (n < 3000 || withAssets / n < 0.9 || withMembers / n < 0.9) throw new Error(`sanity check failed (cus=${n})`);
+      cuCache = rows; dataPeriod = period; cacheTimestamp = Date.now();
+      return cuCache;
+    } catch (e) {
+      tried.push(`${period}:${String(e.message).slice(0, 40)}`);
+    }
+  }
+  console.log(`[ncua] no usable quarter: ${tried.join(' | ')}`);
+  if (cuCache) return cuCache; // serve stale rather than nothing
+  throw new Error('NCUA call report data unavailable');
+}
 
-  const zipBuf = await fetchBuffer(BULK_URL);
+function parseQuarter(zipBuf, period) {
+  const asOf = periodEnd(period);
 
   // Parse FOICU.txt — profile data (name, city, state, type)
   const foicuBuf = extractFromZip(zipBuf, 'FOICU.txt');
@@ -320,7 +375,7 @@ async function loadCUData() {
   const employeeData = findEmployeeData(zipBuf, lastZipFileList, financials);
 
   // Join profiles + financials on CU_NUMBER
-  cuCache = Object.values(profiles)
+  return Object.values(profiles)
     .filter(p => p.CU_NAME)
     .map(p => {
       const fin = financials[p.CU_NUMBER] || {};
@@ -328,9 +383,6 @@ async function loadCUData() {
       // ACCT_010 = total assets in $thousands, ACCT_730 = number of members
       const assets = Math.round(parseFloat(fin.ACCT_010 || '0')); // ACCT_010 already in dollars
       // Log full FS220 row for OneAZ on first load to find member field
-      if (p.CU_NUMBER === '61315' && fin) {
-        console.log('OneAZ FULL FS220:', JSON.stringify(fin).slice(0, 3000));
-      }
       // NCUA 5300 call report: ACCT_731 = total members (most reliable)
       // Fallbacks: ACCT_730, ACCT_084 (potential members - too high), ACCT_083
       const members = parseInt(fin.ACCT_083 || '0', 10); // ACCT_083 = total members (confirmed from FS220 Q4 2025)
@@ -357,14 +409,9 @@ async function loadCUData() {
         charterDate: charterDate?.iso || null,
         charterYear: charterDate?.year || null,
         website: p.STREET ? '' : '', // FOICU has no website field
+        asOf,
       };
     });
-
-  cacheTimestamp = Date.now();
-  const oneaz = cuCache.find(cu => cu.id === '61315');
-  if (oneaz) console.log('OneAZ result:', JSON.stringify(oneaz));
-
-  return cuCache;
 }
 
 // Lightweight fuzzy scorer — no external deps
@@ -434,6 +481,8 @@ exports.handler = async function(event, context) {
         statusCode: 200,
         headers: corsHeaders,
         body: JSON.stringify({
+          data_period: dataPeriod,
+          candidate_periods: candidatePeriods(),
           total_cus: allCUs.length,
           cus_with_charter_date: withDate.length,
           charter_date_field_detected: withDate.length > 0,
@@ -547,8 +596,8 @@ exports.handler = async function(event, context) {
       // ~20 fields; across ~4,900 credit unions that payload is large enough
       // to matter, and none of it is used for building a slug.
       body: JSON.stringify(allMode
-        ? { results: matched.slice(0, limit).map(c => ({ id: c.id, name: c.name, city: c.city, state: c.state })), totalResultCount: matched.length }
-        : { results: matched.slice(0, limit), totalResultCount: matched.length })
+        ? { results: matched.slice(0, limit).map(c => ({ id: c.id, name: c.name, city: c.city, state: c.state })), totalResultCount: matched.length, asOf: periodEnd(dataPeriod) }
+        : { results: matched.slice(0, limit), totalResultCount: matched.length, asOf: periodEnd(dataPeriod) })
     };
   } catch(e) {
     console.error('NCUA error:', e.message);

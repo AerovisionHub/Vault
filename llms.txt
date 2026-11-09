@@ -1,7 +1,7 @@
 # Vault
 
 > Free bank and credit union intelligence built on public FDIC and NCUA data.
-> Covers roughly 4,500 FDIC-insured banks and 4,900 NCUA-insured credit unions.
+> Covers roughly 4,500 FDIC-insured banks and 4,200 NCUA-insured credit unions.
 > No login, no paywall. Also available to AI agents as a hosted MCP server.
 
 Vault answers questions about US depository institutions using primary

@@ -340,8 +340,12 @@ async function getCU(id, origin) {
   // 5300 parse at the edge.
   const j = await fetchJSON(`${origin}/.netlify/functions/ncua?q=${encodeURIComponent(id)}&limit=1`, 6000);
   if (!j || !Array.isArray(j.results)) return null; // NCUA proxy failed → 503
-  const cu = j.results[0];
-  return cu ? { kind: 'cu', ...cu, name: titleCaseName(cu.name) } : MISSING;
+  // The proxy is a search: for a charter number it hoists the exact match to
+  // the front, but with no exact match it still returns name hits (credit
+  // unions with digits in their names), which rendered a DIFFERENT credit
+  // union under this URL and canonicalised to it. Require the charter to match.
+  const cu = j.results.find(r => String(r.id) === String(id) || parseInt(r.id, 10) === parseInt(id, 10));
+  return cu ? { kind: 'cu', ...cu, asOf: cu.asOf || j.asOf || null, name: titleCaseName(cu.name) } : MISSING;
 }
 
 function buildBank(b) {
@@ -422,6 +426,7 @@ function buildCU(c) {
   if (where) bits.push(`based in ${where}`);
   if (assets) bits.push(`with ${assets} in total assets`);
   if (c.members) bits.push(`serving ${Number(c.members).toLocaleString()} members`);
+  if (c.asOf) bits.push(`as of ${new Date(c.asOf + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}`);
   const lead = bits.join(' ') + '.';
 
   const extra = [];
@@ -446,6 +451,7 @@ function buildCU(c) {
       creator: { '@type': 'Organization', name: 'National Credit Union Administration' },
       license: PUBLIC_DOMAIN_LICENSE,
       isAccessibleForFree: true,
+      temporalCoverage: c.asOf || undefined,
     },
   };
 
