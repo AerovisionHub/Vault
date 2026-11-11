@@ -4120,12 +4120,23 @@ async function initAboutMCPStats() {
       return;
     }
 
-    // Headline KPIs
-    callsEl.textContent = all.total_calls.toLocaleString();
-    if (usersEl) usersEl.textContent = all.unique_users.toLocaleString();
+    // Headline KPIs. Honest numbers only: real tool calls from third-party AI
+    // clients, and people who actually ran a tool. total_calls / unique_users
+    // are ~97% protocol handshakes and connecting IPs, so they never headline.
+    callsEl.textContent = (all.tool_calls_external ?? all.tool_calls ?? 0).toLocaleString();
+    if (usersEl) usersEl.textContent = (all.tool_unique_users ?? 0).toLocaleString();
+    const returningEl = document.getElementById('mcp-stat-returning');
+    if (returningEl && all.returning_tool_users != null) returningEl.textContent = `${all.returning_tool_users.toLocaleString()} came back on another day`;
 
     const clients = Object.entries(all.client_usage || {}).sort((a,b) => b[1]-a[1]);
-    if (clientsEl) clientsEl.textContent = clients.length.toLocaleString();
+    // Count AI products, not version strings: "codex-mcp-client/0.159.0" and
+    // "codex-mcp-client (via mcp-remote 0.14.3)/0.162.0" are one product. Test clients are excluded.
+    const clientFamily = name => {
+      const n = String(name).split(/\s*\(via |\//)[0].trim().toLowerCase();
+      return /^(anthropic|claude-ai|claude)$/.test(n) ? 'claude.ai' : n;
+    };
+    const families = new Set(clients.map(([n]) => clientFamily(n)).filter(n => n && !/test|probe|curl|python|node-fetch|^qa$|^mcp$/.test(n)));
+    if (clientsEl) clientsEl.textContent = families.size.toLocaleString();
 
     // Uptime = 100 - error rate
     if (uptimeEl) {
@@ -4144,7 +4155,7 @@ async function initAboutMCPStats() {
         const idx = Math.floor((dt - launch) / (7 * 86400000));
         if (idx < 0) return;
         if (!buckets[idx]) buckets[idx] = { calls: 0, idx };
-        buckets[idx].calls += entry.calls;
+        buckets[idx].calls += (entry.tool_calls ?? 0); // real tool calls, not handshakes
       });
       const weeks = Object.values(buckets).sort((a,b) => a.idx - b.idx);
       const fmtDate = (dt) => (dt.getUTCMonth()+1) + '/' + dt.getUTCDate();
@@ -4209,21 +4220,28 @@ async function initAboutMCPStats() {
     // Client diversity narrative — humanize the client list
     if (clientDiversityEl) {
       // Group clients into categories
-      const groups = { 'Claude Desktop': 0, 'Claude Code': 0, 'Claude.ai web': 0, 'Custom agents': 0, 'Test/Setup': 0 };
+      // Counts are connection requests (mostly protocol handshakes), so chips show
+      // names only, ordered by activity. Internal test clients are excluded.
+      const groups = { 'Claude.ai': 0, 'Claude Code': 0, 'OpenAI Codex': 0, 'n8n': 0, 'LibreChat': 0, 'Excel / Sheets add-in': 0, 'Custom agents': 0 };
       clients.forEach(([name, n]) => {
-        if (name.startsWith('claude-code')) groups['Claude Code'] += n;
-        else if (name.startsWith('claude-ai (via mcp-remote') || name.startsWith('Anthropic/ClaudeAI')) groups['Claude.ai web'] += n;
-        else if (name.includes('mcp-remote-fallback-test')) groups['Test/Setup'] += n;
+        const f = clientFamily(name);
+        if (/test|probe|curl|python|node-fetch|^qa$|^mcp$/.test(f)) return;
+        if (f === 'claude-code') groups['Claude Code'] += n;
+        else if (f === 'claude.ai') groups['Claude.ai'] += n;
+        else if (f.startsWith('codex')) groups['OpenAI Codex'] += n;
+        else if (f.includes('n8n')) groups['n8n'] += n;
+        else if (f.includes('librechat')) groups['LibreChat'] += n;
+        else if (f.includes('sheet')) groups['Excel / Sheets add-in'] += n;
         else groups['Custom agents'] += n;
       });
 
       const items = Object.entries(groups)
         .filter(([_, n]) => n > 0)
         .sort((a,b) => b[1]-a[1])
-        .map(([label, n]) => `<span style="display:inline-block;background:rgba(77,184,255,0.08);border:1px solid rgba(77,184,255,0.2);border-radius:6px;padding:4px 10px;font-family:var(--mono);font-size:11px;margin-right:6px;margin-bottom:6px;"><span style="color:var(--accent);">${label}</span> <span style="color:var(--muted);">·</span> <span style="color:var(--text);">${n.toLocaleString()}</span></span>`);
+        .map(([label, n]) => `<span style="display:inline-block;background:rgba(77,184,255,0.08);border:1px solid rgba(77,184,255,0.2);border-radius:6px;padding:4px 10px;font-family:var(--mono);font-size:11px;margin-right:6px;margin-bottom:6px;"><span style="color:var(--accent);">${label}</span></span>`);
 
       clientDiversityEl.innerHTML = items.join('') +
-        `<div style="font-size:12px;color:var(--muted);margin-top:10px;line-height:1.6;">Including community bankers, fintech founders, regulators, and custom AI agents.</div>`;
+        `<div style="font-size:12px;color:var(--muted);margin-top:10px;line-height:1.6;">Used by community bankers, fintech teams, consultants and regulators.</div>`;
     }
   } catch(e) {
     // Silent fail — just leave dashes if stats unavailable
@@ -6133,15 +6151,15 @@ function renderAbout() {
       </div>
       <div class="about-card">
         <h3>// What it does</h3>
-        <p>Search any FDIC-regulated bank or NCUA-regulated credit union. See assets, deposits, capital ratios, ROA/ROE trends, and peer comparisons — all from public regulatory filings updated quarterly. No login. No paywall. No nonsense.</p>
+        <p>Search any FDIC-insured bank or NCUA-insured credit union. See assets, deposits, capital, ROA/ROE trends back to 1992, every branch back to 1994, county market share and peer comparisons, all from public regulatory filings. No login. No paywall. No nonsense.</p>
       </div>
       <div class="about-card">
         <h3>// The data</h3>
-        <p>All data is sourced directly from the <a href="https://api.fdic.gov/banks/docs/" target="_blank" style="color:var(--accent);">FDIC BankFind API</a> and the <a href="https://mapping.ncua.gov/ResearchCreditUnion" target="_blank" style="color:var(--accent);">NCUA</a> public data portal. Financial figures are in thousands of dollars as reported. Updated quarterly with each call report cycle.</p>
+      <p>Sourced directly from public filings: the <a href="https://api.fdic.gov/banks/docs/" target="_blank" style="color:var(--accent);">FDIC</a> (call reports, Summary of Deposits, mergers), the <a href="https://mapping.ncua.gov/ResearchCreditUnion" target="_blank" style="color:var(--accent);">NCUA</a> (5300 call reports), CFPB mortgage data (HMDA) and the U.S. Census. Financial figures are in thousands of dollars as reported, updated with each filing cycle.</p>
       </div>
       <div class="about-card">
         <h3>// What's coming</h3>
-        <p>Deposit trend alerts. Technology spend signals. Branching activity. Merger and acquisition tracking. And eventually, a way to build and export prospect lists — all without a subscription fee.</p>
+        <p>Local bank pages for every city. Credit union branch history. Deposit trend alerts. Vault inside Microsoft 365 Copilot. And eventually, a way to build and export prospect lists, all without a subscription fee.</p>
       </div>
     </div>
 
@@ -6157,24 +6175,24 @@ function renderAbout() {
       <!-- KPI highlight bar -->
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin-bottom:32px;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);">
         <div style="padding:20px 16px;background:rgba(124,110,245,0.12);text-align:center;">
-          <div style="font-family:var(--serif);font-size:36px;color:#7c6ef5;line-height:1;">~80 hrs</div>
-          <div style="font-size:11px;color:var(--text);font-weight:600;margin-top:6px;">Build Time</div>
-          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:3px;">11 sessions</div>
+          <div style="font-family:var(--serif);font-size:36px;color:#7c6ef5;line-height:1;">55 days</div>
+          <div style="font-size:11px;color:var(--text);font-weight:600;margin-top:6px;">Build days</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:3px;">13 Claude sessions</div>
         </div>
         <div style="padding:20px 16px;background:rgba(248,113,113,0.10);text-align:center;">
-          <div style="font-family:var(--serif);font-size:36px;color:#f87171;line-height:1;">115+</div>
+          <div style="font-family:var(--serif);font-size:36px;color:#f87171;line-height:1;">275</div>
           <div style="font-size:11px;color:var(--text);font-weight:600;margin-top:6px;">Deploys</div>
-          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:3px;">All successful</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:3px;">Commits shipped to production</div>
         </div>
         <div style="padding:20px 16px;background:rgba(52,211,153,0.10);text-align:center;">
-          <div style="font-family:var(--serif);font-size:36px;color:#34d399;line-height:1;">120+</div>
+          <div style="font-family:var(--serif);font-size:36px;color:#34d399;line-height:1;">59</div>
           <div style="font-size:11px;color:var(--text);font-weight:600;margin-top:6px;">Features</div>
-          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:3px;">Zero to production</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:3px;">Major features shipped</div>
         </div>
         <div style="padding:20px 16px;background:rgba(77,184,255,0.10);text-align:center;">
-          <div style="font-family:var(--serif);font-size:36px;color:#4db8ff;line-height:1;">4,327</div>
+          <div style="font-family:var(--serif);font-size:36px;color:#4db8ff;line-height:1;">16,800</div>
           <div style="font-size:11px;color:var(--text);font-weight:600;margin-top:6px;">Lines of Code</div>
-          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:3px;">Single HTML file · 230KB</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:3px;">16 serverless functions · 10 pages</div>
         </div>
       </div>
 
@@ -6182,24 +6200,24 @@ function renderAbout() {
       <div class="ai-section-label">// Claude's workload</div>
       <div class="ai-stat-grid">
         <div class="ai-stat-card">
-          <div class="ai-stat-val">1,100+</div>
+          <div class="ai-stat-val">2,600+</div>
           <div class="ai-stat-label">Tool calls executed</div>
-          <div class="ai-stat-sub">Bash, file, git, API</div>
+          <div class="ai-stat-sub">Est. · bash, git, API, browser</div>
         </div>
         <div class="ai-stat-card">
-          <div class="ai-stat-val">700+</div>
+          <div class="ai-stat-val">1,700+</div>
           <div class="ai-stat-label">Messages exchanged</div>
-          <div class="ai-stat-sub">Human + Claude turns</div>
+          <div class="ai-stat-sub">Est. · human + Claude turns</div>
         </div>
         <div class="ai-stat-card">
-          <div class="ai-stat-val">~2.5M</div>
+          <div class="ai-stat-val">~6M</div>
           <div class="ai-stat-label">Tokens processed</div>
-          <div class="ai-stat-sub">Estimated across sessions</div>
+          <div class="ai-stat-sub">Est. · scaled from early sessions</div>
         </div>
         <div class="ai-stat-card">
-          <div class="ai-stat-val">5</div>
+          <div class="ai-stat-val">9</div>
           <div class="ai-stat-label">Data sources integrated</div>
-          <div class="ai-stat-sub">FDIC · NCUA · SEC · Google News · Yahoo</div>
+          <div class="ai-stat-sub">FDIC · NCUA · CFPB · Census · SEC · +4</div>
         </div>
       </div>
 
@@ -6207,17 +6225,17 @@ function renderAbout() {
       <div class="ai-section-label">// Estimated energy &amp; carbon</div>
       <div class="ai-energy-row">
         <div class="ai-energy-card">
-          <div class="ai-energy-val">~0.75 kWh</div>
+          <div class="ai-energy-val">~1.8 kWh</div>
           <div class="ai-energy-label">Estimated energy used</div>
           <div class="ai-energy-sub">Claude inference + your device</div>
         </div>
         <div class="ai-energy-card">
-          <div class="ai-energy-val">~300g CO₂</div>
+          <div class="ai-energy-val">~720g CO₂</div>
           <div class="ai-energy-label">Carbon equivalent</div>
           <div class="ai-energy-sub">US avg grid, 0.4 kg/kWh</div>
         </div>
         <div class="ai-energy-card ai-energy-highlight">
-          <div class="ai-energy-val">≈ 4 cups of coffee</div>
+          <div class="ai-energy-val">≈ 72 cups of coffee</div>
           <div class="ai-energy-label">Human-readable equivalent</div>
           <div class="ai-energy-sub">Drip coffee ≈ 0.025 kWh each</div>
         </div>
@@ -6242,21 +6260,21 @@ function renderAbout() {
       <div class="ai-cost-grid">
         <div class="ai-cost-card">
           <div class="ai-cost-type">Solo freelancer</div>
-          <div class="ai-cost-range">$3K – $6K</div>
-          <div class="ai-cost-detail">~3–5 days at $100–150/hr. Full-stack JS, API integration, responsive UI, deployment.</div>
+          <div class="ai-cost-range">$35K – $70K</div>
+          <div class="ai-cost-detail">~350–500 hours at $100–150/hr. Full-stack JS, 9 data integrations, an MCP server, SEO and deployment.</div>
         </div>
         <div class="ai-cost-card">
           <div class="ai-cost-type">Small dev shop</div>
-          <div class="ai-cost-range">$12K – $25K</div>
-          <div class="ai-cost-detail">2–3 week sprint with designer + dev. Scoping, sprints, QA, revisions, PM overhead.</div>
+          <div class="ai-cost-range">$90K – $150K</div>
+          <div class="ai-cost-detail">3–4 months with a designer and developers. Scoping, sprints, QA, revisions, PM overhead.</div>
         </div>
         <div class="ai-cost-card">
           <div class="ai-cost-type">Agency / product team</div>
-          <div class="ai-cost-range">$30K – $60K</div>
-          <div class="ai-cost-detail">Discovery, design system, dev, QA, UAT. Typical rate for a data product MVP.</div>
+          <div class="ai-cost-range">$150K – $250K</div>
+          <div class="ai-cost-detail">Discovery, design system, dev, QA, UAT. Typical for a data product of this scope.</div>
         </div>
       </div>
-      <div class="ai-cost-note">Claude Pro subscription cost for this build: ~$20/mo across 10 sessions &nbsp;·&nbsp; Equivalent agency build cost: $30K–$60K &nbsp;·&nbsp; ROI: priceless</div>
+      <div class="ai-cost-note">Built on a Claude subscription across 13 sessions &nbsp;·&nbsp; Equivalent agency build cost: $150K–$250K &nbsp;·&nbsp; ROI: priceless</div>
 
       <hr class="ai-inner-divider">
 
@@ -6264,7 +6282,7 @@ function renderAbout() {
       <div class="ai-feature-heading" style="margin-bottom:14px;">⚡ Vault MCP — Live Usage</div>
       <p style="font-size:13px;color:var(--muted);margin:0 0 20px;line-height:1.7;">
         Vault MCP (<a href="/mcp" style="color:var(--accent);">vaultbot.ai/mcp</a>) is the first banking intelligence Model Context Protocol server.
-        Any AI agent — Claude Desktop, Claude Code, Claude.ai web, or custom MCP clients — can call its tools to query 4,500+ banks live.
+        Any AI agent — Claude Desktop, Claude Code, Claude.ai web, or custom MCP clients — can call its 18 tools to query every U.S. bank and credit union live.
         These numbers update in real time as bankers, developers, and analysts use it.
       </p>
 
@@ -6273,28 +6291,28 @@ function renderAbout() {
         <div class="mcp-stat" style="background:rgba(77,184,255,0.08);border:1px solid rgba(77,184,255,0.2);border-radius:10px;padding:16px;">
           <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Tool calls</div>
           <div id="mcp-stat-calls" style="font-size:32px;font-weight:700;font-family:var(--serif);color:var(--accent);line-height:1;">—</div>
-          <div style="font-size:10px;color:var(--muted);margin-top:6px;font-family:var(--mono);">since May 11, 2026</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:6px;font-family:var(--mono);">by AI agents since May 11, 2026</div>
         </div>
         <div class="mcp-stat" style="background:rgba(74,222,128,0.08);border:1px solid rgba(74,222,128,0.2);border-radius:10px;padding:16px;">
-          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Unique users</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Active users</div>
           <div id="mcp-stat-users" style="font-size:32px;font-weight:700;font-family:var(--serif);color:#4ade80;line-height:1;">—</div>
-          <div style="font-size:10px;color:var(--muted);margin-top:6px;font-family:var(--mono);">across AI agents worldwide</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:6px;font-family:var(--mono);" id="mcp-stat-returning">ran at least one tool</div>
         </div>
         <div class="mcp-stat" style="background:rgba(176,110,243,0.08);border:1px solid rgba(176,110,243,0.2);border-radius:10px;padding:16px;">
-          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Distinct MCP clients</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">AI apps connected</div>
           <div id="mcp-stat-clients" style="font-size:32px;font-weight:700;font-family:var(--serif);color:#b06ef3;line-height:1;">—</div>
-          <div style="font-size:10px;color:var(--muted);margin-top:6px;font-family:var(--mono);">apps, agents & custom builds</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:6px;font-family:var(--mono);">Claude, OpenAI Codex, n8n and more</div>
         </div>
         <div class="mcp-stat" style="background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);border-radius:10px;padding:16px;">
           <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Uptime</div>
           <div id="mcp-stat-uptime" style="font-size:32px;font-weight:700;font-family:var(--serif);color:#fbbf24;line-height:1;">—</div>
-          <div style="font-size:10px;color:var(--muted);margin-top:6px;font-family:var(--mono);">success rate (all calls)</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:6px;font-family:var(--mono);">requests served successfully</div>
         </div>
       </div>
 
       <!-- Weekly trend chart -->
       <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:14px;">
-        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:14px;">Weekly tool calls since launch (May 11, 2026)</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:14px;">Weekly tool calls, last 30 days</div>
         <div id="mcp-weekly-chart" style="min-height:180px;">
           <div style="color:var(--muted);font-size:12px;">Loading…</div>
         </div>
@@ -6328,8 +6346,8 @@ function renderAbout() {
         <div class="ai-feature-col">
           <div class="ai-feature-heading">// Features shipped</div>
           <div class="ai-feature-list">
-            <div class="ai-feature-item ai-done">FDIC BankFind API (4,500+ banks)</div>
-            <div class="ai-feature-item ai-done">NCUA bulk data integration (4,374 CUs)</div>
+            <div class="ai-feature-item ai-done">FDIC BankFind API (4,212 active banks)</div>
+            <div class="ai-feature-item ai-done">NCUA data integration (4,299 credit unions)</div>
             <div class="ai-feature-item ai-done">Institution detail pages + 10 KPIs</div>
             <div class="ai-feature-item ai-done">iDENTIFY prospect signals panel</div>
             <div class="ai-feature-item ai-done">Financial history chart (Chart.js)</div>
@@ -6365,7 +6383,7 @@ function renderAbout() {
             <div class="ai-feature-item ai-done">Contact form on all pages → Netlify Forms</div>
             <div class="ai-feature-item ai-done">Side-by-side institution comparison</div>
             <div class="ai-feature-item ai-done">SEO-friendly slug URLs (/bank/name-city-state-cert)</div>
-            <div class="ai-feature-item ai-done">⚡ Vault MCP Server — 17 tools, JSON-RPC, live</div>
+            <div class="ai-feature-item ai-done">⚡ Vault MCP Server — 18 tools, JSON-RPC, live</div>
             <div class="ai-feature-item ai-done">Gated MCP install flow with branded welcome email</div>
             <div class="ai-feature-item ai-done">Live MCP usage analytics dashboard</div>
             <div class="ai-feature-item ai-done">MCP: asset quality detail (noncurrent, OREO, reserves, charge-offs)</div>
@@ -6374,6 +6392,19 @@ function renderAbout() {
             <div class="ai-feature-item ai-done">New Charters page (/charters)</div>
             <div class="ai-feature-item ai-done">Problem Banks + NIM + ROA/ROE industry charts</div>
             <div class="ai-feature-item ai-done">Loan type + state + asset size filters</div>
+            <div class="ai-feature-item ai-done">Vault Wrapped — shareable bank performance cards</div>
+            <div class="ai-feature-item ai-done">Financial history back to 1992 (annual or quarterly)</div>
+            <div class="ai-feature-item ai-done">Branch Footprint chart on every bank page (1994–today)</div>
+            <div class="ai-feature-item ai-done">Credit union Financial Health (net worth, ROA, delinquency)</div>
+            <div class="ai-feature-item ai-done">MCP: credit union search + credit union profile</div>
+            <div class="ai-feature-item ai-done">MCP: multi-year branch history + county deposit share</div>
+            <div class="ai-feature-item ai-done">MCP: county demographics (Census) + HMDA mortgage lending</div>
+            <div class="ai-feature-item ai-done">CRE concentration on the examiner basis (tier 1 + allowance)</div>
+            <div class="ai-feature-item ai-done">Search: relevance ranking, city and state words, brand + former names</div>
+            <div class="ai-feature-item ai-done">State and county pages with deposit market share</div>
+            <div class="ai-feature-item ai-done">Server-rendered pages + per-state sitemaps for search engines</div>
+            <div class="ai-feature-item ai-done">Bulk leadership + verified LinkedIn matching</div>
+            <div class="ai-feature-item ai-done">Privacy policy + support pages</div>
           </div>
         </div>
         <div class="ai-feature-col">
@@ -6382,45 +6413,41 @@ function renderAbout() {
             <div class="ai-bar-row">
               <div class="ai-bar-label">FDIC banks</div>
               <div class="ai-bar-track"><div class="ai-bar-fill" style="width:100%;background:#7c6ef5"></div></div>
-              <div class="ai-bar-val">4,500+</div>
+              <div class="ai-bar-val">4,212</div>
             </div>
             <div class="ai-bar-row">
               <div class="ai-bar-label">NCUA credit unions</div>
               <div class="ai-bar-track"><div class="ai-bar-fill" style="width:80%;background:#1d9e75"></div></div>
-              <div class="ai-bar-val">4,374</div>
+              <div class="ai-bar-val">4,299</div>
             </div>
             <div class="ai-bar-row">
-              <div class="ai-bar-label">Total assets tracked</div>
+              <div class="ai-bar-label">Bank assets tracked</div>
               <div class="ai-bar-track"><div class="ai-bar-fill" style="width:85%;background:#ef9f27"></div></div>
-              <div class="ai-bar-val">$24T</div>
+              <div class="ai-bar-val">$26.5T</div>
             </div>
             <div class="ai-bar-row">
-              <div class="ai-bar-label">Quarterly data depth</div>
+              <div class="ai-bar-label">Financial history</div>
               <div class="ai-bar-track"><div class="ai-bar-fill" style="width:80%;background:#378add"></div></div>
-              <div class="ai-bar-val">8 qtrs</div>
+              <div class="ai-bar-val">1992+</div>
             </div>
             <div class="ai-bar-row">
-              <div class="ai-bar-label">Mobile readiness</div>
+              <div class="ai-bar-label">Branch records</div>
               <div class="ai-bar-track"><div class="ai-bar-fill" style="width:90%;background:#d85a30"></div></div>
-              <div class="ai-bar-val">~90%</div>
+              <div class="ai-bar-val">75,859</div>
             </div>
           </div>
 
           <div class="ai-feature-heading" style="margin-top:24px">// Roadmap</div>
           <div class="ai-feature-list">
-            <div class="ai-feature-item ai-soon">⭐ MCP directory submissions — mcp.so, smithery.ai, glama.ai</div>
-            <div class="ai-feature-item ai-soon">⭐ Notion documentation workspace — full project handoff doc (accounts, licenses, domains, ownership, transfer steps)</div>
-            <div class="ai-feature-item ai-soon">⭐ Header redesign — consolidate to 3-5 items + dropdowns + persistent search bar (desktop) / inline page search (mobile)</div>
-            <div class="ai-feature-item ai-soon">⭐ MCP: full derived-metric audit (user-requested) — validate every calculated field against FDIC definitions</div>
-            <div class="ai-feature-item ai-soon">⭐ MCP: brokered deposit detail + branch/SOD data</div>
-            <div class="ai-feature-item ai-soon">⭐ PDF + Excel export for in-tool reports (for non-MCP users)</div>
-            <div class="ai-feature-item ai-soon">ZIP code proximity filter on Find a Lender</div>
+            <div class="ai-feature-item ai-soon">⭐ Microsoft 365 Copilot connector</div>
+            <div class="ai-feature-item ai-soon">⭐ Local bank pages for every city (banks in Tulsa, OKC and more)</div>
+            <div class="ai-feature-item ai-soon">⭐ Email updates + public update archive</div>
+            <div class="ai-feature-item ai-soon">⭐ Consumer product lines + HMDA lender ID in the MCP (examiner requests)</div>
+            <div class="ai-feature-item ai-soon">Credit union branch history chart</div>
+            <div class="ai-feature-item ai-soon">Bank-within-county mortgage lending + applicant-group data</div>
             <div class="ai-feature-item ai-soon">CU M&amp;A data (NCUA merger reports)</div>
             <div class="ai-feature-item ai-soon">CSV export on search results</div>
-            <div class="ai-feature-item ai-soon">NCUA historical charter data</div>
-            <div class="ai-feature-item ai-planned">Live mortgage rate integration (CRS Data / ICE)</div>
-            <div class="ai-feature-item ai-planned">HMDA origination data (data subscription)</div>
-            <div class="ai-feature-item ai-planned">M&amp;A activity tracker</div>
+            <div class="ai-feature-item ai-planned">Live mortgage rate integration</div>
             <div class="ai-feature-item ai-planned">Prospect list export (CSV / Salesforce)</div>
             <div class="ai-feature-item ai-planned">Deposit trend alerts</div>
           </div>
