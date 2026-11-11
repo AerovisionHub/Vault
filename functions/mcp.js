@@ -2,7 +2,7 @@
 // Implements MCP (Model Context Protocol) over HTTP using JSON-RPC 2.0
 // Spec: https://modelcontextprotocol.io/
 
-const VAULT_MCP_VERSION = '1.28.1';
+const VAULT_MCP_VERSION = '1.28.2';
 const FDIC_BASE = 'https://api.fdic.gov/banks';
 // Summary of Deposits — separate FDIC dataset (annual branch-level census, as of each June 30).
 // Same query syntax as FDIC_BASE (filters=field%3Avalue&fields=...&limit=...&sort_by=...&sort_order=...).
@@ -166,7 +166,7 @@ const TOOLS = [
     name: 'get_loan_mix',
     title: 'Loan mix & CRE concentration',
     annotations: { title: 'Loan mix & CRE concentration', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    description: 'Get loan portfolio composition for a specific bank: Real Estate (residential, commercial RE with owner-occupied / non-owner-occupied split, construction, multifamily, farmland), C&I, Agricultural, and Consumer, plus ag_total (ag production + farmland). Returns dollar amounts and % of total loans, and the regulatory CRE concentration test against total risk-based capital (construction >= 100%, total CRE >= 300% with 50% 36-month growth, FDIC FIL-22-2006) — distinct from cre_and_construction_pct_of_loans, which is a share of loans. Pass quarters for the latest N (max 8), or start_year (back to 1992) with frequency:"annual" / "quarterly" to rebuild the mix over many years (period_label per row; latest partial year flagged). Typically responds in 3-6 seconds. Use to understand lending strategy or CRE concentration risk and how it has shifted over time. Call reports are quarterly; no public source has monthly loan data.',
+    description: 'Get loan portfolio composition for a specific bank: Real Estate (residential, commercial RE with owner-occupied / non-owner-occupied split, construction, multifamily, farmland), C&I, Agricultural, and Consumer, plus ag_total (ag production + farmland). Returns dollar amounts and % of total loans, and the regulatory CRE concentration test (construction >= 100%, total CRE >= 300% with 50% 36-month growth, FDIC FIL-22-2006) measured against tier 1 capital + the allowance for credit losses, the basis examiners use since 2020 (FDIC FIL-31-2020) and one that covers community bank leverage ratio banks too; the older total-risk-based-capital view is also returned — distinct from cre_and_construction_pct_of_loans, which is a share of loans. Pass quarters for the latest N (max 8), or start_year (back to 1992) with frequency:"annual" / "quarterly" to rebuild the mix over many years (period_label per row; latest partial year flagged). Typically responds in 3-6 seconds. Use to understand lending strategy or CRE concentration risk and how it has shifted over time. Call reports are quarterly; no public source has monthly loan data.',
     inputSchema: {
       type: 'object',
       properties: {

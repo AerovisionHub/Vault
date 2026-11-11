@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Vault MCP — Banking Intelligence for AI Agents</title>
 <meta name="theme-color" content="#1a1060">
-<meta name="description" content="The first banking intelligence MCP server. Connect any AI agent to live FDIC, SEC, and banking data via Model Context Protocol. Free and open.">
+<meta name="description" content="Free banking intelligence MCP server. Connect any AI agent to live data on every U.S. bank and credit union: FDIC, NCUA, HMDA and Census, with 18 tools.">
 <meta property="og:title" content="Vault MCP — Banking Intelligence for AI Agents">
-<meta property="og:description" content="The first banking intelligence MCP server. Connect Claude, Cline, or any AI agent to live FDIC banking data.">
+<meta property="og:description" content="Connect Claude, Copilot or any AI agent to live data on every U.S. bank and credit union. Free, no API key.">
 <meta property="og:url" content="https://vaultbot.ai/mcp">
 <meta property="og:image" content="https://vaultbot.ai/og-image.png?v=4">
 <link rel="canonical" href="https://vaultbot.ai/mcp">
@@ -51,6 +51,8 @@ pre code { background: transparent; padding: 0; color: inherit; }
 .tool-card .desc { font-size: 13px; color: var(--muted); margin-bottom: 10px; line-height: 1.6; }
 .tool-card .params { font-family: var(--mono); font-size: 11px; color: rgba(255,255,255,0.5); }
 .tool-card .params strong { color: var(--text); }
+.tool-card code { font-family: var(--mono); font-size: 12px; color: var(--text); }
+.tool-group { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 28px 0 10px; }
 .cta { display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, var(--accent), var(--accent2)); color: white; text-decoration: none; border-radius: 10px; font-weight: 600; margin: 8px 8px 0 0; transition: transform 0.15s; }
 .cta:hover { transform: translateY(-2px); }
 .cta-secondary { background: var(--surface); border: 1px solid var(--border); }
@@ -104,8 +106,9 @@ pre code { background: transparent; padding: 0; color: inherit; }
   <h1>Banking intelligence,<br>any AI agent.</h1>
   <p class="lede">
     The first banking intelligence MCP server. Connect Claude Desktop, Claude Code, Perplexity, Cline, Continue, or any
-    Model Context Protocol-compatible agent to live FDIC banking data — search 4,317 banks,
-    pull financials, track M&amp;A, find new charters, all via tool calls.
+    Model Context Protocol-compatible agent to live data on every FDIC-insured bank and NCUA-insured credit union:
+    financials back to 1992, branches back to 1994, county market share, mortgage lending, M&amp;A and new charters,
+    all via tool calls.
   </p>
 
   <div class="endpoint-box" style="background:linear-gradient(135deg,rgba(77,184,255,0.08),rgba(176,110,243,0.08));border:1px solid rgba(77,184,255,0.25);">
@@ -141,9 +144,11 @@ pre code { background: transparent; padding: 0; color: inherit; }
   <h3>What you can ask Claude after setup</h3>
   <ul style="color:var(--muted);font-size:14px;line-height:1.8;">
     <li>"What's the latest financial data for Sutton Bank?"</li>
-    <li>"Find me top-performing community banks in Oklahoma"</li>
+    <li>"How has Navy Federal's net worth ratio and delinquency rate changed?"</li>
+    <li>"Show Legend Bank's deposits and branch count every year since 2015"</li>
+    <li>"Who has the most deposits in Tulsa County, and who's gaining share?"</li>
+    <li>"Is this bank above the CRE concentration thresholds?"</li>
     <li>"Show me bank mergers from 2025"</li>
-    <li>"How is the U.S. banking industry performing in 2024 vs 2025?"</li>
   </ul>
 
   <h2>Client compatibility</h2>
@@ -183,78 +188,115 @@ pre code { background: transparent; padding: 0; color: inherit; }
     </p>
   </div>
 
-  <h2>Available Tools</h2>
+  <h2>Available tools</h2>
+  <p style="color:var(--muted);font-size:14px;line-height:1.7;">18 tools covering every FDIC-insured bank and NCUA-insured credit union. Added Vault before a tool or option was released? Disconnect and reconnect it in your AI assistant’s connector settings to load the latest list.</p>
 
+  <h3 class="tool-group">Find any institution</h3>
   <div class="tool-card">
     <div class="name">search_institutions</div>
-    <div class="desc">Search FDIC-insured banks by name, city, or fuzzy match. Returns up to 50 institutions ranked by relevance and asset size.</div>
-    <div class="params"><strong>query</strong> (required) · <strong>state</strong> (optional 2-letter code) · <strong>limit</strong> (default 20)</div>
+    <div class="desc">Search every FDIC-insured bank and NCUA-insured credit union by name, brand or former name, acronym, city or state. “Bank of Oklahoma” finds BOKF, “MSUFCU” finds Michigan State University FCU, and “American Heritage Oklahoma” narrows to Oklahoma. Results are ranked by match quality, then size, and say whether each is a bank (with its FDIC cert) or a credit union (with its NCUA charter number).</div>
+    <div class="params"><strong>query</strong> (required) · <strong>state</strong> (2-letter code) · <strong>limit</strong> (default 20, max 50)</div>
   </div>
 
+  <h3 class="tool-group">Bank financials and history</h3>
   <div class="tool-card">
     <div class="name">get_bank_profile</div>
-    <div class="desc">Detailed profile for a single bank by FDIC certificate number. Returns institution details + 8 quarters of financial history.</div>
-    <div class="params"><strong>cert</strong> (required) — e.g. "23473"</div>
+    <div class="desc">Profile and financials for one bank: assets, deposits, ROA, ROE, net interest margin and capital. Returns the latest 8 quarters by default, or history back to 1992 with <code>start_year</code>, by year or by quarter.</div>
+    <div class="params"><strong>cert</strong> (required) · <strong>start_year</strong> (1992+) · <strong>frequency</strong> (annual / quarterly)</div>
   </div>
-
-  <div class="tool-card">
-    <div class="name">get_industry_metrics</div>
-    <div class="desc">Aggregate banking industry metrics — total banks, total assets, average ROA/ROE/NIM for any year.</div>
-    <div class="params"><strong>year</strong> (optional)</div>
-  </div>
-
-  <div class="tool-card">
-    <div class="name">get_recent_charters</div>
-    <div class="desc">List newly chartered FDIC-insured banks (de novo banks) since 2023.</div>
-    <div class="params"><strong>year</strong> (optional)</div>
-  </div>
-
-  <div class="tool-card">
-    <div class="name">get_ma_activity</div>
-    <div class="desc">List recent bank mergers, acquisitions, and failures. Returns acquirer, acquired, effective date, transaction type.</div>
-    <div class="params"><strong>year</strong> (optional) · <strong>limit</strong> (default 50, max 200)</div>
-  </div>
-
-  <div class="tool-card">
-    <div class="name">get_lender_rankings</div>
-    <div class="desc">Banks ranked by composite Lending Score (loan concentration + capital + asset quality + ROA). Filter by state, city, or asset tier.</div>
-    <div class="params"><strong>state</strong>, <strong>city</strong>, <strong>loan_type</strong> (residential/commercial/smallbiz/consumer), <strong>asset_size</strong> (community/regional/large)</div>
-  </div>
-
-  <div class="tool-card">
-    <div class="name">get_asset_quality_detail</div>
-    <div class="desc">Credit quality breakdown for a bank: noncurrent loans, foreclosed real estate (OREO), loan loss reserves, net charge-offs, and key ratios. Up to 8 quarters of history.</div>
-    <div class="params"><strong>cert</strong> (required) · <strong>quarters</strong> (default 4, max 8)</div>
-  </div>
-
   <div class="tool-card">
     <div class="name">get_loan_mix</div>
-    <div class="desc">Loan portfolio composition — Real Estate (residential, commercial, construction), C&amp;I, Agricultural, Consumer — as dollar amounts and % of total loans.</div>
-    <div class="params"><strong>cert</strong> (required) · <strong>quarters</strong> (default 1, max 8)</div>
+    <div class="desc">Loan portfolio composition in dollars and percent of loans: residential, commercial real estate (owner- and non-owner-occupied), construction, multifamily, farmland, business (C&amp;I), agricultural and consumer. Includes the regulatory CRE concentration test (100% / 300% thresholds) measured against tier 1 capital plus loan-loss reserves, the basis examiners use since 2020. History back to 1992.</div>
+    <div class="params"><strong>cert</strong> (required) · <strong>quarters</strong> (max 8) · <strong>start_year</strong> · <strong>frequency</strong></div>
   </div>
-
   <div class="tool-card">
-    <div class="name">get_brokered_deposits</div>
-    <div class="desc">Brokered deposit levels and funding-risk detail: dollar amount, % of total deposits, and trend. A key indicator of reliance on less-stable "hot money" funding.</div>
+    <div class="name">get_asset_quality_detail</div>
+    <div class="desc">Credit quality: noncurrent loans, foreclosed real estate, loan-loss reserves, net charge-offs and the key ratios, for up to 8 quarters.</div>
     <div class="params"><strong>cert</strong> (required) · <strong>quarters</strong> (default 4, max 8)</div>
   </div>
-
+  <div class="tool-card">
+    <div class="name">get_brokered_deposits</div>
+    <div class="desc">Brokered deposit levels, share of total deposits and trend, a key signal of reliance on less-stable funding.</div>
+    <div class="params"><strong>cert</strong> (required) · <strong>quarters</strong> (default 4, max 8)</div>
+  </div>
   <div class="tool-card">
     <div class="name">get_branch_data</div>
-    <div class="desc">Branch-level location and deposit data from the FDIC Summary of Deposits — branch count, total branch deposits, and per-branch address/deposits/main-office flag.</div>
-    <div class="params"><strong>cert</strong> (required) · <strong>state</strong> (optional filter) · <strong>limit</strong> (default 50, max 200)</div>
+    <div class="desc">Every branch from the FDIC Summary of Deposits: address, deposits, office type, opening date and main-office flag. Pick one year, or a range back to 1994 to see openings, closures and acquisitions over time.</div>
+    <div class="params"><strong>cert</strong> (required) · <strong>state</strong> · <strong>year</strong> · <strong>start_year</strong> / <strong>end_year</strong> (1994+) · <strong>limit</strong> (default 50, max 200)</div>
   </div>
 
+  <h3 class="tool-group">Credit unions</h3>
+  <div class="tool-card">
+    <div class="name">get_credit_union_profile</div>
+    <div class="desc">Profile and latest-quarter NCUA 5300 financials for one federally insured credit union: assets, loans, shares and deposits, net worth, year-to-date income, delinquent loans, members, employees and trade names, plus net worth ratio and capital category, ROA, loan-to-share and delinquency rate. Find the charter number with <code>search_institutions</code>.</div>
+    <div class="params"><strong>charter_number</strong> (required) — e.g. “5536” for Navy Federal</div>
+  </div>
+
+  <h3 class="tool-group">Markets and geography</h3>
+  <div class="tool-card">
+    <div class="name">get_county_deposit_share</div>
+    <div class="desc">Deposit market share and rank by county. Pass a bank to see every county it operates in, its rank there and its top competitor, or pass a county to get the full ranked list of banks. Add <code>start_year</code> to see share by year.</div>
+    <div class="params"><strong>cert</strong> <em>or</em> <strong>county</strong> + <strong>state</strong> · <strong>limit</strong> · <strong>start_year</strong> / <strong>end_year</strong> (up to 5 years)</div>
+  </div>
+  <div class="tool-card">
+    <div class="name">get_county_demographics</div>
+    <div class="desc">Census data for a county (American Community Survey): population, household and family income, home values, owner vs renter housing, poverty and unemployment. Pass a bank to get every county it serves.</div>
+    <div class="params"><strong>county</strong> + <strong>state</strong> <em>or</em> <strong>county_fips</strong> <em>or</em> <strong>cert</strong></div>
+  </div>
+  <div class="tool-card">
+    <div class="name">get_hmda_lending</div>
+    <div class="desc">Mortgage lending from CFPB HMDA filings: originations, denials, withdrawals, dollar volume and denial rate, for one bank or for a whole county market. No LEI needed; Vault resolves it from the FDIC cert.</div>
+    <div class="params"><strong>cert</strong> <em>or</em> <strong>county</strong> + <strong>state</strong> / <strong>county_fips</strong> · <strong>year</strong></div>
+  </div>
+
+  <h3 class="tool-group">Industry-wide</h3>
+  <div class="tool-card">
+    <div class="name">get_industry_metrics</div>
+    <div class="desc">Industry totals for any year: number of banks, total assets and average ROA, ROE and net interest margin.</div>
+    <div class="params"><strong>year</strong></div>
+  </div>
+  <div class="tool-card">
+    <div class="name">get_lender_rankings</div>
+    <div class="desc">Banks ranked by a composite lending score (loan concentration, capital, asset quality and ROA). Filter by state, city, loan type or size.</div>
+    <div class="params"><strong>state</strong> · <strong>city</strong> · <strong>loan_type</strong> (residential / commercial / smallbiz / consumer) · <strong>asset_size</strong> (community / regional / large) · <strong>limit</strong></div>
+  </div>
+  <div class="tool-card">
+    <div class="name">get_recent_charters</div>
+    <div class="desc">Newly chartered (de novo) banks since 2023.</div>
+    <div class="params"><strong>year</strong></div>
+  </div>
+  <div class="tool-card">
+    <div class="name">get_ma_activity</div>
+    <div class="desc">Bank mergers, acquisitions and failures from FDIC filings: acquirer, acquired bank, effective date and transaction type.</div>
+    <div class="params"><strong>year</strong> · <strong>limit</strong> (default 50, max 200)</div>
+  </div>
+
+  <h3 class="tool-group">Sales prospecting</h3>
   <div class="tool-card">
     <div class="name">get_bank_leadership</div>
-    <div class="desc">Executive leadership (CEO, President, CFO, COO) for a bank — name, title, and source URL, found via web search. Cached 30 days. Useful for prospect research and building sales target lists: search or rank banks first, then pull leadership for each candidate.</div>
+    <div class="desc">A bank's key decision-makers (CEO or president, CIO or CTO, COO) with titles and sources, gathered from public sources such as the bank’s own website, and a verified LinkedIn profile link when one is found. Results are cached for 90 days.</div>
     <div class="params"><strong>cert</strong> (required)</div>
+  </div>
+  <div class="tool-card">
+    <div class="name">get_bank_leadership_bulk</div>
+    <div class="desc">Already-cached leadership for up to 100 banks in one call. Instant, because it only reads the cache. Pair it with <code>search_institutions</code> or <code>get_lender_rankings</code> to build a target list.</div>
+    <div class="params"><strong>certs</strong> (required) (max 100)</div>
+  </div>
+  <div class="tool-card">
+    <div class="name">trigger_linkedin_match</div>
+    <div class="desc">Start a LinkedIn profile match for one named executive. Returns a <code>snapshot_id</code> in a few seconds; matches usually finish in one to two minutes.</div>
+    <div class="params"><strong>company_linkedin_url</strong> (required) · <strong>full_name</strong> (required) · <strong>cert</strong> (recommended: saves the match for everyone)</div>
+  </div>
+  <div class="tool-card">
+    <div class="name">check_linkedin_match</div>
+    <div class="desc">Check a match started with <code>trigger_linkedin_match</code>: running, ready (with the profile link), not found or failed. Matches are only accepted when the profile’s work history names the bank.</div>
+    <div class="params"><strong>snapshot_id</strong> (required)</div>
   </div>
 
   <h2>Why this exists</h2>
   <p>
     Banking data is buried in regulatory filings, paywalled aggregators, and 90s-era websites.
-    Vault MCP exposes the same FDIC public data that powers <a href="https://vaultbot.ai" style="color:var(--accent);">vaultbot.ai</a>
+    Vault MCP exposes the same FDIC, NCUA, CFPB and Census public data that powers <a href="https://vaultbot.ai" style="color:var(--accent);">vaultbot.ai</a>
     to any AI agent — for free, with no API key, and no rate limits beyond what the FDIC enforces upstream.
   </p>
   <p>
