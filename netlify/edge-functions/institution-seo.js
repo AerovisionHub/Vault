@@ -1,3 +1,4 @@
+import { getStore } from '@netlify/blobs';
 // Makes /bank/* and /cu/* pages exist for crawlers that do not run JavaScript.
 //
 // Measured before writing this, against the live site: a bank profile served
@@ -31,6 +32,41 @@ const FDIC_BASE = 'https://api.fdic.gov/banks';
 // with a success status. Now: confirmed-missing → 404 + noindex; upstream
 // failure → 503 + Retry-After (Google retries instead of judging the page).
 const MISSING = Symbol('missing');
+
+// Last-known-good copy (2026-11-12). Search Console: "Server error (5xx)" on
+// sitemap URLs. Cause: when several uncached pages render at once (Googlebot
+// after a deploy flushes the CDN), FDIC throttles the burst and the page falls
+// back to a 503. Reproduced: 6 parallel uncached bank pages -> 52 of 80 got a
+// 503; the same pages fetched one at a time -> 200 in ~0.7s. Every good render
+// now saves its data to Blobs, which survives deploys, so a throttled render
+// serves the filed figures (200, short CDN cache) instead of a 503. A page
+// only 503s if FDIC fails on the very first render it ever gets.
+// Store opened inside try/catch: a Blobs problem must degrade to the old
+// behaviour (503), never take the page down. Edge functions get Blobs
+// context injected; the env-var path is a fallback only.
+const LKG_STORE = 'vault-seo-lkg';
+let lkgStorePromise = null;
+function lkgStore() {
+  if (!lkgStorePromise) {
+    lkgStorePromise = Promise.resolve().then(() => {
+      try { return getStore({ name: LKG_STORE }); } catch {}
+      const env = globalThis.Netlify?.env;
+      const siteID = env?.get('NETLIFY_SITE_ID'), token = env?.get('NETLIFY_BLOBS_TOKEN');
+      return siteID && token ? getStore({ name: LKG_STORE, siteID, token }) : null;
+    }).catch(e => { console.log(`[vault-seo] lkg store unavailable: ${e.message}`); return null; });
+  }
+  return lkgStorePromise;
+}
+async function lkgRead(key) {
+  try { const st = await lkgStore(); return st ? await st.get(key, { type: 'json' }) : null; }
+  catch (e) { console.log(`[vault-seo] lkg read failed ${key}: ${e.message}`); return null; }
+}
+async function lkgWrite(key, value, onlyIfNew) {
+  try {
+    const st = await lkgStore();
+    if (st) await st.setJSON(key, { savedAt: new Date().toISOString(), ...value }, onlyIfNew ? { onlyIfNew: true } : undefined);
+  } catch (e) { console.log(`[vault-seo] lkg write failed ${key}: ${e.message}`); }
+}
 
 // Google flagged these Dataset nodes: missing "description" (critical,
 // suppresses the rich result entirely) and missing "license" (non-critical
@@ -131,7 +167,7 @@ async function getBank(cert) {
   let [inst, fin] = await Promise.all([fetchJSON(instURL), fetchJSON(finURL)]);
   // FDIC throttling is bursty: two short backoffs clear most of it before we
   // fall back to a 503 (2026-11-02; 503s were ~1.5% of crawler traffic).
-  for (const wait of [400, 1200]) {
+  for (const wait of [400 + Math.random() * 400, 1200 + Math.random() * 800]) {
     if (inst && fin) break;
     await new Promise(r => setTimeout(r, wait));
     [inst, fin] = await Promise.all([inst || fetchJSON(instURL), fin || fetchJSON(finURL)]);
@@ -483,19 +519,45 @@ export default async (request, context) => {
 
   let model = null;
   let found = null;
+  const lkgKey = `${kind}-${id}`;
+  let pendingSave = null;
   try {
     found = kind === 'bank' ? await getBank(id) : await getCU(id, url.origin);
     if (found && found !== MISSING) model = kind === 'bank' ? buildBank(found) : buildCU(found);
     if (model && kind === 'bank') {
+      let x = null;
       try {
-        const x = await enrichBank(found);
+        x = await enrichBank(found);
         model.extraHtml = bankExtraHtml(found, x);
         model.enrichComplete = x.complete;
         console.log(`[vault-seo] bank ${id} history=${(found.history || []).length} peers=${x.peers ? x.peers.list.length : 'fail'} counties=${x.footprint ? x.footprint.counties.length : 'fail'} hqShare=${x.hqShare ? x.hqShare.share.toFixed(1) : 'none'} insights=${bankInsights(found, x).length} complete=${x.complete}`);
       } catch { model.enrichComplete = false; }
+      // A complete render replaces the saved copy; a partial one never
+      // overwrites a complete one, it only fills an empty slot.
+      pendingSave = lkgWrite(lkgKey, { found, x: x && x.complete ? x : null }, !(x && x.complete));
+    } else if (model) {
+      pendingSave = lkgWrite(lkgKey, { found }, false);
     }
   } catch {
     model = null;
+  }
+  if (pendingSave) {
+    if (typeof context?.waitUntil === 'function') context.waitUntil(pendingSave); else await pendingSave;
+  }
+
+  // Upstream failed (null, not MISSING): serve the last good render instead
+  // of a 503. MISSING still 404s; a saved copy never resurrects a page the
+  // regulator says is gone.
+  if (!model && found !== MISSING) {
+    const saved = await lkgRead(lkgKey);
+    if (saved?.found) {
+      try {
+        model = kind === 'bank' ? buildBank(saved.found) : buildCU(saved.found);
+        if (kind === 'bank' && saved.x) model.extraHtml = bankExtraHtml(saved.found, saved.x);
+        model.enrichComplete = false; // short CDN cache, so a fresh render replaces it soon
+        console.log(`[vault-seo] lkg-fallback ${lkgKey} savedAt=${saved.savedAt}`);
+      } catch { model = null; }
+    }
   }
 
   if (found === MISSING) {
