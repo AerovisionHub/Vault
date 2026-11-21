@@ -138,3 +138,7 @@
 # min actual execution, no result read from its HTTP response). This is the
 # whole point of its existence: the ~26s ceiling above is a hard platform
 # limit for synchronous functions that no timeout config can raise further.
+
+# Weekly last-known-good backfill for /bank/* prerender fallback (2026-11-21).
+[functions."seo-lkg-schedule"]
+  schedule = "@weekly"

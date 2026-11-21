@@ -61,10 +61,17 @@ async function lkgRead(key) {
   try { const st = await lkgStore(); return st ? await st.get(key, { type: 'json' }) : null; }
   catch (e) { console.log(`[vault-seo] lkg read failed ${key}: ${e.message}`); return null; }
 }
-async function lkgWrite(key, value, onlyIfNew) {
+// complete=false never replaces a complete copy. @netlify/blobs v9 has no
+// onlyIfNew (it is silently ignored), so the guard reads metadata first.
+async function lkgWrite(key, value, complete) {
   try {
     const st = await lkgStore();
-    if (st) await st.setJSON(key, { savedAt: new Date().toISOString(), ...value }, onlyIfNew ? { onlyIfNew: true } : undefined);
+    if (!st) return;
+    if (!complete) {
+      const meta = await st.getMetadata(key).catch(() => null);
+      if (meta?.metadata?.complete) return;
+    }
+    await st.setJSON(key, { savedAt: new Date().toISOString(), ...value }, { metadata: { complete: !!complete } });
   } catch (e) { console.log(`[vault-seo] lkg write failed ${key}: ${e.message}`); }
 }
 
@@ -534,9 +541,9 @@ export default async (request, context) => {
       } catch { model.enrichComplete = false; }
       // A complete render replaces the saved copy; a partial one never
       // overwrites a complete one, it only fills an empty slot.
-      pendingSave = lkgWrite(lkgKey, { found, x: x && x.complete ? x : null }, !(x && x.complete));
+      pendingSave = lkgWrite(lkgKey, { found, x: x && x.complete ? x : null }, !!(x && x.complete));
     } else if (model) {
-      pendingSave = lkgWrite(lkgKey, { found }, false);
+      pendingSave = lkgWrite(lkgKey, { found }, true); // CU pages have no enrichment
     }
   } catch {
     model = null;
