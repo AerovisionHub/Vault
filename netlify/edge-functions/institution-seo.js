@@ -45,27 +45,35 @@ const MISSING = Symbol('missing');
 // behaviour (503), never take the page down. Edge functions get Blobs
 // context injected; the env-var path is a fallback only.
 const LKG_STORE = 'vault-seo-lkg';
-let lkgStorePromise = null;
+// Opened per request, never cached at module level (2026-11-22). Edge isolates
+// stay warm for hours under steady crawl traffic, and getStore() captures the
+// per-request Blobs credential at creation. A cached store kept using a stale
+// credential: 1,701 reads failed (all 503s) between Nov 21 and Nov 22 even
+// though the data was saved. Creating the store is cheap (no network call).
 function lkgStore() {
-  if (!lkgStorePromise) {
-    lkgStorePromise = Promise.resolve().then(() => {
-      try { return getStore({ name: LKG_STORE }); } catch {}
-      const env = globalThis.Netlify?.env;
-      const siteID = env?.get('NETLIFY_SITE_ID'), token = env?.get('NETLIFY_BLOBS_TOKEN');
-      return siteID && token ? getStore({ name: LKG_STORE, siteID, token }) : null;
-    }).catch(e => { console.log(`[vault-seo] lkg store unavailable: ${e.message}`); return null; });
-  }
-  return lkgStorePromise;
+  try { return getStore({ name: LKG_STORE }); } catch {}
+  try {
+    const env = globalThis.Netlify?.env;
+    const siteID = env?.get('NETLIFY_SITE_ID'), token = env?.get('NETLIFY_BLOBS_TOKEN');
+    return siteID && token ? getStore({ name: LKG_STORE, siteID, token }) : null;
+  } catch (e) { console.log(`[vault-seo] lkg store unavailable: ${e.message}`); return null; }
 }
 async function lkgRead(key) {
-  try { const st = await lkgStore(); return st ? await st.get(key, { type: 'json' }) : null; }
-  catch (e) { console.log(`[vault-seo] lkg read failed ${key}: ${e.message}`); return null; }
+  // One retry: a transient Blobs error must not turn a saved page into a 503.
+  for (let i = 0; i < 2; i++) {
+    try { const st = lkgStore(); return st ? await st.get(key, { type: 'json' }) : null; }
+    catch (e) {
+      console.log(`[vault-seo] lkg read failed ${key} try=${i + 1}: ${e.message}`);
+      if (i === 0) await new Promise(r => setTimeout(r, 150));
+    }
+  }
+  return null;
 }
 // complete=false never replaces a complete copy. @netlify/blobs v9 has no
 // onlyIfNew (it is silently ignored), so the guard reads metadata first.
 async function lkgWrite(key, value, complete) {
   try {
-    const st = await lkgStore();
+    const st = lkgStore();
     if (!st) return;
     if (!complete) {
       const meta = await st.getMetadata(key).catch(() => null);
