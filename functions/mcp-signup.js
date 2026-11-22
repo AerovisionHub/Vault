@@ -221,6 +221,44 @@ function sendWelcomeEmail(user) {
   });
 }
 
+// Newsletter auto-sync (2026-11-22): every new MCP signup joins the Resend
+// "Vault Members" audience the newsletter goes to. Best effort, 4s cap, never
+// blocks the signup. Rules: iDENTIFY team addresses stay off the list; a
+// create-only call with no `unsubscribed` field can't re-subscribe anyone who
+// opted out (an existing contact is left untouched).
+const NEWSLETTER_AUDIENCE_ID = process.env.RESEND_AUDIENCE_ID || '2451698a-5fbc-4f93-a666-ac8d253d812b';
+function resendRequest(method, path, apiKey, payload) {
+  return new Promise((resolve) => {
+    const body = payload ? JSON.stringify(payload) : null;
+    const headers = { 'Authorization': `Bearer ${apiKey}` };
+    if (body) { headers['Content-Type'] = 'application/json'; headers['Content-Length'] = Buffer.byteLength(body); }
+    const req = https.request({ hostname: 'api.resend.com', path, method, timeout: 4000, headers }, (res) => {
+      let data = ''; res.on('data', c => data += c);
+      res.on('end', () => resolve({ status: res.statusCode, body: data.slice(0, 300) }));
+    });
+    req.on('timeout', () => { req.destroy(); resolve({ error: 'timeout' }); });
+    req.on('error', (e) => resolve({ error: e.message }));
+    if (body) req.write(body);
+    req.end();
+  });
+}
+// Resend's create-contact call UPSERTS: posting an existing address flips it
+// back to subscribed (verified 2026-11-22). So look the address up first and
+// only create when it's genuinely new; an existing contact, subscribed or
+// not, is never touched.
+async function addToNewsletter(user) {
+  const apiKey = process.env.RESEND_API_KEY;
+  const email = String(user.email || '').trim().toLowerCase();
+  if (!apiKey) return { skipped: true, reason: 'No RESEND_API_KEY' };
+  if (!email || /@goidentify\.com$/.test(email)) return { skipped: true, reason: 'team or empty address' };
+  const base = `/audiences/${NEWSLETTER_AUDIENCE_ID}/contacts`;
+  const found = await resendRequest('GET', `${base}/${encodeURIComponent(email)}`, apiKey);
+  if (found.status === 200) return { skipped: true, reason: 'already on list' };
+  if (found.status !== 404) return { skipped: true, reason: `lookup failed (${found.status || found.error})` };
+  const parts = String(user.name || '').trim().split(/\s+/);
+  return resendRequest('POST', base, apiKey, { email, first_name: parts[0] || '', last_name: parts.slice(1).join(' ') });
+}
+
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -292,10 +330,19 @@ exports.handler = async (event) => {
     emailResult = { error: e.message };
   }
 
+  let listResult = { skipped: true };
+  try {
+    listResult = await addToNewsletter({ name, email });
+    console.log('Newsletter sync:', JSON.stringify(listResult));
+  } catch (e) {
+    listResult = { error: e.message };
+  }
+
   console.log('MCP signup completed:', JSON.stringify({
     email, company,
     formSubmitOk,
     emailStatus: emailResult.status || (emailResult.skipped ? 'skipped' : emailResult.error || 'unknown'),
+    newsletter: listResult.status || (listResult.skipped ? 'skipped' : listResult.error || 'unknown'),
   }));
 
   return {
