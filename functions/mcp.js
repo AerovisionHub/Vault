@@ -2,7 +2,7 @@
 // Implements MCP (Model Context Protocol) over HTTP using JSON-RPC 2.0
 // Spec: https://modelcontextprotocol.io/
 
-const VAULT_MCP_VERSION = '1.29.0';
+const VAULT_MCP_VERSION = '1.29.1';
 const FDIC_BASE = 'https://api.fdic.gov/banks';
 // Summary of Deposits — separate FDIC dataset (annual branch-level census, as of each June 30).
 // Same query syntax as FDIC_BASE (filters=field%3Avalue&fields=...&limit=...&sort_by=...&sort_order=...).
@@ -3219,7 +3219,7 @@ async function getHmdaLending(args) {
   }
 
   if (cert) {
-    const cacheKey = `hmda-cert-${cert}-${explicitYear || 'latest'}`;
+    const cacheKey = `hmda2-cert-${cert}-${explicitYear || 'latest'}`;
     const cached = await cacheGet(cacheKey);
     if (cached) return { ...cached, _cache: { hit: true } };
     const { lei, name } = await certToLEI(cert);
@@ -3260,7 +3260,7 @@ async function getHmdaLending(args) {
     fips = demo.county_fips;
     label = demo.name || `${county}, ${state}`;
   }
-  const cacheKey = `hmda-county-${fips}-${explicitYear || 'latest'}`;
+  const cacheKey = `hmda2-county-${fips}-${explicitYear || 'latest'}`;
   const cached = await cacheGet(cacheKey);
   if (cached) return { ...cached, _cache: { hit: true } };
   const aggs = await fetchWithFallback(`counties=${fips}`);
