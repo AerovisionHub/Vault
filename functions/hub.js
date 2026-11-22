@@ -194,14 +194,14 @@ determining which capital rules apply.</p>
 <p>Ranked by total assets. Branch counts are domestic offices. Click any institution for eight
 quarters of financial history, peer benchmarking against similarly sized banks, deposit market
 share by county, and leadership contacts.</p>
-<table><thead><tr><th>#</th><th>Bank</th><th>City</th><th class="num">Assets</th><th class="num">Deposits</th><th class="num">Branches</th></tr></thead>
-<tbody>${bankRows || '<tr><td colspan="6">No data available.</td></tr>'}</tbody></table>
+<div class="tw"><table><thead><tr><th>#</th><th>Bank</th><th>City</th><th class="num">Assets</th><th class="num">Deposits</th><th class="num">Branches</th></tr></thead>
+<tbody>${bankRows || '<tr><td colspan="6">No data available.</td></tr>'}</tbody></table></div>
 ${total > 100 ? `<p>Showing the 100 largest of ${total} banks. <a href="/">Search Vault</a> for any institution by name.</p>` : ''}
 
 ${cuRows ? `<h2>Credit unions in ${esc(name)}</h2>
 <p>NCUA-insured credit unions headquartered in ${esc(name)}, ranked by total assets, with member counts from 5300 call report filings.</p>
-<table><thead><tr><th>#</th><th>Credit union</th><th>City</th><th class="num">Assets</th><th class="num">Members</th></tr></thead>
-<tbody>${cuRows}</tbody></table>` : ''}
+<div class="tw"><table><thead><tr><th>#</th><th>Credit union</th><th>City</th><th class="num">Assets</th><th class="num">Members</th></tr></thead>
+<tbody>${cuRows}</tbody></table></div>` : ''}
 
 ${countyLinks ? `<h2>Deposit market share by county in ${esc(name)}</h2>
 <p>Deposit market share is measured at the county level from the FDIC Summary of Deposits, an

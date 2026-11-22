@@ -2,7 +2,7 @@
 // Implements MCP (Model Context Protocol) over HTTP using JSON-RPC 2.0
 // Spec: https://modelcontextprotocol.io/
 
-const VAULT_MCP_VERSION = '1.28.2';
+const VAULT_MCP_VERSION = '1.29.0';
 const FDIC_BASE = 'https://api.fdic.gov/banks';
 // Summary of Deposits — separate FDIC dataset (annual branch-level census, as of each June 30).
 // Same query syntax as FDIC_BASE (filters=field%3Avalue&fields=...&limit=...&sort_by=...&sort_order=...).
@@ -3119,7 +3119,10 @@ async function getCountyDemographics(args) {
 // small banks fall under HMDA reporting thresholds and legitimately do not
 // file at all. A bank with no result here is usually not a bug.
 const HMDA_BASE = 'https://ffiec.cfpb.gov/v2/data-browser-api/view/aggregations';
-const HMDA_LATEST_YEAR = 2024;
+// HMDA data for year N is published during year N+1 (2025 was live by Nov 2026).
+// Default to last calendar year; if that year has no data yet, fall back one year.
+// (Was hardcoded to 2024 — bug #31 again: hardcoded years go stale.)
+const HMDA_LATEST_YEAR = new Date().getUTCFullYear() - 1;
 // The API requires at least one filter beyond geography/lender, so actions are
 // always requested explicitly. Codes per the HMDA filing spec.
 const HMDA_ACTIONS = {
@@ -3189,7 +3192,8 @@ async function certToLEI(cert) {
   const row = (r.data || []).map(d => d.data)[0];
   if (!row) throw new Error(`No FDIC institution found for CERT ${cert}. Verify with search_institutions.`);
   const lei = (row.LEI || '').trim();
-  if (!lei) {
+  if (!lei) return { lei: null, name: row.NAME };
+  if (false) {
     throw new Error(`${row.NAME} (CERT ${cert}) has no LEI recorded with the FDIC, so its HMDA filings cannot be matched. About half of active banks have one — coverage is high above $1B in assets and sparse below $100M. Smaller banks may also fall under HMDA reporting thresholds and not file at all.`);
   }
   return { lei, name: row.NAME };
@@ -3197,22 +3201,48 @@ async function certToLEI(cert) {
 
 async function getHmdaLending(args) {
   const { cert, county, state, county_fips, year } = args || {};
-  const yr = Number(year) || HMDA_LATEST_YEAR;
+  const explicitYear = Number(year) || null;
+  let yr = explicitYear || HMDA_LATEST_YEAR;
+  // Fetch aggregations; when the caller didn't pick a year and the default year
+  // isn't published yet, step back one year instead of returning zeros.
+  const fetchWithFallback = async (q) => {
+    let aggs = await hmdaFetch(`years=${yr}&${q}`);
+    if (!explicitYear && (!aggs || !aggs.length)) {
+      const prev = yr - 1;
+      const older = await hmdaFetch(`years=${prev}&${q}`);
+      if (older && older.length) { yr = prev; aggs = older; }
+    }
+    return aggs;
+  };
   if (!cert && !county_fips && !(county && state)) {
     throw new Error('Provide either "cert" (a bank\'s lending record) or "county" plus "state" / "county_fips" (all lending in a market).');
   }
 
   if (cert) {
-    const cacheKey = `hmda-cert-${cert}-${yr}`;
+    const cacheKey = `hmda-cert-${cert}-${explicitYear || 'latest'}`;
     const cached = await cacheGet(cacheKey);
     if (cached) return { ...cached, _cache: { hit: true } };
     const { lei, name } = await certToLEI(cert);
-    const aggs = await hmdaFetch(`years=${yr}&leis=${encodeURIComponent(lei)}`);
+    if (!lei) {
+      // A normal answer, not an error: about half of active banks have no LEI on
+      // file with the FDIC, and agents scanning many banks hit this constantly.
+      // Throwing made the tool look broken (36% "error rate", 2026-11-21).
+      return {
+        mode: 'bank', cert: String(cert), bank_name: name, year: yr,
+        hmda_match: false,
+        reason: `${name} has no LEI recorded with the FDIC, so its HMDA filings can't be matched by certificate number. Coverage is high above $1B in assets and sparse below $100M, and many small banks fall under HMDA reporting thresholds altogether.`,
+        next_steps: 'For the bank\'s local mortgage market, call get_hmda_lending with county + state (or county_fips).',
+        source: 'FDIC institution record (LEI field)',
+      };
+    }
+    const aggs = await fetchWithFallback(`leis=${encodeURIComponent(lei)}`);
     const result = {
       mode: 'bank',
       cert: String(cert),
       bank_name: name,
       year: yr,
+      hmda_match: true,
+      lei,
       ...summarizeHmda(aggs),
       source: 'CFPB HMDA Data Browser, joined via the FDIC-recorded LEI',
       note: 'Mortgage applications only. A bank with no record here may simply fall under HMDA reporting thresholds.',
@@ -3230,10 +3260,10 @@ async function getHmdaLending(args) {
     fips = demo.county_fips;
     label = demo.name || `${county}, ${state}`;
   }
-  const cacheKey = `hmda-county-${fips}-${yr}`;
+  const cacheKey = `hmda-county-${fips}-${explicitYear || 'latest'}`;
   const cached = await cacheGet(cacheKey);
   if (cached) return { ...cached, _cache: { hit: true } };
-  const aggs = await hmdaFetch(`years=${yr}&counties=${fips}`);
+  const aggs = await fetchWithFallback(`counties=${fips}`);
   const result = {
     mode: 'county',
     county_fips: fips,
