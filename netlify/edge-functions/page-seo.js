@@ -44,6 +44,12 @@ const PAGES = {
     h1: 'Compare Banks and Credit Unions',
     intro: 'Compare any combination of US banks and credit unions side by side on the metrics that determine financial condition: total assets, deposits, net loans, return on assets, return on equity, net interest margin and capital ratios. Comparison is most useful against asset-range peers rather than geographic neighbours, because a $400 million bank and a $40 billion bank face different capital rules, cost structures and competitive pressures regardless of whether they operate on the same street. Every figure comes from quarterly regulatory filings and can be exported to CSV or PDF.',
   },
+  '/about': {
+    title: 'About Vault — Free Bank & Credit Union Data, Built with AI by iDENTIFY',
+    desc: 'Vault is a free bank and credit union intelligence tool built with Claude by iDENTIFY in Tulsa. FDIC, NCUA, HMDA and Census data on every U.S. institution. No login, no paywall.',
+    h1: 'About Vault',
+    intro: 'Vault makes public bank and credit union data usable. It turns FDIC, NCUA, CFPB HMDA and U.S. Census filings into searchable profiles, peer comparisons, branch and county market share, and an MCP server for AI assistants. It is free, needs no login, and is built and run by iDENTIFY, a Tulsa data and analytics company that serves community banks and credit unions.',
+  },
   '/mcp': {
     title: 'Vault MCP: Banking Data Server for Claude & AI Agents',
     desc: 'The Vault MCP server connects Claude, Copilot or any MCP client to free FDIC and NCUA bank data. 18 tools: financials, deposit market share, demographics and HMDA lending. No sign-in.',
@@ -105,5 +111,5 @@ export default async (request, context) => {
 };
 
 export const config = {
-  path: ['/industry', '/lenders', '/charters', '/ma', '/compare', '/mcp'],
+  path: ['/industry', '/lenders', '/charters', '/ma', '/compare', '/mcp', '/about'],
 };
