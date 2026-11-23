@@ -45,8 +45,8 @@ const PAGES = {
     intro: 'Compare any combination of US banks and credit unions side by side on the metrics that determine financial condition: total assets, deposits, net loans, return on assets, return on equity, net interest margin and capital ratios. Comparison is most useful against asset-range peers rather than geographic neighbours, because a $400 million bank and a $40 billion bank face different capital rules, cost structures and competitive pressures regardless of whether they operate on the same street. Every figure comes from quarterly regulatory filings and can be exported to CSV or PDF.',
   },
   '/mcp': {
-    title: 'Vault MCP Server — Free Bank Data for AI Agents | Vault',
-    desc: 'Connect Claude, ChatGPT or any MCP client to free FDIC and NCUA bank data. 17 tools covering financials, deposit market share, demographics and HMDA lending. No sign-in.',
+    title: 'Vault MCP: Banking Data Server for Claude & AI Agents',
+    desc: 'The Vault MCP server connects Claude, Copilot or any MCP client to free FDIC and NCUA bank data. 18 tools: financials, deposit market share, demographics and HMDA lending. No sign-in.',
     h1: 'Vault MCP Server',
     intro: 'Vault runs a public Model Context Protocol server that gives AI agents direct access to US bank and credit union data with no authentication. It exposes tools for institution search, bank and credit union profiles, peer and industry metrics, lender rankings, asset quality, loan mix, brokered deposits, branch data, county deposit market share, county demographics from Census ACS, HMDA mortgage lending, leadership lookup, new charters and merger history. Agents get structured JSON with explicit source attribution and stated coverage limits, which is more reliable than scraping rendered pages.',
   },
