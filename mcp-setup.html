@@ -254,11 +254,15 @@ ul.examples { color: var(--muted); font-size: 14px; line-height: 1.9; }
 
     <h2>Available tools</h2>
     <p>
-      Vault MCP exposes 18 tools to your Claude agent, including
-      <code>search_institutions</code>, <code>get_bank_profile</code>, <code>get_industry_metrics</code>,
-      <code>get_recent_charters</code>, <code>get_ma_activity</code>, <code>get_lender_rankings</code>,
-      <code>get_county_deposit_share</code>.
-    </p>
+      Vault MCP exposes 18 tools to your Claude agent:</p>
+    <ul style="margin:8px 0 0 20px;padding:0;line-height:1.9">
+      <li><strong>Find institutions:</strong> <code>search_institutions</code> (banks and credit unions)</li>
+      <li><strong>Bank financials and history:</strong> <code>get_bank_profile</code>, <code>get_asset_quality_detail</code>, <code>get_loan_mix</code>, <code>get_brokered_deposits</code>, <code>get_branch_data</code></li>
+      <li><strong>Credit unions:</strong> <code>get_credit_union_profile</code></li>
+      <li><strong>Markets and geography:</strong> <code>get_county_deposit_share</code>, <code>get_county_demographics</code>, <code>get_hmda_lending</code>, <code>get_lender_rankings</code></li>
+      <li><strong>Industry activity:</strong> <code>get_industry_metrics</code>, <code>get_recent_charters</code>, <code>get_ma_activity</code></li>
+      <li><strong>Who to talk to:</strong> <code>get_bank_leadership</code>, <code>get_bank_leadership_bulk</code>, <code>trigger_linkedin_match</code>, <code>check_linkedin_match</code></li>
+    </ul>
     <p>Full tool documentation at <a href="/mcp" style="color:var(--accent)">vaultbot.ai/mcp</a>.</p>
 
     <h2>Stuck? Or have ideas?</h2>

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Vault MCP: Banking Data Server for Claude &amp; AI Agents</title>
 <meta name="theme-color" content="#1a1060">
-<meta name="description" content="The Vault MCP server gives Claude, Copilot and any AI agent live FDIC, NCUA, HMDA and Census data on every U.S. bank and credit union. 18 tools, free, no API key.">
+<meta name="description" content="The Vault MCP server gives Claude, Perplexity and any AI agent live FDIC, NCUA, HMDA and Census data on every U.S. bank and credit union. 18 tools, free, no API key.">
 <meta property="og:title" content="Vault MCP: Banking Data Server for Claude &amp; AI Agents">
 <meta property="og:description" content="Connect Claude, Copilot or any AI agent to live data on every U.S. bank and credit union. Free, no API key.">
 <meta property="og:url" content="https://vaultbot.ai/mcp">
@@ -231,7 +231,7 @@ pre code { background: transparent; padding: 0; color: inherit; }
   </div>
   <div class="tool-card">
     <div class="name">get_hmda_lending</div>
-    <div class="desc">Mortgage lending from CFPB HMDA filings: originations, denials, withdrawals, dollar volume and denial rate, for one bank or for a whole county market. No LEI needed; Vault resolves it from the FDIC cert.</div>
+    <div class="desc">Mortgage lending from CFPB HMDA filings: originations, denials, withdrawals, dollar volume and denial rate, for one bank or for a whole county market. No LEI needed; Vault resolves it from the FDIC cert and returns it. Defaults to the latest published HMDA year. If a bank has no LEI on file with the FDIC, you get a clear “no match” with the reason, and county mode still works.</div>
     <div class="params"><strong>cert</strong> <em>or</em> <strong>county</strong> + <strong>state</strong> / <strong>county_fips</strong> · <strong>year</strong></div>
   </div>
 

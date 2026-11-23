@@ -52,7 +52,7 @@ const PAGES = {
   },
   '/mcp': {
     title: 'Vault MCP: Banking Data Server for Claude & AI Agents',
-    desc: 'The Vault MCP server connects Claude, Copilot or any MCP client to free FDIC and NCUA bank data. 18 tools: financials, deposit market share, demographics and HMDA lending. No sign-in.',
+    desc: 'The Vault MCP server connects Claude, Perplexity or any MCP client to free FDIC and NCUA bank data. 18 tools: financials, deposit market share, demographics and HMDA lending. No sign-in.',
     h1: 'Vault MCP Server',
     intro: 'Vault runs a public Model Context Protocol server that gives AI agents direct access to US bank and credit union data with no authentication. It exposes tools for institution search, bank and credit union profiles, peer and industry metrics, lender rankings, asset quality, loan mix, brokered deposits, branch data, county deposit market share, county demographics from Census ACS, HMDA mortgage lending, leadership lookup, new charters and merger history. Agents get structured JSON with explicit source attribution and stated coverage limits, which is more reliable than scraping rendered pages.',
   },
