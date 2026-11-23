@@ -3143,6 +3143,40 @@ function renderBankDetail(d) {
       </div>` : ''}
     </div>
 
+    <div class="section-title" style="margin-top:8px;">Operations &amp; Efficiency</div>
+    <div class="kpi-grid" style="margin-bottom:40px;">
+      <div class="kpi-card">
+        <div class="kpi-label">Headcount</div>
+        <div class="kpi-value kpi-neutral">${latest?.NUMEMP ? fmtNum(latest.NUMEMP) : '—'}</div>
+        <div class="kpi-sub">Full-time employees</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Cash & Securities</div>
+        <div class="kpi-value kpi-neutral">${finVal('SC') != null ? fmt$(thousands(finVal('SC'))) : '—'}</div>
+        <div class="kpi-sub">Investment portfolio</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Capital Ratio</div>
+        <div class="kpi-value ${tier1 >= 12 ? 'kpi-positive' : tier1 >= 8 ? 'kpi-neutral' : 'kpi-negative'}">${fmtPct(tier1)}</div>
+        <div class="kpi-sub">${tier1 >= 12 ? 'Well capitalized' : tier1 >= 10 ? 'Adequately capitalized' : 'Monitor closely'}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Non-Interest Income</div>
+        <div class="kpi-value kpi-neutral">${finVal('NONII') != null ? fmt$(thousands(finVal('NONII'))) : '—'}</div>
+        <div class="kpi-sub">Fees and other income, year to date</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Non-Interest Expense</div>
+        <div class="kpi-value kpi-neutral">${finVal('NONIX') != null ? fmt$(thousands(finVal('NONIX'))) : '—'}</div>
+        <div class="kpi-sub">Operating expenses, year to date</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Assets per Employee</div>
+        <div class="kpi-value kpi-neutral">${latest?.NUMEMP && inst.ASSET ? fmt$(thousands(inst.ASSET) / Number(latest.NUMEMP)) : '—'}</div>
+        <div class="kpi-sub">Efficiency indicator</div>
+      </div>
+    </div>
+
     ${renderSeoInsights(inst)}
 
     <div class="section">
@@ -3309,6 +3343,30 @@ function renderCUDetail(d) {
         <div class="kpi-sub">${sub}</div>
       </div>`).join('')}
     </div>` : ''}
+
+    <div class="section-title" style="margin-top:8px;">Charter &amp; Filing</div>
+    <div class="kpi-grid" style="margin-bottom:40px;">
+      <div class="kpi-card">
+        <div class="kpi-label">Charter Type</div>
+        <div class="kpi-value kpi-neutral" style="font-size:14px">${cuType !== '—' ? cuType : '—'}</div>
+        <div class="kpi-sub">${cuType === 'Federal CU' ? 'NCUA regulated' : cuType === 'State CU' ? 'State + NCUA regulated' : 'Regulated entity'}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Location</div>
+        <div class="kpi-value kpi-neutral" style="font-size:14px">${city}, ${state}</div>
+        <div class="kpi-sub">Primary service area</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">NCUA Charter #</div>
+        <div class="kpi-value kpi-neutral" style="font-size:16px">${charter}</div>
+        <div class="kpi-sub"><a href="https://mapping.ncua.gov/ResearchCreditUnion" target="_blank" style="color:var(--accent);text-decoration:none;">View on NCUA ↗</a></div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Data Source</div>
+        <div class="kpi-value kpi-neutral" style="font-size:13px">NCUA 5300</div>
+        <div class="kpi-sub">${cuPeriodLabel(cu)} Call Report</div>
+      </div>
+    </div>
 
     <div class="section">
       <div class="section-title">Member Metrics vs Peer Benchmark</div>
