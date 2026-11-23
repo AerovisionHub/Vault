@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vault Updates — What’s New in Vault</title>
+<meta name="description" content="The archive of Vault newsletters: new bank and credit union data, MCP tools and features, in the order they shipped.">
+<link rel="canonical" href="https://vaultbot.ai/updates">
+<meta property="og:title" content="Vault Updates — What’s New in Vault">
+<meta property="og:description" content="The archive of Vault newsletters: new bank and credit union data, MCP tools and features, in the order they shipped.">
+<meta property="og:url" content="https://vaultbot.ai/updates">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://vaultbot.ai/og-image.png?v=4">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#0f1240">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/vault-ds.css">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "Blog", "name": "Vault updates", "url": "https://vaultbot.ai/updates"}</script>
+</head>
+<body>
+<header class="vds-h"><div class="vds-in"><a class="vds-logo" href="/">Vault<span>.</span></a><nav class="vds-nav" aria-label="Main"><a href="/">Search</a><a href="/industry">Industry</a><a href="/lenders">Lenders</a><a href="/counties">Counties</a><a href="/ma">M&amp;A</a><a href="/charters">New charters</a><a href="/about">About</a></nav><a class="vds-btn vds-btn--p vds-btn--sm" href="/mcp">Connect MCP</a><details class="vds-menu"><summary aria-label="Menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></summary><div><a href="/">Search</a><a href="/industry">Industry</a><a href="/lenders">Lenders</a><a href="/counties">Counties</a><a href="/ma">M&amp;A</a><a href="/charters">New charters</a><a href="/about">About</a><a href="/mcp">Connect MCP</a></div></details></div></header>
+<section class="vds-hero"><div class="vds-wrap vds-narrow">
+<nav class="vds-crumbs" aria-label="Breadcrumb"><a href="/">Vault</a><span aria-hidden="true">/</span><span>Updates</span></nav>
+<h1>Vault updates</h1>
+<p>What shipped, in the order it shipped. One short email when something new lands.</p>
+<form id="nf" style="margin-top:24px;display:flex;gap:8px;flex-wrap:wrap;max-width:560px" novalidate>
+<label for="ne" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Email</label>
+<input id="ne" class="vds-filter" style="flex:1;min-width:220px;height:48px" type="email" placeholder="you@bank.com" autocomplete="email">
+<input type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px">
+<button class="vds-btn vds-btn--p vds-btn--lg" type="submit">Subscribe</button>
+<span id="nm" role="status" style="flex-basis:100%;font-size:14px;color:#a3a8d4">We’ll send a confirmation link first. Unsubscribe anytime.</span>
+</form>
+</div></section>
+<section class="vds-section vds-paper"><div class="vds-wrap vds-narrow"><article class="vds-post" id="2026-11-11"><time datetime="2026-11-11">November 11, 2026</time><h2>You’re one of Vault’s first 50</h2><p>The first Vault newsletter went to the first 50 people who signed up for the Vault MCP. Lee recorded a <a href="https://www.loom.com/share/110ab19b41ac46f69c2caf90cb5d31c2" target="_blank" rel="noopener">1:44 video hello</a> on why Vault exists: free bank and credit union data, from public filings, shaped by the people who use it.</p>
+<p>What was new:</p>
+<ul>
+<li><strong>Branch-level activity.</strong> Every branch and its deposits, with county market share.</li>
+<li><strong>History that goes back decades, not two years.</strong> Call-report financials to 1992 and branch history to 1994.</li>
+<li><strong>Credit unions in the MCP.</strong> Search now covers banks and credit unions, with a new credit union profile tool. 18 tools in total.</li>
+</ul>
+<p>The ask was simple: reply with the one thing you wish Vault did. Those replies are shaping what ships next, including a Microsoft Copilot listing that’s in progress.</p></article></div></section>
+<script>
+document.getElementById('nf').addEventListener('submit',async function(e){
+  e.preventDefault();var f=e.target,m=document.getElementById('nm'),em=document.getElementById('ne').value.trim(),b=f.querySelector('button');
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)){m.style.color='#ff8a80';m.textContent='Enter a full email address.';return;}
+  b.disabled=true;m.style.color='#a3a8d4';m.textContent='Sending…';
+  try{var r=await fetch('/.netlify/functions/newsletter-signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:em,website:f.website.value,source:'updates'})});var d=await r.json().catch(function(){return {}});
+    if(r.ok&&d.ok){m.style.color='#5ee0a0';m.textContent='Check your inbox for a confirmation link.';f.reset();}else{m.style.color='#ff8a80';m.textContent=d.error||'That didn’t go through. Please try again.';}
+  }catch(x){m.style.color='#ff8a80';m.textContent='That didn’t go through. Please try again.';}
+  b.disabled=false;
+});
+</script>
+<footer class="v-footer-wrap"><div class="v-foot"><div class="v-foot-top"><div class="v-foot-brand"><a href="/" class="vds-logo">Vault<span>.</span></a><span>Free bank and credit union intelligence from public FDIC, NCUA, HMDA and Census data.</span></div><nav class="v-foot-cols" aria-label="Footer"><div><b>Explore</b><a href="/">Search</a><a href="/industry">Industry</a><a href="/lenders">Find a lender</a><a href="/counties">County markets</a><a href="/ma">M&amp;A</a><a href="/charters">New charters</a></div><div><b>MCP</b><a href="/mcp/setup">Connect</a><a href="/mcp">All 18 tools</a><a href="/mcp/stats">Usage stats</a></div><div><b>Vault</b><a href="/about">About</a><a href="/updates">Updates</a><a href="/support">Support</a><a href="/privacy">Privacy</a></div></nav></div><div class="v-foot-legal"><span>Data: FDIC BankFind, FDIC Summary of Deposits, NCUA 5300, CFPB HMDA, U.S. Census.</span><span>© 2026 Built by <a href="https://goidentify.com" target="_blank" rel="noopener">iDENTIFY</a> in Tulsa, OK.</span></div></div></footer>
+</body>
+</html>

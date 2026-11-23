@@ -81,6 +81,20 @@ async function getStore() {
   } catch { return null; }
 }
 
+// Design System v1 chrome (2026-11-23). HEADER/FOOTER must stay byte-identical
+// to scripts/site_chrome.py; scripts/check_chrome.py enforces it.
+const HEADER = '<header class="vds-h"><div class="vds-in"><a class="vds-logo" href="/">Vault<span>.</span></a><nav class="vds-nav" aria-label="Main"><a href="/">Search</a><a href="/industry">Industry</a><a href="/lenders">Lenders</a><a href="/counties">Counties</a><a href="/ma">M&amp;A</a><a href="/charters">New charters</a><a href="/about">About</a></nav><a class="vds-btn vds-btn--p vds-btn--sm" href="/mcp">Connect MCP</a><details class="vds-menu"><summary aria-label="Menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></summary><div><a href="/">Search</a><a href="/industry">Industry</a><a href="/lenders">Lenders</a><a href="/counties">Counties</a><a href="/ma">M&amp;A</a><a href="/charters">New charters</a><a href="/about">About</a><a href="/mcp">Connect MCP</a></div></details></div></header>';
+const FOOTER = '<footer class="v-footer-wrap"><div class="v-foot"><div class="v-foot-top"><div class="v-foot-brand"><a href="/" class="vds-logo">Vault<span>.</span></a><span>Free bank and credit union intelligence from public FDIC, NCUA, HMDA and Census data.</span></div><nav class="v-foot-cols" aria-label="Footer"><div><b>Explore</b><a href="/">Search</a><a href="/industry">Industry</a><a href="/lenders">Find a lender</a><a href="/counties">County markets</a><a href="/ma">M&amp;A</a><a href="/charters">New charters</a></div><div><b>MCP</b><a href="/mcp/setup">Connect</a><a href="/mcp">All 18 tools</a><a href="/mcp/stats">Usage stats</a></div><div><b>Vault</b><a href="/about">About</a><a href="/updates">Updates</a><a href="/support">Support</a><a href="/privacy">Privacy</a></div></nav></div><div class="v-foot-legal"><span>Data: FDIC BankFind, FDIC Summary of Deposits, NCUA 5300, CFPB HMDA, U.S. Census.</span><span>© 2026 Built by <a href="https://goidentify.com" target="_blank" rel="noopener">iDENTIFY</a> in Tulsa, OK.</span></div></div></footer>';
+
+// The title block (crumbs, h1, intro paragraph: everything before the first
+// <h2>) goes in the royal-navy hero band; the data goes on a white section.
+function heroize(body) {
+  const i = body.indexOf('<h2');
+  const top = (i < 0 ? body : body.slice(0, i)).replace(/ → /g, '<span aria-hidden="true">/</span>');
+  const rest = i < 0 ? '' : body.slice(i);
+  return `<section class="vds-hero"><div class="vds-wrap">${top}</div></section>\n<section class="vds-section vds-paper"><div class="vds-wrap">${rest}</div></section>`;
+}
+
 function shell({ title, desc, canonical, body, jsonld }) {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -95,47 +109,36 @@ function shell({ title, desc, canonical, body, jsonld }) {
 <meta property="og:url" content="${esc(canonical)}">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="theme-color" content="#1a0a5e">
-<style>
-html{background:#1a0a5e;}
-html,body{overscroll-behavior-y:none;}
-*{box-sizing:border-box;margin:0;padding:0;}
-body{background:linear-gradient(135deg,#0f1240 0%,#1a1060 30%,#2d1080 60%,#1a0a5e 100%);
-background-attachment:fixed;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
-font-size:15px;line-height:1.6;min-height:100vh;padding:0 0 72px;}
-.wrap{max-width:1000px;margin:0 auto;padding:24px 20px 60px;}
-header{padding:18px 20px;border-bottom:1px solid rgba(255,255,255,0.1);}
-.logo{font-family:Georgia,serif;font-size:22px;color:#fff;text-decoration:none;}
-.logo span{color:#4db8ff;}
-.tag{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;letter-spacing:1px;color:rgba(255,255,255,0.65);}
-h1{font-size:30px;line-height:1.25;margin:18px 0 10px;}
-h2{font-size:19px;margin:30px 0 10px;}
-p{margin:10px 0;color:rgba(255,255,255,0.85);}
-nav.crumbs{font-family:ui-monospace,monospace;font-size:11px;color:rgba(255,255,255,0.6);margin-top:14px;}
-nav.crumbs a{color:#4db8ff;}
-table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px;}
-th,td{text-align:left;padding:9px 10px;border-bottom:1px solid rgba(255,255,255,0.1);}
-th{font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.5px;color:rgba(255,255,255,0.65);text-transform:uppercase;}
-td a{color:#4db8ff;text-decoration:none;}
-td a:hover{text-decoration:underline;}
-.num{text-align:right;font-variant-numeric:tabular-nums;}
-.links{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;}
-.links a{background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:7px;
-padding:6px 11px;color:#4db8ff;text-decoration:none;font-size:13px;}
-footer{border-top:1px solid rgba(255,255,255,0.1);padding:18px 20px;font-size:12px;color:rgba(255,255,255,0.6);}
-ul.ins{margin:10px 0 10px 20px;color:rgba(255,255,255,0.85);}ul.ins li{margin:6px 0;}
-.tw{overflow-x:auto;-webkit-overflow-scrolling:touch;}
-footer a{color:#4db8ff;}
-@media(max-width:600px){h1{font-size:24px;}table{font-size:13px;}th,td{padding:7px 6px;}}
-</style>
+<meta name="theme-color" content="#0f1240">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/vault-ds.css">
 <script type="application/ld+json">${JSON.stringify(jsonld)}</script>
 </head>
 <body>
-<header><a class="logo" href="/">Vault<span>.</span></a><div class="tag">BANK &amp; CREDIT UNION INTELLIGENCE</div></header>
-<div class="wrap">${body}</div>
-<footer>© 2026 iDENTIFY · Data sourced from <a href="https://www.fdic.gov/">FDIC</a> and <a href="https://www.ncua.gov/">NCUA</a> public filings · <a href="/">Search all institutions</a> · <a href="/mcp">MCP for AI agents</a></footer>
+${HEADER}
+<main>${heroize(body)}</main>
+${FOOTER}
 </body>
 </html>`;
+}
+
+// Hub HTML is cached whole for 12h. Flushing every hub at once after a design
+// change would make crawlers rebuild ~3,000 pages in a burst and FDIC would
+// throttle it (bug #44), so a page cached before the redesign is re-wrapped
+// in the current shell on the way out instead. Its data is untouched.
+function reskin(html) {
+  if (!html || html.includes('/vault-ds.css')) return html;
+  try {
+    const pick = (re) => { const m = html.match(re); return m ? m[1] : null; };
+    const unesc = (t) => t.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+    const title = pick(/<title>([^<]*)<\/title>/);
+    const desc = pick(/<meta name="description" content="([^"]*)">/);
+    const canonical = pick(/<link rel="canonical" href="([^"]*)">/);
+    const ld = pick(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
+    const body = pick(/<div class="wrap">([\s\S]*)<\/div>\s*<footer>/);
+    if (!title || !canonical || !body) return html;
+    return shell({ title: unesc(title), desc: unesc(desc || ''), canonical: unesc(canonical), body, jsonld: ld ? JSON.parse(ld) : {} });
+  } catch { return html; }
 }
 
 async function buildState(abbr, origin) {
@@ -558,7 +561,7 @@ exports.handler = async (event) => {
       const c = await store.get(cacheKey, { type: 'json' });
       // 12h: call report data moves quarterly, SOD annually.
       if (c && c._at && Date.now() - c._at < 12 * 3600 * 1000) {
-        return { statusCode: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' }, body: c.html };
+        return { statusCode: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' }, body: reskin(c.html) };
       }
     } catch { /* fall through to live build */ }
   }

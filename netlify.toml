@@ -97,6 +97,16 @@
   status = 200
 
 [[redirects]]
+  from = "/counties"
+  to = "/counties.html"
+  status = 200
+
+[[redirects]]
+  from = "/updates"
+  to = "/updates.html"
+  status = 200
+
+[[redirects]]
   from = "/support"
   to = "/support.html"
   status = 200

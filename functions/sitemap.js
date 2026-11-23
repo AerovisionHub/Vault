@@ -18,7 +18,7 @@ const SITE = 'https://vaultbot.ai';
 // rather than producing a silently truncated sitemap.
 const SITEMAP_URL_CAP = 45000;
 
-const STATIC_PATHS = ['/', '/mcp', '/mcp/setup', '/industry', '/lenders', '/compare', '/ma', '/charters', '/about'];
+const STATIC_PATHS = ['/', '/mcp', '/mcp/setup', '/industry', '/lenders', '/compare', '/ma', '/charters', '/about', '/counties', '/updates'];
 
 // State hubs are listed explicitly. County hubs are not: there are ~3,100 of
 // them, they are linked from their state hub, and letting crawlers discover

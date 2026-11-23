@@ -61,25 +61,11 @@ pre code { background: transparent; padding: 0; color: inherit; }
 .section-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
 @media (max-width: 600px) { .section-grid { grid-template-columns: 1fr; } }
 </style>
+<link rel="stylesheet" href="/vault-ds.css">
 </head>
 <body>
-<header style="display:flex;justify-content:space-between;align-items:flex-start;padding:24px 32px;flex-wrap:wrap;gap:14px;border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(15,18,64,0.4);">
-  <div>
-    <a href="/" style="cursor:pointer;text-decoration:none;display:block;color:#fff;">
-      <div style="font-family:'Cormorant Garamond',Georgia,serif;font-size:32px;font-weight:600;letter-spacing:-1px;line-height:1;">Vault<span style="color:#4db8ff">.</span></div>
-      <div style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:9px;color:#8b95b3;letter-spacing:0.15em;text-transform:uppercase;margin-top:4px;">Bank &amp; Credit Union Intelligence</div>
-    </a>
-  </div>
-  <nav class="vault-nav-desktop" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-    <a href="/industry" style="text-decoration:none;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;padding:5px 11px;border-radius:6px;background:rgba(77,184,255,0.12);color:#4db8ff;border:1px solid rgba(77,184,255,0.25);">Industry</a>
-    <a href="/lenders" style="text-decoration:none;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;padding:5px 11px;border-radius:6px;background:rgba(74,222,128,0.12);color:#4ade80;border:1px solid rgba(74,222,128,0.25);">Find a Lender</a>
-    <a href="/charters" style="text-decoration:none;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;padding:5px 11px;border-radius:6px;background:rgba(251,191,36,0.12);color:#fbbf24;border:1px solid rgba(251,191,36,0.25);">New Charters</a>
-    <a href="/compare" style="text-decoration:none;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;padding:5px 11px;border-radius:6px;background:rgba(176,110,243,0.12);color:#b06ef3;border:1px solid rgba(176,110,243,0.25);">Compare</a>
-    <a href="/mcp" style="text-decoration:none;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;padding:5px 11px;border-radius:6px;background:linear-gradient(135deg,rgba(74,222,128,0.15),rgba(77,184,255,0.15));color:#4ade80;border:1px solid rgba(74,222,128,0.35);">MCP <span style="font-size:8px;background:#4ade80;color:#0f1240;padding:1px 4px;border-radius:3px;margin-left:3px;font-weight:700;">NEW</span></a>
-    <a href="/ma" style="text-decoration:none;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;padding:5px 11px;border-radius:6px;background:rgba(248,113,113,0.12);color:#f87171;border:1px solid rgba(248,113,113,0.25);">M&amp;A</a>
-    <a href="/about" style="text-decoration:none;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;padding:5px 11px;border-radius:6px;background:rgba(139,92,246,0.12);color:#c4b5fd;border:1px solid rgba(139,92,246,0.25);">About</a>
-  </nav>
-</header>
+<header class="vds-h"><div class="vds-in"><a class="vds-logo" href="/">Vault<span>.</span></a><nav class="vds-nav" aria-label="Main"><a href="/">Search</a><a href="/industry">Industry</a><a href="/lenders">Lenders</a><a href="/counties">Counties</a><a href="/ma">M&amp;A</a><a href="/charters">New charters</a><a href="/about">About</a></nav><a class="vds-btn vds-btn--p vds-btn--sm" href="/mcp">Connect MCP</a><details class="vds-menu"><summary aria-label="Menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></summary><div><a href="/">Search</a><a href="/industry">Industry</a><a href="/lenders">Lenders</a><a href="/counties">Counties</a><a href="/ma">M&amp;A</a><a href="/charters">New charters</a><a href="/about">About</a><a href="/mcp">Connect MCP</a></div></details></div></header>
+
 <style>
   @media (max-width: 720px) {
     .vault-nav-desktop { width: 100%; justify-content: flex-start; }
@@ -102,7 +88,7 @@ pre code { background: transparent; padding: 0; color: inherit; }
 <div class="container">
   <a href="/" class="back">← Vault home</a>
 
-  <div class="eyebrow">// Vault MCP Server</div>
+  <div class="eyebrow">Vault MCP Server</div>
   <h1>Banking intelligence,<br>any AI agent.</h1>
   <p class="lede">
     The first banking intelligence MCP server. Connect Claude Desktop, Claude Code, Perplexity, Cline, Continue, or any
@@ -313,16 +299,7 @@ pre code { background: transparent; padding: 0; color: inherit; }
     Vault MCP v1.0 · Powered by FDIC public data · Built by <a href="https://goidentify.com">iDENTIFY</a> · Open and free forever.
   </div>
 </div>
-<footer style="margin-top:60px;padding:32px;border-top:1px solid rgba(255,255,255,0.08);background:rgba(0,0,0,0.2);text-align:center;">
-  <div style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:#8b95b3;line-height:1.8;max-width:720px;margin:0 auto;">
-    Built by <a href="https://goidentify.com" target="_blank" style="color:#4db8ff;text-decoration:none;">iDENTIFY</a>
-    &nbsp;·&nbsp;
-    Data from <a href="https://api.fdic.gov/banks/docs/" target="_blank" style="color:#8b95b3;text-decoration:underline;">FDIC</a> &amp; <a href="https://www.ncua.gov/" target="_blank" style="color:#8b95b3;text-decoration:underline;">NCUA</a> &middot; <a href="/privacy" style="color:#8b95b3;text-decoration:underline;">Privacy</a> &middot; <a href="/support" style="color:#8b95b3;text-decoration:underline;">Support</a>
-    &nbsp;·&nbsp;
-    <a href="/mcp" style="color:#8b95b3;text-decoration:underline;">MCP</a> &nbsp;·&nbsp; <a href="/about" style="color:#8b95b3;text-decoration:underline;">About</a>
-    <br>
-    <span style="font-size:10px;opacity:0.6;">Free banking intelligence. Open and free forever.</span>
-  </div>
-</footer>
+
+<footer class="v-footer-wrap"><div class="v-foot"><div class="v-foot-top"><div class="v-foot-brand"><a href="/" class="vds-logo">Vault<span>.</span></a><span>Free bank and credit union intelligence from public FDIC, NCUA, HMDA and Census data.</span></div><nav class="v-foot-cols" aria-label="Footer"><div><b>Explore</b><a href="/">Search</a><a href="/industry">Industry</a><a href="/lenders">Find a lender</a><a href="/counties">County markets</a><a href="/ma">M&amp;A</a><a href="/charters">New charters</a></div><div><b>MCP</b><a href="/mcp/setup">Connect</a><a href="/mcp">All 18 tools</a><a href="/mcp/stats">Usage stats</a></div><div><b>Vault</b><a href="/about">About</a><a href="/updates">Updates</a><a href="/support">Support</a><a href="/privacy">Privacy</a></div></nav></div><div class="v-foot-legal"><span>Data: FDIC BankFind, FDIC Summary of Deposits, NCUA 5300, CFPB HMDA, U.S. Census.</span><span>© 2026 Built by <a href="https://goidentify.com" target="_blank" rel="noopener">iDENTIFY</a> in Tulsa, OK.</span></div></div></footer>
 </body>
 </html>

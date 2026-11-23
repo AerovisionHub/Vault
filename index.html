@@ -865,6 +865,8 @@
   .v-split { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); gap: 40px; align-items: start; }
   .v-split2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 56px; align-items: center; }
   .v-rot { color: var(--link); }
+  .v-h2-2l { min-height: 84px; }
+  @media (max-width: 640px) { .v-h2-2l { min-height: 64px; } }
   .v-table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-card); overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .v-table { width: 100%; border-collapse: collapse; font: 400 14px/22px var(--sans); color: var(--text); }
   .v-table th { text-align: left; font: 600 12px/16px var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--subtle); background: var(--bg-subtle); padding: 12px 16px; white-space: nowrap; border-bottom: 1px solid var(--border); }
@@ -903,6 +905,21 @@
   .v-foot-legal { border-top: 1px solid #262c6c; padding-top: 20px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 12px; line-height: 18px; color: var(--subtle); }
   .v-foot-legal a { color: var(--muted); }
 
+
+  .industry-kpi { background: var(--surface); border-color: var(--border); }
+  .industry-kpi::before { display: none !important; }
+  #app h1, #app h2, #app h3, .ai-report-title { font-family: var(--sans) !important; }
+  .lead-submit { background: var(--action) !important; color: var(--on-action) !important; border-radius: 8px !important; font-family: var(--sans) !important; font-weight: 600 !important; letter-spacing: 0 !important; text-transform: none !important; }
+  /* Section-page hero (vPageHero) */
+  .v-page-hero { margin: -48px 0 8px; padding: 56px 0 40px; border-bottom: 1px solid #34409a; }
+  .v-page-hero > * { max-width: var(--hw, 1200px); margin-left: auto !important; margin-right: auto !important; padding: 0 !important; background: none !important; border: 0 !important; text-align: left !important; }
+  .v-page-hero h1 { font: 650 40px/46px var(--sans) !important; letter-spacing: -0.025em !important; margin: 0 0 12px !important; color: #fff !important; }
+  .v-page-hero h1 em { font-style: normal; background: none !important; -webkit-text-fill-color: currentColor !important; color: #7cccff; }
+  .v-page-hero p { font-size: 18px !important; line-height: 28px !important; color: #b9bddb !important; max-width: 720px; margin: 0 !important; }
+  .v-page-hero p strong { color: #fff !important; }
+  .v-page-hero p span[style*="#fbbf24"] { color: #fbbf24 !important; }
+  .about-back, .back-btn[onclick="showHome()"] { display: none !important; }
+  @media print { .v-page-hero { display: none !important; } }
   @media (max-width: 1024px) {
     .v-cov { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .v-feat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -928,6 +945,10 @@
     .v-inline .v-btn, .v-picker .v-btn, .v-picker .v-select { width: 100%; }
     .search-row .search-btn { width: 100%; }
     .inst-header { margin-top: -24px; padding: 24px 0; }
+    .v-page-hero { margin-top: -24px; padding: 32px 0 24px; }
+    .v-page-hero > * { padding: 0 !important; }
+    .v-page-hero h1 { font-size: 30px !important; line-height: 36px !important; }
+    .v-page-hero p { font-size: 16px !important; line-height: 25px !important; }
     .inst-header .inst-meta-row { flex-direction: row !important; flex-wrap: wrap !important; gap: 6px 14px !important; align-items: center !important; }
     .v-btn { min-height: 44px; }
     .inst-name { font-size: 30px !important; line-height: 36px !important; }
@@ -967,6 +988,7 @@
         <a onclick="showIndustry();closeAllNavDropdowns()">Industry analytics</a>
         <a onclick="showLenders();closeAllNavDropdowns()">Find a lender</a>
         <a onclick="showCompare();closeAllNavDropdowns()">Compare banks</a>
+        <a href="/counties">County markets</a>
         <div class="nav-dropdown-divider"></div>
         <a href="https://api.fdic.gov/banks/docs/" target="_blank" class="nav-dropdown-external">FDIC Data ↗</a>
         <a href="https://mapping.ncua.gov/ResearchCreditUnion" target="_blank" class="nav-dropdown-external">NCUA Data ↗</a>
@@ -1005,6 +1027,7 @@
   <a onclick="showLenders();closeMobileNav()">Find a lender</a>
   <a onclick="showCharters();closeMobileNav()">New charters</a>
   <a onclick="showCompare();closeMobileNav()">Compare</a>
+  <a href="/counties">County markets</a>
   <a href="/mcp">Vault MCP</a>
   <a onclick="showMA();closeMobileNav()">M&amp;A activity</a>
   <a onclick="showAbout();closeMobileNav()">About Vault</a>
@@ -1059,9 +1082,9 @@
     <div class="v-foot-top">
       <div class="v-foot-brand"><a href="/" class="logo" style="text-decoration:none">Vault<span>.</span></a><span>Free bank and credit union intelligence from public FDIC, NCUA, HMDA and Census data.</span></div>
       <nav class="v-foot-cols" aria-label="Footer">
-        <div><b>Explore</b><a href="/">Search</a><a href="/industry">Industry</a><a href="/lenders">Find a lender</a><a href="/ma">M&amp;A</a><a href="/charters">New charters</a></div>
+        <div><b>Explore</b><a href="/">Search</a><a href="/industry">Industry</a><a href="/lenders">Find a lender</a><a href="/counties">County markets</a><a href="/ma">M&amp;A</a><a href="/charters">New charters</a></div>
         <div><b>MCP</b><a href="/mcp/setup">Connect</a><a href="/mcp">All 18 tools</a><a href="/mcp/stats">Usage stats</a></div>
-        <div><b>Vault</b><a href="/about">About</a><a href="/support">Support</a><a href="/privacy">Privacy</a></div>
+        <div><b>Vault</b><a href="/about">About</a><a href="/updates">Updates</a><a href="/support">Support</a><a href="/privacy">Privacy</a></div>
       </nav>
     </div>
     <div class="v-foot-legal"><span>Data: FDIC BankFind, FDIC Summary of Deposits, NCUA 5300, CFPB HMDA, U.S. Census.</span><span>© 2026 Built by <a href="https://goidentify.com" target="_blank" rel="noopener">iDENTIFY</a> in Tulsa, OK.</span></div>
@@ -2573,6 +2596,7 @@ function render() {
   else if (state.view === 'compare') { app.innerHTML = renderCompare(); setTimeout(initCompare, 50); }
   else if (state.view === 'industry') { app.innerHTML = renderIndustry(); setTimeout(drawIndustryCharts, 50); }
   else if (state.view === 'wrapped') { app.innerHTML = renderWrapped(); }
+  if (['industry','lenders','charters','ma','compare','about'].includes(state.view)) vPageHero(app);
   bindEvents();
   // Keep the persistent header search (and mobile overlay) in sync with the active
   // query, but never overwrite what the user is actively typing into them.
@@ -2653,13 +2677,14 @@ const V_TULSA = [
   ['4', 'JPMorgan Chase', 3.8, '-0.1 pts', '', 11, '$120M'],
   ['5', 'Regent Bank', 3.8, 'New to top 12', 'purple', 2, '$659M']
 ];
-const V_PLACES = ['Tulsa', 'Nashville', 'Dallas', 'Springfield', 'Phoenix', 'Charlotte'];
+// Only names short enough to keep the heading at two lines at every width
+// (375-1440), measured with Playwright using a wider fallback font than Inter.
+// Longer names (Nashville, Springfield, Charlotte) pushed it to three lines.
+const V_PLACES = ['Tulsa', 'Dallas', 'Denver', 'Atlanta', 'Austin', 'Boston', 'Seattle', 'Omaha'];
 
 function renderSearch() {
   setTimeout(vStartPlaceRotation, 0);
   const tulsaRows = V_TULSA.map(r => `<tr${r[1] === 'Regent Bank' ? ' class="hl"' : ''}><td class="rk">${r[0]}</td><td class="nm">${r[1]}</td><td><span class="v-bar"><i style="width:${Math.max(4, Math.round(r[2] / 35.3 * 100))}%"></i></span>${r[2]}%</td><td><span class="v-chip${r[4] ? ' v-chip--' + r[4] : ''}">${r[3]}</span></td><td class="r v-hide-m">${r[5]}</td><td class="r v-hide-m">${r[6]}</td></tr>`).join('');
-  const states = Object.keys(STATE_NAME_TO_CODE).filter(n => n !== 'district of columbia').sort()
-    .map(n => `<option value="${n.replace(/\s+/g, '-')}">${n.replace(/\b\w/g, c => c.toUpperCase())}</option>`).join('');
   const feat = (icon, title, desc, action) => `<button type="button" class="v-feat" onclick="${action}"><i>${vIcon(V_ICONS[icon])}</i><span style="display:flex;flex-direction:column;gap:4px"><b>${title}</b><span>${desc}</span></span></button>`;
   return `
     <section class="v-band v-hero v-home-hero">
@@ -2697,13 +2722,9 @@ function renderSearch() {
       <div class="v-split">
         <div style="display:flex;flex-direction:column;gap:16px">
           <span class="v-overline">A real market, in one query</span>
-          <h2 class="v-h2">The branch math is changing in <span class="v-rot" id="vPlace">Tulsa</span>.</h2>
+          <h2 class="v-h2 v-h2-2l">The branch math is changing in <span class="v-rot" id="vPlace" aria-live="off" style="white-space:nowrap">Tulsa</span>.</h2>
           <p class="v-lead">Pick any U.S. county and see who’s gaining deposit share, who’s pulling back, and how much each branch holds. Four years of FDIC data in one view.</p>
-          <div class="v-picker">
-            <label for="vStatePick" class="v-sr">State</label>
-            <select id="vStatePick" class="v-select" aria-label="Choose a state"><option value="">Choose a state…</option>${states}</select>
-            <button type="button" class="v-btn v-btn--primary v-btn--lg" onclick="vaultPickState()">Pick your county ${vIcon(V_ICONS.arrow)}</button>
-          </div>
+          <div><a class="v-btn v-btn--primary v-btn--lg" href="/counties">Pick your county ${vIcon(V_ICONS.arrow)}</a></div>
         </div>
         <div style="display:flex;flex-direction:column;gap:12px">
           <div class="v-table-wrap"><table class="v-table"><thead><tr><th></th><th>Bank</th><th>Share, 2026</th><th>Since 2022</th><th class="r v-hide-m">Branches</th><th class="r v-hide-m">Per branch</th></tr></thead><tbody>${tulsaRows}</tbody></table></div>
@@ -2740,6 +2761,29 @@ function renderSearch() {
   `;
 }
 
+// Section pages (industry, lenders, charters, ma, compare, about) each render
+// their own title block (an h1 + intro paragraph inside one wrapper). Lift that
+// block into a full-bleed royal-navy hero band, aligned to the page's own
+// content width, so every page opens the same way without rewriting six
+// templates. Runs after innerHTML, before bindEvents; moves nodes, never clones,
+// so ids and handlers stay intact.
+function vPageHero(app) {
+  if (!app || app.querySelector('.v-page-hero')) return;
+  const h1 = app.querySelector('h1');
+  if (!h1) return;
+  const block = h1.parentElement === app ? h1 : h1.parentElement;
+  let width = 1200;
+  for (let el = block.parentElement; el && el !== app; el = el.parentElement) {
+    const mw = parseInt(el.style.maxWidth, 10);
+    if (mw) { width = mw; break; }
+  }
+  const sec = document.createElement('section');
+  sec.className = 'v-band v-hero v-page-hero';
+  sec.style.setProperty('--hw', width + 'px');
+  sec.appendChild(block);
+  app.insertBefore(sec, app.firstChild);
+}
+
 let vPlaceTimer = null;
 function vStartPlaceRotation() {
   if (vPlaceTimer) clearInterval(vPlaceTimer);
@@ -2757,11 +2801,6 @@ function vaultTry(q) {
   if (!el) return;
   el.value = q;
   doSearch();
-}
-function vaultPickState() {
-  const v = document.getElementById('vStatePick')?.value;
-  if (!v) { document.getElementById('vStatePick')?.focus(); return; }
-  location.href = '/banks-in-' + v;
 }
 async function vaultNewsletter(e) {
   e.preventDefault();
@@ -2845,7 +2884,7 @@ function renderMergedNotice() {
 
   return `
     <div style="background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.25);border-radius:12px;padding:24px;margin-bottom:16px;">
-      <div style="font-family:var(--mono);font-size:11px;color:#fbbf24;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">⚠ Institution No Longer Active</div>
+      <div style="font-family:var(--mono);font-size:12px;color:#fbbf24;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">Institution No Longer Active</div>
       <div style="font-size:18px;font-weight:700;color:var(--text);margin-bottom:4px;">${n.name}</div>
       <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:16px;">${n.city || '—'}, ${n.state || '—'} · CERT ${n.cert}</div>
       ${n.acquirerName ? `
@@ -2877,13 +2916,13 @@ function renderResults() {
   const cuCount   = results.filter(r => r.type === 'cu').length;
 
   const pillStyle = (active) => active
-    ? 'padding:5px 14px;border-radius:20px;font-family:var(--mono);font-size:11px;cursor:pointer;border:1px solid var(--accent);background:rgba(77,184,255,0.15);color:var(--accent);letter-spacing:0.05em;'
-    : 'padding:5px 14px;border-radius:20px;font-family:var(--mono);font-size:11px;cursor:pointer;border:1px solid rgba(255,255,255,0.15);background:transparent;color:var(--muted);letter-spacing:0.05em;';
+    ? 'padding:5px 14px;border-radius:20px;font-family:var(--mono);font-size:12px;cursor:pointer;border:1px solid var(--accent);background:rgba(77,184,255,0.15);color:var(--accent);letter-spacing:0.05em;'
+    : 'padding:5px 14px;border-radius:20px;font-family:var(--mono);font-size:12px;cursor:pointer;border:1px solid rgba(255,255,255,0.15);background:transparent;color:var(--muted);letter-spacing:0.05em;';
 
   return `
     <div class="search-section">
       <h1 class="search-heading">Results for <em>"${state.query}"</em></h1>
-      <p class="search-sub">// ${results.length} institution${results.length !== 1 ? 's' : ''} found</p>
+      <p class="search-sub">${results.length} institution${results.length !== 1 ? 's' : ''} found</p>
       ${renderSearchBar(state.query)}
     </div>
     ${state.loading ? `<div class="state-msg"><div class="spinner"></div><br>Searching banks &amp; credit unions…</div>` : ''}
@@ -2893,8 +2932,8 @@ function renderResults() {
     ${!state.loading && results.length > 0 ? `
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
       <button style="${pillStyle(filter==='all')}" onclick="state.resultFilter='all';render();">All (${results.length})</button>
-      ${bankCount > 0 ? `<button style="${pillStyle(filter==='bank')}" onclick="state.resultFilter='bank';render();">🏦 Banks (${bankCount})</button>` : ''}
-      ${cuCount > 0   ? `<button style="${pillStyle(filter==='cu')}"   onclick="state.resultFilter='cu';render();">🤝 Credit Unions (${cuCount})</button>` : ''}
+      ${bankCount > 0 ? `<button style="${pillStyle(filter==='bank')}" onclick="state.resultFilter='bank';render();">Banks (${bankCount})</button>` : ''}
+      ${cuCount > 0   ? `<button style="${pillStyle(filter==='cu')}"   onclick="state.resultFilter='cu';render();">Credit unions (${cuCount})</button>` : ''}
     </div>` : ''}
     <div class="results-list">
       ${filtered.map(r => r.ncuaFallback ? `
@@ -2902,11 +2941,11 @@ function renderResults() {
           <div class="result-item" style="border-color:rgba(139,92,246,0.35);background:rgba(139,92,246,0.06);">
             <div>
               <div class="result-name" style="color:#c4b5fd;">${r.name.replace(' (Credit Union)','')} <span style="font-size:12px;opacity:0.7;">(Credit Union)</span></div>
-              <div class="result-meta">⚠ NCUA data requires same-origin access · ${r.totalCount} result${r.totalCount===1?'':'s'} found</div>
+              <div class="result-meta">NCUA data requires same-origin access · ${r.totalCount} result${r.totalCount===1?'':'s'} found</div>
             </div>
             <div class="result-assets">
               <div style="font-size:12px;color:#a78bfa;font-family:var(--mono);">View on NCUA ↗</div>
-              <div class="result-type">🤝 Credit Union</div>
+              <div class="result-type">Credit union</div>
             </div>
           </div>
         </a>` : `
@@ -2915,11 +2954,11 @@ function renderResults() {
             <div class="result-name">${r.name}</div>
             ${r.aka ? `<div class="result-aka" style="font-size:12px;color:var(--accent);margin:2px 0 4px;">${r.aka.kind === 'trade name' ? 'Operates as' : 'Formerly'} ${escAttr(r.aka.name)}</div>` : ''}
             <div class="result-meta">${r.city || '—'}, ${r.state || '—'} · ${r.type === 'bank' ? 'CERT #' + r.id : 'CU #' + r.id}</div>
-            ${r.type === 'bank' ? `<div id="leadership-peek-${escAttr(r.id)}" class="result-leadership" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:4px;min-height:14px;"></div>` : ''}
+            ${r.type === 'bank' ? `<div id="leadership-peek-${escAttr(r.id)}" class="result-leadership" style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:4px;min-height:14px;"></div>` : ''}
           </div>
           <div class="result-assets">
             <div>${r.assets ? fmt$(r.assets) : '—'}</div>
-            <div class="result-type">${r.type === 'bank' ? '🏦 Bank' : '🤝 Credit Union'}</div>
+            <div class="result-type">${r.type === 'bank' ? 'Bank' : 'Credit union'}</div>
           </div>
         </div>`).join('')}
     </div>`;
@@ -2949,14 +2988,14 @@ function renderDetail() {
       <div class="seo-fallback" style="max-width:860px;margin:0 auto;padding:32px 20px;line-height:1.6;">
         <div style="background:rgba(77,184,255,0.08);border:1px solid rgba(77,184,255,0.3);border-radius:10px;padding:12px 16px;margin-bottom:24px;font-family:var(--mono);font-size:12px;color:var(--muted);display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
           <span>Live data is temporarily unavailable. Showing the most recent filed figures.</span>
-          <button onclick="location.reload()" style="padding:6px 14px;background:var(--accent);color:#0f1240;border:none;border-radius:6px;font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer;">↻ Try again</button>
+          <button onclick="location.reload()" style="padding:6px 14px;background:var(--accent);color:#0f1240;border:none;border-radius:6px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer;">↻ Try again</button>
         </div>
         ${pre.html}
       </div>`;
     }
     return `
       <div class="state-msg" style="text-align:center;padding:60px 20px;">
-        <div style="font-size:48px;margin-bottom:16px;">⚠</div>
+        <div style="margin-bottom:16px;display:flex;justify-content:center"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:var(--yellow)"><path d="M12 3l9.5 17h-19z"/><path d="M12 10v4M12 17.5v.01"/></svg></div>
         <div style="font-size:18px;color:var(--text);margin-bottom:12px;">Couldn't load that institution</div>
         <div style="color:var(--muted);font-size:14px;margin-bottom:24px;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.6;">
           ${escAttr(d.msg || 'The FDIC or NCUA API returned an error.')}
@@ -2978,7 +3017,7 @@ function renderBankDetail(d) {
   if (!inst) {
     return `
       <div class="state-msg" style="text-align:center;padding:60px 20px;">
-        <div style="font-size:48px;margin-bottom:16px;">⚠</div>
+        <div style="margin-bottom:16px;display:flex;justify-content:center"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:var(--yellow)"><path d="M12 3l9.5 17h-19z"/><path d="M12 10v4M12 17.5v.01"/></svg></div>
         <div style="font-size:18px;color:var(--text);margin-bottom:12px;">Couldn't load bank profile</div>
         <div style="color:var(--muted);font-size:14px;margin-bottom:24px;max-width:480px;margin-left:auto;margin-right:auto;line-height:1.6;">
           The FDIC API didn't return data for this institution. This sometimes happens for very recent charters, special-purpose entities, or during FDIC service hiccups.
@@ -3036,19 +3075,19 @@ function renderBankDetail(d) {
           ${inst.WEBADDR ? `<span class="inst-meta-item"><a href="https://${inst.WEBADDR}" target="_blank" style="color:var(--accent)">${inst.WEBADDR}</a></span>` : ''}
           <span class="inst-meta-item"><button onclick="addToCompare('${inst.CERT}','bank')" class="v-btn v-btn--primary v-btn--sm">Compare with peers</button></span>
           <span class="inst-meta-item"><button onclick="showWrapped('${inst.CERT}')" class="v-btn v-btn--secondary v-btn--sm">Share card</button></span>
-          ${inst.INSTCAT ? `<span class="inst-meta-item"><span style="font-family:var(--mono);font-size:11px;padding:3px 8px;background:rgba(77,184,255,0.1);border:1px solid rgba(77,184,255,0.25);border-radius:6px;color:var(--accent);letter-spacing:0.05em;">${decodeInstcat(inst.INSTCAT).label}</span></span>` : ''}
-          ${(()=>{ const o = getOwnershipLabel(inst); return o ? `<span class="inst-meta-item"><span style="font-family:var(--mono);font-size:11px;padding:3px 8px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.25);border-radius:6px;color:#fbbf24;letter-spacing:0.05em;">${o}</span></span>` : ''; })()}
-          <span class="inst-meta-item" id="stockBadge"><span style="font-family:var(--mono);font-size:11px;padding:3px 8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--muted);letter-spacing:0.05em;">Loading…</span></span>
+          ${inst.INSTCAT ? `<span class="inst-meta-item"><span style="font-family:var(--mono);font-size:12px;padding:3px 8px;background:rgba(77,184,255,0.1);border:1px solid rgba(77,184,255,0.25);border-radius:6px;color:var(--accent);letter-spacing:0.05em;">${decodeInstcat(inst.INSTCAT).label}</span></span>` : ''}
+          ${(()=>{ const o = getOwnershipLabel(inst); return o ? `<span class="inst-meta-item"><span style="font-family:var(--mono);font-size:12px;padding:3px 8px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.25);border-radius:6px;color:#fbbf24;letter-spacing:0.05em;">${o}</span></span>` : ''; })()}
+          <span class="inst-meta-item" id="stockBadge"><span style="font-family:var(--mono);font-size:12px;padding:3px 8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--muted);letter-spacing:0.05em;">Loading…</span></span>
         </div>
       </div>
       <button class="back-btn" id="backBtn">← Back</button>
     </div>
 
     ${inst._stub ? `<div style="padding:12px 16px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.25);border-radius:10px;margin-bottom:24px;font-family:var(--mono);font-size:12px;color:#fbbf24;line-height:1.6;">
-      ⚠ Limited data — CERT ${inst.CERT} has financial filings but no institution profile in FDIC BankFind. May be a new charter, special purpose entity, or data lag.
+      Limited data — CERT ${inst.CERT} has financial filings but no institution profile in FDIC BankFind. May be a new charter, special purpose entity, or data lag.
     </div>` : ''}
     ${d.recentAcquisitions?.length ? `<div style="padding:12px 16px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.25);border-radius:10px;margin-bottom:24px;font-family:var(--mono);font-size:12px;color:#fbbf24;line-height:1.6;">
-      ⚠ ${d.recentAcquisitions.length > 1 ? 'Recent acquisitions' : 'Recent acquisition'}: ${d.recentAcquisitions.map(a => `${a.OUT_INSTNAME}${a.EFFDATE ? ' (' + new Date(a.EFFDATE).toLocaleDateString('en-US',{month:'short',year:'numeric'}) + ')' : ''}`).join(', ')}.
+      ${d.recentAcquisitions.length > 1 ? 'Recent acquisitions' : 'Recent acquisition'}: ${d.recentAcquisitions.map(a => `${a.OUT_INSTNAME}${a.EFFDATE ? ' (' + new Date(a.EFFDATE).toLocaleDateString('en-US',{month:'short',year:'numeric'}) + ')' : ''}`).join(', ')}.
       The financials below may not yet reflect the combined balance sheet — FDIC's quarterly call report cycle can lag a real-world merger closing by a quarter or more.
     </div>` : ''}
     <div class="kpi-grid">
@@ -3119,7 +3158,7 @@ function renderBankDetail(d) {
       <div class="kpi-card">
         <div class="kpi-label">Capital Ratio</div>
         <div class="kpi-value ${tier1 >= 12 ? 'kpi-positive' : tier1 >= 8 ? 'kpi-neutral' : 'kpi-negative'}">${fmtPct(tier1)}</div>
-        <div class="kpi-sub">${tier1 >= 12 ? '✦ Well capitalized' : tier1 >= 10 ? 'Adequately capitalized' : 'Monitor closely'}</div>
+        <div class="kpi-sub">${tier1 >= 12 ? 'Well capitalized' : tier1 >= 10 ? 'Adequately capitalized' : 'Monitor closely'}</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Non-Interest Income</div>
@@ -3152,7 +3191,7 @@ function renderBankDetail(d) {
         <tr><td>Report Date</td><td>${inst.REPDTE || '—'}</td></tr>
         ${d.edgar ? `
         <tr><td>EIN</td><td style="font-family:var(--mono)">${d.edgar.ein || '—'}</td></tr>
-        ${d.edgar.lei ? `<tr><td>LEI</td><td style="font-family:var(--mono);font-size:11px;">${d.edgar.lei}</td></tr>` : ''}
+        ${d.edgar.lei ? `<tr><td>LEI</td><td style="font-family:var(--mono);font-size:12px;">${d.edgar.lei}</td></tr>` : ''}
         ${d.edgar.tickers?.length ? `<tr><td>Exchange Tickers</td><td style="font-family:var(--mono)">${d.edgar.tickers.slice(0,5).join(', ')}</td></tr>` : ''}
         <tr><td>SEC Filing</td><td><a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${d.edgar.cik}&type=10-K&dateb=&owner=include&count=5" target="_blank" style="color:var(--accent);font-family:var(--mono);font-size:12px;">View 10-K Filings ↗</a></td></tr>
         ` : ''}
@@ -3162,7 +3201,7 @@ function renderBankDetail(d) {
     ${history && history.length > 1 ? `
     <div class="section">
       <div class="section-title">Financial History (Quarterly)</div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin:-4px 0 10px;">Assets, deposits and net loans on the left axis &middot; ROA and ROE (dashed) on the right</div>
+      <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin:-4px 0 10px;">Assets, deposits and net loans on the left axis &middot; ROA and ROE (dashed) on the right</div>
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:8px;position:relative;">
         <div id="historyChartWrap" style="position:relative;width:100%;height:clamp(160px,40vw,240px);">
           <canvas id="historyChart"></canvas>
@@ -3171,7 +3210,7 @@ function renderBankDetail(d) {
     </div>` : ''}
     <div class="section" id="branchSection">
       <div class="section-title">Branch Footprint</div>
-      <div id="branchSummary" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin:-4px 0 10px;">Branches and branch deposits from each June 30 Summary of Deposits filing</div>
+      <div id="branchSummary" style="font-family:var(--mono);font-size:12px;color:var(--muted);margin:-4px 0 10px;">Branches and branch deposits from each June 30 Summary of Deposits filing</div>
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:8px;position:relative;">
         <div id="branchChartWrap" style="position:relative;width:100%;height:clamp(160px,40vw,240px);">
           <canvas id="branchChart" role="img" aria-label="Branch count and branch deposits by year"></canvas>
@@ -3252,8 +3291,8 @@ function renderCUDetail(d) {
           <span class="inst-meta-item">Charter <strong>${charter}</strong></span>
           <span class="inst-meta-item">As of <strong>${cuPeriodLabel(cu)}</strong></span>
           ${website ? `<span class="inst-meta-item"><a href="https://${website}" target="_blank" style="color:var(--accent)">${website}</a></span>` : ''}
-          <span class="inst-meta-item"><span style="font-family:var(--mono);font-size:10px;padding:2px 8px;background:rgba(139,92,246,0.12);border:1px solid rgba(139,92,246,0.25);border-radius:6px;color:#a78bfa;">🤝 Credit Union</span></span>
-          ${cuType !== '—' ? `<span class="inst-meta-item"><span style="font-family:var(--mono);font-size:10px;padding:2px 8px;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.2);border-radius:6px;color:#60a5fa;">${cuType}</span></span>` : ''}
+          <span class="inst-meta-item"><span style="font-family:var(--mono);font-size:12px;padding:2px 8px;background:rgba(139,92,246,0.12);border:1px solid rgba(139,92,246,0.25);border-radius:6px;color:#c79bf7;">Credit union</span></span>
+          ${cuType !== '—' ? `<span class="inst-meta-item"><span style="font-family:var(--mono);font-size:12px;padding:2px 8px;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.2);border-radius:6px;color:#60a5fa;">${cuType}</span></span>` : ''}
         </div>
       </div>
       <button class="back-btn" id="backBtn">← Back</button>
@@ -3336,7 +3375,7 @@ function renderCUDetail(d) {
           <canvas id="cuChart"></canvas>
         </div>
       </div>
-      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-align:right;padding:0 4px;">NCUA 5300 ${cuPeriodLabel(cu)} · peer averages by asset tier</div>
+      <div style="font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right;padding:0 4px;">NCUA 5300 ${cuPeriodLabel(cu)} · peer averages by asset tier</div>
     </div>
 
     <div id="cuPeersContainer"><div class="peer-loading"><div class="spinner"></div> Loading market peers…</div></div>
@@ -3951,7 +3990,7 @@ function renderLeadershipPeek(certId, person) {
   const el = document.getElementById(`leadership-peek-${certId}`);
   if (!el || !person || !person.name) return;
   el.textContent = ''; // clear before rebuilding with structured markup
-  el.innerHTML = `👤 ${person.name} <span style="color:var(--accent);">· ${person.title || ''}</span>`;
+  el.innerHTML = `${person.name} <span style="color:var(--accent);">· ${person.title || ''}</span>`;
 }
 
 // Two-phase leadership warm for the search-results list:
@@ -4003,7 +4042,7 @@ function updatePersonCardLinkedIn(index, linkedinUrl) {
   const nameEl = document.getElementById(`leadership-name-${index}`);
   if (!nameEl) return;
   const name = nameEl.textContent;
-  nameEl.outerHTML = `<a id="leadership-name-${index}" href="${linkedinUrl}" target="_blank" rel="noopener" style="font-size:14px;font-weight:600;color:#0a66c2;margin-bottom:4px;text-decoration:none;display:inline-flex;align-items:center;gap:5px;">${name} <span style="font-size:11px;">↗</span></a>`;
+  nameEl.outerHTML = `<a id="leadership-name-${index}" href="${linkedinUrl}" target="_blank" rel="noopener" style="font-size:14px;font-weight:600;color:#0a66c2;margin-bottom:4px;text-decoration:none;display:inline-flex;align-items:center;gap:5px;">${name} <span style="font-size:12px;">↗</span></a>`;
 }
 
 // ── SEC EDGAR EIN Lookup ──────────────────────────────────────────────────────
@@ -4155,13 +4194,13 @@ function renderLeadershipSection(inst, officers, stock) {
         ? `<span style="color:${stock.change >= 0 ? '#4ade80' : '#f87171'}">${stock.change >= 0 ? '▲' : '▼'}${Math.abs(stock.change).toFixed(2)}%</span>`
         : '';
       const mktCapStr = stock.mktCap ? ` · Mkt Cap $${(stock.mktCap/1e9).toFixed(1)}B` : '';
-      badge.innerHTML = `<span style="font-family:var(--mono);font-size:11px;padding:3px 10px;background:rgba(74,222,128,0.1);border:1px solid rgba(74,222,128,0.3);border-radius:6px;color:#4ade80;letter-spacing:0.05em;">
-        📈 ${stock.ticker} ${priceStr} ${changeStr}${mktCapStr}
+      badge.innerHTML = `<span style="font-family:var(--mono);font-size:12px;padding:3px 10px;background:rgba(74,222,128,0.1);border:1px solid rgba(74,222,128,0.3);border-radius:6px;color:#4ade80;letter-spacing:0.05em;">
+        ${stock.ticker} ${priceStr} ${changeStr}${mktCapStr}
       </span>`;
     } else if (stock.status === 'private-hc') {
-      badge.innerHTML = `<span style="font-family:var(--mono);font-size:11px;padding:3px 10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:var(--muted);letter-spacing:0.05em;">Privately Held</span>`;
+      badge.innerHTML = `<span style="font-family:var(--mono);font-size:12px;padding:3px 10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:var(--muted);letter-spacing:0.05em;">Privately Held</span>`;
     } else {
-      badge.innerHTML = `<span style="font-family:var(--mono);font-size:11px;padding:3px 10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:var(--muted);letter-spacing:0.05em;">Privately Held</span>`;
+      badge.innerHTML = `<span style="font-family:var(--mono);font-size:12px;padding:3px 10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:var(--muted);letter-spacing:0.05em;">Privately Held</span>`;
     }
   }, 0);
 
@@ -4185,9 +4224,9 @@ function renderLeadershipSection(inst, officers, stock) {
     const webUrl = bankWeb ? (bankWeb.startsWith('http') ? bankWeb : 'https://'+bankWeb) : null;
     const webLinkHtml = webUrl ? `
       <div style="margin-top:12px;padding:10px 14px;background:rgba(77,184,255,0.06);border:1px solid rgba(77,184,255,0.15);border-radius:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-        <span style="font-family:var(--mono);font-size:11px;color:var(--muted);">For accurate, up-to-date leadership information:</span>
+        <span style="font-family:var(--mono);font-size:12px;color:var(--muted);">For accurate, up-to-date leadership information:</span>
         <a href="${webUrl}" target="_blank" rel="noopener"
-          style="font-family:var(--mono);font-size:11px;color:var(--accent);text-decoration:none;white-space:nowrap;">
+          style="font-family:var(--mono);font-size:12px;color:var(--accent);text-decoration:none;white-space:nowrap;">
           Visit ${bankWeb.replace(/^https?:\/\//i,'').replace(/\/$/,'')} ↗
         </a>
       </div>` : '';
@@ -4207,7 +4246,7 @@ function renderLeadershipSection(inst, officers, stock) {
 
       const stillHere = document.getElementById('leadershipContainer');
       if (!stillHere) return; // user navigated away — stop polling, nothing to update
-      stillHere.innerHTML = `<p style="color:var(--muted);font-size:13px;font-family:var(--mono);padding:8px 0;">🔎 Looking up leadership — this can take up to a couple minutes for banks with generic or common names…</p>`;
+      stillHere.innerHTML = `<p style="color:var(--muted);font-size:13px;font-family:var(--mono);padding:8px 0;">Looking up leadership — this can take up to a couple minutes for banks with generic or common names…</p>`;
       await new Promise(r => setTimeout(r, 8000));
     }
 
@@ -4234,7 +4273,7 @@ function renderLeadershipSection(inst, officers, stock) {
     if (lookupError && (!people || !people.length)) {
       el.innerHTML = `
         <p style="color:#fbbf24;font-size:13px;font-family:var(--mono);padding:8px 0;">
-          ⚠ Search timed out — this bank may have an unusually large public web presence to sift through. Try again.
+          Search timed out — this bank may have an unusually large public web presence to sift through. Try again.
         </p>
         <button onclick="location.reload()"
           style="padding:7px 16px;background:rgba(77,184,255,0.1);border:1px solid rgba(77,184,255,0.3);border-radius:8px;color:#4db8ff;font-family:var(--mono);font-size:12px;cursor:pointer;">
@@ -4253,14 +4292,14 @@ function renderLeadershipSection(inst, officers, stock) {
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">${people.map((p, i) => `
         <div style="padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
           ${p.linkedin_url
-            ? `<a id="leadership-name-${i}" href="${p.linkedin_url}" target="_blank" rel="noopener" style="font-size:14px;font-weight:600;color:#0a66c2;margin-bottom:4px;text-decoration:none;display:inline-flex;align-items:center;gap:5px;">${p.name} <span style="font-size:11px;">↗</span></a>`
+            ? `<a id="leadership-name-${i}" href="${p.linkedin_url}" target="_blank" rel="noopener" style="font-size:14px;font-weight:600;color:#0a66c2;margin-bottom:4px;text-decoration:none;display:inline-flex;align-items:center;gap:5px;">${p.name} <span style="font-size:12px;">↗</span></a>`
             : `<div id="leadership-name-${i}" style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px;">${p.name}</div>`}
-          <div style="font-family:var(--mono);font-size:11px;color:var(--accent);margin-bottom:4px;">${p.title}</div>
-          ${p.source && p.source !== 'public record' ? `<div style="font-family:var(--mono);font-size:9px;color:var(--muted);word-break:break-all;">source: ${p.source.replace(/^https?:\/\//,'').split('/')[0]}</div>` : ''}
+          <div style="font-family:var(--mono);font-size:12px;color:var(--accent);margin-bottom:4px;">${p.title}</div>
+          ${p.source && p.source !== 'public record' ? `<div style="font-family:var(--mono);font-size:12px;color:var(--muted);word-break:break-all;">source: ${p.source.replace(/^https?:\/\//,'').split('/')[0]}</div>` : ''}
         </div>`).join('')}
       </div>
-      <div style="margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--muted);line-height:1.6;">
-        ⚠ Sourced by Claude AI via web search${bankWeb ? ` (scoped to ${bankWeb.replace(/^https?:\/\//i,'').split('/')[0]})` : ''}. Names link to LinkedIn once matched (usually within ~1-2 min) — best-effort via Bright Data. May be incomplete — verify below.
+      <div style="margin-top:10px;font-family:var(--mono);font-size:12px;color:var(--muted);line-height:1.6;">
+        Sourced by Claude AI via web search${bankWeb ? ` (scoped to ${bankWeb.replace(/^https?:\/\//i,'').split('/')[0]})` : ''}. Names link to LinkedIn once matched (usually within ~1-2 min) — best-effort via Bright Data. May be incomplete — verify below.
       </div>
       ${webLinkHtml}`;
 
@@ -4412,7 +4451,7 @@ function renderNewsSection(name, city, state) {
       </a>`).join('') + '</div>';
   }, 0);
   return `<div class="news-section">
-    <h2>// Recent News</h2>
+    <h2>Recent News</h2>
     <div id="newsContainer"><div style="display:flex;align-items:center;gap:10px;padding:12px 0;color:var(--muted);font-family:var(--mono);font-size:12px;"><div class="spinner" style="width:14px;height:14px;border-width:2px;"></div>Loading news…</div></div>
   </div>`;
 }
@@ -4518,7 +4557,7 @@ async function initAboutMCPStats() {
           <svg width="100%" viewBox="0 0 ${totalWidth} ${svgHeight}" preserveAspectRatio="xMidYMid meet" style="max-width:${totalWidth}px;display:block;margin:0 auto;">
             ${bars}
           </svg>
-          <div style="text-align:center;font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:10px;letter-spacing:0.08em;">${totalCalls.toLocaleString()} TOTAL CALLS ACROSS ${weeksLabeled.length} ${weeksLabeled.length === 1 ? 'WEEK' : 'WEEKS'}</div>
+          <div style="text-align:center;font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:10px;letter-spacing:0.08em;">${totalCalls.toLocaleString()} TOTAL CALLS ACROSS ${weeksLabeled.length} ${weeksLabeled.length === 1 ? 'WEEK' : 'WEEKS'}</div>
         `;
       }
     }
@@ -4531,7 +4570,7 @@ async function initAboutMCPStats() {
         const pct = (count / maxToolCalls * 100).toFixed(0);
         return `
           <div style="display:flex;align-items:center;gap:12px;font-size:12px;">
-            <div style="flex:0 0 170px;font-family:var(--mono);color:var(--accent);font-size:11px;">${name}</div>
+            <div style="flex:0 0 170px;font-family:var(--mono);color:var(--accent);font-size:12px;">${name}</div>
             <div style="flex:1;background:rgba(255,255,255,0.05);border-radius:4px;height:8px;overflow:hidden;">
               <div style="width:${pct}%;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:4px;"></div>
             </div>
@@ -4562,7 +4601,7 @@ async function initAboutMCPStats() {
       const items = Object.entries(groups)
         .filter(([_, n]) => n > 0)
         .sort((a,b) => b[1]-a[1])
-        .map(([label, n]) => `<span style="display:inline-block;background:rgba(77,184,255,0.08);border:1px solid rgba(77,184,255,0.2);border-radius:6px;padding:4px 10px;font-family:var(--mono);font-size:11px;margin-right:6px;margin-bottom:6px;"><span style="color:var(--accent);">${label}</span></span>`);
+        .map(([label, n]) => `<span style="display:inline-block;background:rgba(77,184,255,0.08);border:1px solid rgba(77,184,255,0.2);border-radius:6px;padding:4px 10px;font-family:var(--mono);font-size:12px;margin-right:6px;margin-bottom:6px;"><span style="color:var(--accent);">${label}</span></span>`);
 
       clientDiversityEl.innerHTML = items.join('') +
         `<div style="font-size:12px;color:var(--muted);margin-top:10px;line-height:1.6;">Used by community bankers, fintech teams, consultants and regulators.</div>`;
@@ -4580,7 +4619,7 @@ function renderCompare() {
   <div style="max-width:1100px;margin:0 auto;padding:32px 16px 80px;">
     <div class="print-header">
       <div style="font-family:var(--serif,serif);font-size:22px;font-weight:700;margin-bottom:4px;">Vault — Institution Comparison</div>
-      <div style="font-size:11px;color:#666;">Generated ${printedDate} · Data via FDIC BankFind &amp; NCUA public data · vaultbot.ai</div>
+      <div style="font-size:12px;color:#666;">Generated ${printedDate} · Data via FDIC BankFind &amp; NCUA public data · vaultbot.ai</div>
     </div>
     <button class="back-btn" onclick="history.back()">← Back</button>
     <div style="margin-bottom:24px;">
@@ -4592,7 +4631,7 @@ function renderCompare() {
     </div>
     ${list.length === 0 ? `
       <div style="text-align:center;padding:60px 0;color:var(--muted);">
-        <div style="font-size:48px;margin-bottom:16px;">⚖</div>
+        <div style="margin-bottom:16px;display:flex;justify-content:center"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:var(--subtle)"><path d="M8 4v16M16 4v16M4 8h4M16 16h4M4 16h4M16 8h4"/></svg></div>
         <div style="font-size:16px;font-weight:600;color:var(--text);margin-bottom:8px;">No institutions selected</div>
         <div style="font-size:13px;">Search for a bank or credit union, open its profile, and click <strong style="color:#b06ef3;">+ Compare</strong>.</div>
       </div>` : `
@@ -4600,7 +4639,7 @@ function renderCompare() {
         <div style="text-align:center;padding:40px 20px;color:var(--muted);font-family:var(--mono);font-size:13px;">
           <div class="spinner" style="display:inline-block;margin-bottom:12px;"></div>
           <div>Loading comparison data…</div>
-          ${list.some(i => i.type === 'cu') ? `<div style="font-size:11px;margin-top:8px;color:rgba(255,255,255,0.4);">Credit union data may take a few seconds on first load</div>` : ''}
+          ${list.some(i => i.type === 'cu') ? `<div style="font-size:12px;margin-top:8px;color:rgba(255,255,255,0.4);">Credit union data may take a few seconds on first load</div>` : ''}
         </div>
       </div>`}
     ${renderContactSection()}
@@ -4676,17 +4715,17 @@ async function initCompare() {
 
   let html = `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;min-width:480px;">
     <thead><tr style="border-bottom:2px solid var(--border);">
-      <th style="text-align:left;padding:12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;min-width:140px;">Metric</th>
+      <th style="text-align:left;padding:12px;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--subtle);text-transform:uppercase;letter-spacing:0.06em;min-width:140px;">Metric</th>
       ${data.map(d => {
         const name = d.type==='bank'?d.inst?.NAME:d.raw?.name;
         const loc  = d.type==='bank'?`${d.inst?.CITY||''}, ${d.inst?.STALP||''}`:`${d.raw?.city||''}, ${d.raw?.state||''}`;
-        const badge = d.type==='bank'?'🏦':'🤝';
+        const badge = '';
         return `<th style="text-align:left;padding:12px;min-width:160px;">
           <div style="font-size:14px;font-weight:700;color:var(--text);cursor:pointer;margin-bottom:3px;"
             onclick="loadDetail('${d.cert}','${d.type}')"
             onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text)'"
           >${badge} ${name||'Unknown'}</div>
-          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);">${loc}</div>
+          <div style="font-family:var(--mono);font-size:12px;color:var(--muted);">${loc}</div>
         </th>`;
       }).join('')}
     </tr></thead><tbody>`;
@@ -4696,16 +4735,16 @@ async function initCompare() {
     const numVals = vals.filter(v => typeof v === 'number' && !isNaN(v));
     const best = m.dir==='high' ? Math.max(...numVals) : m.dir==='low' ? Math.min(...numVals) : null;
     html += `<tr style="border-bottom:1px solid rgba(255,255,255,0.05);${mi%2===0?'background:rgba(255,255,255,0.02)':''}">
-      <td style="padding:10px 12px;font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap;">${m.label}</td>
+      <td style="padding:10px 12px;font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap;">${m.label}</td>
       ${vals.map(v => {
         const fmt = m.fmt(v);
         const isBest = best!==null && typeof v==='number' && v===best && numVals.length>1;
         if (m.isLink && v && v!=='—') {
           const url = v.startsWith('http')?v:'https://'+v;
-          return `<td style="padding:10px 12px;"><a href="${url}" target="_blank" style="font-family:var(--mono);font-size:11px;color:var(--accent);">${v} ↗</a></td>`;
+          return `<td style="padding:10px 12px;"><a href="${url}" target="_blank" style="font-family:var(--mono);font-size:12px;color:var(--accent);">${v} ↗</a></td>`;
         }
         return `<td style="padding:10px 12px;font-size:13px;font-weight:${isBest?700:400};color:${isBest?'#4ade80':'var(--text)'};">
-          ${fmt}${isBest?` <span style="font-family:var(--mono);font-size:9px;color:#4ade80;">▲</span>`:''}
+          ${fmt}${isBest?` <span style="font-family:var(--mono);font-size:12px;color:#4ade80;">▲</span>`:''}
         </td>`;
       }).join('')}
     </tr>`;
@@ -4717,10 +4756,10 @@ async function initCompare() {
 
   html += `</tbody></table></div>
     <div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap;align-items:center;" class="compare-actions">
-      <button onclick="exportCompareCSV()" style="padding:7px 16px;background:rgba(77,184,255,0.1);border:1px solid rgba(77,184,255,0.3);border-radius:8px;color:#4db8ff;font-family:var(--mono);font-size:12px;cursor:pointer;">⬇ Export CSV</button>
-      <button onclick="exportComparePDF()" style="padding:7px 16px;background:rgba(176,110,243,0.1);border:1px solid rgba(176,110,243,0.3);border-radius:8px;color:#b06ef3;font-family:var(--mono);font-size:12px;cursor:pointer;">🖨 Export PDF</button>
+      <button onclick="exportCompareCSV()" style="padding:7px 16px;background:rgba(77,184,255,0.1);border:1px solid rgba(77,184,255,0.3);border-radius:8px;color:#4db8ff;font-family:var(--mono);font-size:12px;cursor:pointer;">Export CSV</button>
+      <button onclick="exportComparePDF()" style="padding:7px 16px;background:rgba(176,110,243,0.1);border:1px solid rgba(176,110,243,0.3);border-radius:8px;color:#b06ef3;font-family:var(--mono);font-size:12px;cursor:pointer;">Export PDF</button>
       <button onclick="state.compareList=[];render()" style="padding:7px 16px;background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.3);border-radius:8px;color:#f87171;font-family:var(--mono);font-size:12px;cursor:pointer;">Clear all</button>
-      <span style="font-family:var(--mono);font-size:11px;color:var(--muted);width:100%;">Green ▲ = best in category · Click institution name to view full profile · PDF export opens your browser's print dialog — choose "Save as PDF"</span>
+      <span style="font-family:var(--mono);font-size:12px;color:var(--muted);width:100%;">Green ▲ = best in category · Click institution name to view full profile · PDF export opens your browser's print dialog — choose "Save as PDF"</span>
     </div>`;
   el.innerHTML = html;
 }
@@ -4793,14 +4832,14 @@ function renderLenders() {
       <!-- Row 1: Name + City search boxes -->
       <div style="width:100%;display:grid;grid-template-columns:1fr 1fr;gap:12px;">
         <div style="display:flex;flex-direction:column;gap:6px;">
-          <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">Institution Name</label>
+          <label style="font-size:13px;font-weight:500;color:var(--muted);">Institution Name</label>
           <input id="lenderSearch" type="text" placeholder="e.g. First National Bank, MidFirst…"
             style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:10px 14px;font-size:13px;font-family:var(--mono);outline:none;transition:border-color 0.2s;"
             onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
             onkeydown="if(event.key==='Enter') runLenderSearch()" />
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;">
-          <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">City</label>
+          <label style="font-size:13px;font-weight:500;color:var(--muted);">City</label>
           <input id="lenderCity" type="text" placeholder="e.g. Tulsa, Oklahoma City…"
             style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:10px 14px;font-size:13px;font-family:var(--mono);outline:none;transition:border-color 0.2s;"
             onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
@@ -4810,7 +4849,7 @@ function renderLenders() {
       <!-- Row 1b: ZIP search, own row since it's a narrower/optional filter -->
       <div style="width:100%;display:grid;grid-template-columns:1fr 1fr;gap:12px;">
         <div style="display:flex;flex-direction:column;gap:6px;">
-          <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">ZIP Code <span style="opacity:0.6;">(explore nearby)</span></label>
+          <label style="font-size:13px;font-weight:500;color:var(--muted);">ZIP Code <span style="opacity:0.6;">(explore nearby)</span></label>
           <input id="lenderZip" type="text" inputmode="numeric" maxlength="5" placeholder="e.g. 74133"
             style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:10px 14px;font-size:13px;font-family:var(--mono);outline:none;transition:border-color 0.2s;"
             onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
@@ -4820,14 +4859,14 @@ function renderLenders() {
       </div>
       <!-- Row 2: Dropdowns -->
       <div style="display:flex;flex-direction:column;gap:6px;flex:1;min-width:120px;">
-        <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">State</label>
+        <label style="font-size:13px;font-weight:500;color:var(--muted);">State</label>
         <select id="lenderState" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px;font-family:var(--mono);">
           <option value="">All States</option>
           ${['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY'].map(s => `<option value="${s}">${s}</option>`).join('')}
         </select>
       </div>
       <div style="display:flex;flex-direction:column;gap:6px;flex:1;min-width:140px;">
-        <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">Loan Type</label>
+        <label style="font-size:13px;font-weight:500;color:var(--muted);">Loan Type</label>
         <select id="lenderLoanType" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px;font-family:var(--mono);">
           <option value="residential">Residential Mortgage</option>
           <option value="commercial">Commercial Real Estate</option>
@@ -4836,7 +4875,7 @@ function renderLenders() {
         </select>
       </div>
       <div style="display:flex;flex-direction:column;gap:6px;flex:1;min-width:140px;">
-        <label style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">Asset Size</label>
+        <label style="font-size:13px;font-weight:500;color:var(--muted);">Asset Size</label>
         <select id="lenderAssetSize" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 10px;font-size:13px;font-family:var(--mono);">
           <option value="all">All Sizes</option>
           <option value="community" selected>Community (&lt;$1B)</option>
@@ -4850,8 +4889,8 @@ function renderLenders() {
     </div>
 
     <!-- Disclaimer -->
-    <div style="padding:10px 14px;background:rgba(251,191,36,0.07);border:1px solid rgba(251,191,36,0.2);border-radius:8px;margin-bottom:20px;font-family:var(--mono);font-size:11px;color:#fbbf24;line-height:1.6;">
-      ⚠ Scores are derived from FDIC regulatory data (capital ratios, loan mix, asset quality) — not posted rates.
+    <div style="padding:10px 14px;background:rgba(251,191,36,0.07);border:1px solid rgba(251,191,36,0.2);border-radius:8px;margin-bottom:20px;font-family:var(--mono);font-size:12px;color:#fbbf24;line-height:1.6;">
+      Scores are derived from FDIC regulatory data (capital ratios, loan mix, asset quality) — not posted rates.
       A high Lending Score indicates a financially strong, active lender. Always contact the institution for current rates and terms.
       Future update: live rate integration via data subscription.
     </div>
@@ -5070,22 +5109,22 @@ async function runLenderSearch() {
     const loanLabel = LENDER_WEIGHTS[loanType]?.label || 'Loans';
 
     el.innerHTML = `
-      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:12px;">
+      <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:12px;">
         Showing top ${top.length} lenders${searchTerm ? ` matching "${searchTerm}"` : ''}${cityTerm ? ` in ${cityTerm}` : ''}${stateVal ? `, ${stateVal}` : ''} · Sorted by Lending Score · ${loanLabel} focus
       </div>
       <div style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;font-size:13px;">
           <thead>
             <tr style="border-bottom:1px solid var(--border);">
-              <th style="text-align:left;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;white-space:nowrap;">#</th>
-              <th style="text-align:left;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">Institution</th>
-              <th style="text-align:left;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">Location</th>
-              <th style="text-align:right;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;white-space:nowrap;">Lending Score</th>
-              <th style="text-align:right;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;white-space:nowrap;">${loanLabel} %</th>
-              <th style="text-align:right;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;white-space:nowrap;">Capital Ratio</th>
-              <th style="text-align:right;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">ROA</th>
-              <th style="text-align:right;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">Assets</th>
-              <th style="text-align:right;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">Delinq %</th>
+              <th style="text-align:left;padding:10px 12px;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--subtle);text-transform:uppercase;letter-spacing:0.06em;white-space:nowrap;">#</th>
+              <th style="text-align:left;padding:10px 12px;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--subtle);text-transform:uppercase;letter-spacing:0.06em;">Institution</th>
+              <th style="text-align:left;padding:10px 12px;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--subtle);text-transform:uppercase;letter-spacing:0.06em;">Location</th>
+              <th style="text-align:right;padding:10px 12px;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--subtle);text-transform:uppercase;letter-spacing:0.06em;white-space:nowrap;">Lending Score</th>
+              <th style="text-align:right;padding:10px 12px;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--subtle);text-transform:uppercase;letter-spacing:0.06em;white-space:nowrap;">${loanLabel} %</th>
+              <th style="text-align:right;padding:10px 12px;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--subtle);text-transform:uppercase;letter-spacing:0.06em;white-space:nowrap;">Capital Ratio</th>
+              <th style="text-align:right;padding:10px 12px;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--subtle);text-transform:uppercase;letter-spacing:0.06em;">ROA</th>
+              <th style="text-align:right;padding:10px 12px;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--subtle);text-transform:uppercase;letter-spacing:0.06em;">Assets</th>
+              <th style="text-align:right;padding:10px 12px;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--subtle);text-transform:uppercase;letter-spacing:0.06em;">Delinq %</th>
             </tr>
           </thead>
           <tbody>
@@ -5097,10 +5136,10 @@ async function runLenderSearch() {
                 onmouseover="this.style.background='rgba(77,184,255,0.05)'" 
                 onmouseout="this.style.background=''"
                 onclick="loadDetail('${b.CERT}','bank')">
-                <td style="padding:12px 12px;font-family:var(--mono);font-size:11px;color:var(--muted);">${i+1}</td>
+                <td style="padding:12px 12px;font-family:var(--mono);font-size:12px;color:var(--muted);">${i+1}</td>
                 <td style="padding:12px 12px;">
                   <div style="font-weight:600;color:var(--text);margin-bottom:2px;">${b.NAME}</div>
-                  <div style="font-family:var(--mono);font-size:10px;color:var(--muted);">CERT ${b.CERT}</div>
+                  <div style="font-family:var(--mono);font-size:12px;color:var(--muted);">CERT ${b.CERT}</div>
                 </td>
                 <td style="padding:12px 12px;font-family:var(--mono);font-size:12px;color:var(--muted);">${b.CITY}, ${b.STALP}</td>
                 <td style="padding:12px 12px;text-align:right;">
@@ -5119,7 +5158,7 @@ async function runLenderSearch() {
           </tbody>
         </table>
       </div>
-      <div style="margin-top:16px;font-family:var(--mono);font-size:10px;color:var(--muted);line-height:1.8;">
+      <div style="margin-top:16px;font-family:var(--mono);font-size:12px;color:var(--muted);line-height:1.8;">
         <strong style="color:var(--text);">Lending Score methodology:</strong> Composite of loan concentration (35%), capital strength (20%), asset quality / delinquency rate (25%), and ROA profitability (20%).
         Click any row to view full institution profile. Data as of most recent FDIC call report.
       </div>`;
@@ -5240,7 +5279,7 @@ function renderMAData(deals, year) {
       <div style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:12px;padding:16px;text-align:center;">
         <div style="font-family:var(--serif);font-size:28px;color:${s.color};margin-bottom:4px;">${s.val}</div>
         <div style="font-size:12px;font-weight:600;color:var(--text);">${s.label}</div>
-        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);">${s.sub}</div>
+        <div style="font-family:var(--mono);font-size:12px;color:var(--muted);">${s.sub}</div>
       </div>`).join('');
   }
 
@@ -5255,10 +5294,10 @@ function renderMAData(deals, year) {
       <table style="width:100%;border-collapse:collapse;font-size:13px;">
         <thead>
           <tr style="border-bottom:1px solid var(--border);">
-            <th style="text-align:left;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;white-space:nowrap;min-width:90px;">Date</th>
-            <th style="text-align:left;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">Acquirer</th>
-            <th style="text-align:left;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;">Acquired</th>
-            <th style="text-align:center;padding:10px 12px;font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;white-space:nowrap;">Type</th>
+            <th style="text-align:left;padding:10px 12px;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--subtle);text-transform:uppercase;letter-spacing:0.06em;white-space:nowrap;min-width:90px;">Date</th>
+            <th style="text-align:left;padding:10px 12px;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--subtle);text-transform:uppercase;letter-spacing:0.06em;">Acquirer</th>
+            <th style="text-align:left;padding:10px 12px;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--subtle);text-transform:uppercase;letter-spacing:0.06em;">Acquired</th>
+            <th style="text-align:center;padding:10px 12px;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--subtle);text-transform:uppercase;letter-spacing:0.06em;white-space:nowrap;">Type</th>
           </tr>
         </thead>
         <tbody>
@@ -5271,19 +5310,19 @@ function renderMAData(deals, year) {
             const typeBorder= isAssisted ? 'rgba(248,113,113,0.3)' : 'rgba(77,184,255,0.3)';
             return `<tr style="border-bottom:1px solid rgba(255,255,255,0.05);transition:background 0.15s;"
               onmouseover="this.style.background='rgba(255,255,255,0.03)'" onmouseout="this.style.background=''">
-              <td style="padding:12px;font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap;">${date}</td>
+              <td style="padding:12px;font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap;">${date}</td>
               <td style="padding:12px;">
                 <div style="font-weight:600;color:var(--text);cursor:pointer;" onclick="loadDetail('${d.ACQ_CERT}','bank')"
                   onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text)'"
                 >${d.ACQ_INSTNAME || '—'}</div>
-                <div style="font-family:var(--mono);font-size:10px;color:var(--muted);">${d.ACQ_PCITY||'—'}, ${d.ACQ_PSTALP||'—'} · CERT ${d.ACQ_CERT||'—'}</div>
+                <div style="font-family:var(--mono);font-size:12px;color:var(--muted);">${d.ACQ_PCITY||'—'}, ${d.ACQ_PSTALP||'—'} · CERT ${d.ACQ_CERT||'—'}</div>
               </td>
               <td style="padding:12px;">
                 <div style="font-weight:500;color:var(--muted);">${d.OUT_INSTNAME || '—'}</div>
-                <div style="font-family:var(--mono);font-size:10px;color:var(--muted);">${d.OUT_PCITY||'—'}, ${d.OUT_PSTALP||'—'} · CERT ${d.OUT_CERT||'—'}</div>
+                <div style="font-family:var(--mono);font-size:12px;color:var(--muted);">${d.OUT_PCITY||'—'}, ${d.OUT_PSTALP||'—'} · CERT ${d.OUT_CERT||'—'}</div>
               </td>
               <td style="padding:12px;text-align:center;">
-                <span style="font-family:var(--mono);font-size:10px;padding:3px 8px;border-radius:4px;
+                <span style="font-family:var(--mono);font-size:12px;padding:3px 8px;border-radius:4px;
                   background:${typeBg};border:1px solid ${typeBorder};color:${typeColor};">${typeLabel}</span>
               </td>
             </tr>`;
@@ -5291,7 +5330,7 @@ function renderMAData(deals, year) {
         </tbody>
       </table>
     </div>
-    <div style="margin-top:12px;font-family:var(--mono);font-size:10px;color:var(--muted);">
+    <div style="margin-top:12px;font-family:var(--mono);font-size:12px;color:var(--muted);">
       Source: FDIC /history · REPORT_TYPE 223 · Click acquirer name to view full profile ·
       <span style="color:var(--muted);">Dates reflect legal effective date — clustering around quarter-ends and post-holiday Mondays is normal banking practice.</span>
     </div>`;
@@ -5431,7 +5470,7 @@ function renderCharterData(banks, year) {
       <div style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:12px;padding:16px;text-align:center;">
         <div style="font-family:var(--serif);font-size:28px;color:${s.color};margin-bottom:4px;">${s.val}</div>
         <div style="font-size:12px;font-weight:600;color:var(--text);">${s.label}</div>
-        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);">${s.sub}</div>
+        <div style="font-family:var(--mono);font-size:12px;color:var(--muted);">${s.sub}</div>
       </div>`).join('');
   }
 
@@ -5458,22 +5497,22 @@ function renderCharterData(banks, year) {
             ${b.CITY}, ${b.STALP} · CERT ${b.CERT} · Chartered ${estDate}
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
-            <span style="font-family:var(--mono);font-size:10px;padding:2px 8px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.25);border-radius:4px;color:#fbbf24;">
-              ✦ New Charter
+            <span style="font-family:var(--mono);font-size:12px;padding:2px 8px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.25);border-radius:4px;color:#fbbf24;">
+              New charter
             </span>
-            ${isIndependent ? `<span style="font-family:var(--mono);font-size:10px;padding:2px 8px;background:rgba(74,222,128,0.1);border:1px solid rgba(74,222,128,0.25);border-radius:4px;color:#4ade80;">Independent</span>` : `<span style="font-family:var(--mono);font-size:10px;padding:2px 8px;background:rgba(77,184,255,0.1);border:1px solid rgba(77,184,255,0.25);border-radius:4px;color:var(--accent);">${b.NAMEHCR}</span>`}
-            ${b.CHRTAGNT ? `<span style="font-family:var(--mono);font-size:10px;padding:2px 8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:4px;color:var(--muted);">${b.CHRTAGNT} Charter</span>` : ''}
+            ${isIndependent ? `<span style="font-family:var(--mono);font-size:12px;padding:2px 8px;background:rgba(74,222,128,0.1);border:1px solid rgba(74,222,128,0.25);border-radius:4px;color:#4ade80;">Independent</span>` : `<span style="font-family:var(--mono);font-size:12px;padding:2px 8px;background:rgba(77,184,255,0.1);border:1px solid rgba(77,184,255,0.25);border-radius:4px;color:var(--accent);">${b.NAMEHCR}</span>`}
+            ${b.CHRTAGNT ? `<span style="font-family:var(--mono);font-size:12px;padding:2px 8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:4px;color:var(--muted);">${b.CHRTAGNT} Charter</span>` : ''}
           </div>
         </div>
         <div style="text-align:right;flex-shrink:0;min-width:100px;">
           <div style="font-family:var(--serif);font-size:22px;color:var(--accent);">${fmt$(thousands(assets))}</div>
-          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);">Total Assets</div>
-          ${web ? `<a href="https://${web}" target="_blank" onclick="event.stopPropagation()" style="font-family:var(--mono);font-size:10px;color:var(--muted);text-decoration:underline;text-underline-offset:2px;">${web} ↗</a>` : ''}
+          <div style="font-family:var(--mono);font-size:12px;color:var(--muted);">Total Assets</div>
+          ${web ? `<a href="https://${web}" target="_blank" onclick="event.stopPropagation()" style="font-family:var(--mono);font-size:12px;color:var(--muted);text-decoration:underline;text-underline-offset:2px;">${web} ↗</a>` : ''}
         </div>
       </div>
       <!-- News placeholder — loads async per card -->
       <div id="charterNews_${b.CERT}" style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.06);">
-        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);">Loading news…</div>
+        <div style="font-family:var(--mono);font-size:12px;color:var(--muted);">Loading news…</div>
       </div>
     </div>`;
   }).join('');
@@ -5513,7 +5552,7 @@ async function loadCharterNews(bank) {
         style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;text-decoration:none;padding:6px 0;flex-wrap:wrap;"
         onmouseover="this.style.opacity='0.75'" onmouseout="this.style.opacity='1'">
         <div style="font-size:12px;color:var(--text);line-height:1.4;min-width:0;flex:1;">${title}</div>
-        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;">${source} · ${date}</div>
+        <div style="font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap;">${source} · ${date}</div>
       </a>`;
     }).join('<div style="border-top:1px solid rgba(255,255,255,0.05);"></div>');
   } catch(e) {
@@ -5582,7 +5621,7 @@ function renderCUCharterData(cus, year) {
       <div style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:12px;padding:16px;text-align:center;">
         <div style="font-family:var(--serif);font-size:28px;color:${s.color};margin-bottom:4px;">${s.val}</div>
         <div style="font-size:12px;font-weight:600;color:var(--text);">${s.label}</div>
-        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);">${s.sub}</div>
+        <div style="font-family:var(--mono);font-size:12px;color:var(--muted);">${s.sub}</div>
       </div>`).join('');
   }
 
@@ -5605,20 +5644,20 @@ function renderCUCharterData(cus, year) {
             ${cu.city}, ${cu.state} · Charter ${cu.charter} · Chartered ${cu.charterYear || '—'}
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
-            <span style="font-family:var(--mono);font-size:10px;padding:2px 8px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.25);border-radius:4px;color:#fbbf24;">
-              ✦ New Charter
+            <span style="font-family:var(--mono);font-size:12px;padding:2px 8px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.25);border-radius:4px;color:#fbbf24;">
+              New charter
             </span>
-            <span style="font-family:var(--mono);font-size:10px;padding:2px 8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:4px;color:var(--muted);">${cu.type || 'Credit Union'}</span>
+            <span style="font-family:var(--mono);font-size:12px;padding:2px 8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:4px;color:var(--muted);">${cu.type || 'Credit Union'}</span>
           </div>
         </div>
         <div style="text-align:right;flex-shrink:0;min-width:100px;">
           <div style="font-family:var(--serif);font-size:22px;color:var(--accent);">${fmt$(assets)}</div>
-          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);">Total Assets</div>
-          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px;">${(cu.members || 0).toLocaleString()} members</div>
+          <div style="font-family:var(--mono);font-size:12px;color:var(--muted);">Total Assets</div>
+          <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:2px;">${(cu.members || 0).toLocaleString()} members</div>
         </div>
       </div>
       <div id="charterNews_cu_${cu.id}" style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.06);">
-        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);">Loading news…</div>
+        <div style="font-family:var(--mono);font-size:12px;color:var(--muted);">Loading news…</div>
       </div>
     </div>`;
   }).join('');
@@ -5656,7 +5695,7 @@ async function loadCUCharterNews(cu) {
         style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;text-decoration:none;padding:6px 0;flex-wrap:wrap;"
         onmouseover="this.style.opacity='0.75'" onmouseout="this.style.opacity='1'">
         <div style="font-size:12px;color:var(--text);line-height:1.4;min-width:0;flex:1;">${title}</div>
-        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;">${source} · ${date}</div>
+        <div style="font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap;">${source} · ${date}</div>
       </a>`;
     }).join('<div style="border-top:1px solid rgba(255,255,255,0.05);"></div>');
   } catch(e) {
@@ -5805,9 +5844,9 @@ function renderWrapped() {
     const line = flattering ? `Top ${topPct}%` : `#${h.rank} of ${h.total}`;
     return `
       <div style="text-align:center;background:rgba(255,255,255,0.05);border-radius:16px;padding:20px 12px;">
-        <div style="font-family:var(--mono);font-size:11px;color:rgba(255,255,255,0.6);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">${h.label}</div>
+        <div style="font-family:var(--mono);font-size:12px;color:rgba(255,255,255,0.6);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">${h.label}</div>
         <div style="display:inline-block;padding:8px 16px;background:rgba(251,191,36,0.15);border:1px solid rgba(251,191,36,0.35);border-radius:20px;font-family:var(--mono);font-size:16px;font-weight:700;color:#fbbf24;">${line}</div>
-        <div style="font-family:var(--mono);font-size:11px;color:rgba(255,255,255,0.4);margin-top:8px;">in ${inst.STALP}</div>
+        <div style="font-family:var(--mono);font-size:12px;color:rgba(255,255,255,0.4);margin-top:8px;">in ${inst.STALP}</div>
       </div>`;
   };
 
@@ -5817,7 +5856,7 @@ function renderWrapped() {
     </div>
 
     <div style="max-width:720px;margin:0 auto;">
-      <div style="font-family:var(--mono);font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:16px;text-align:center;">// Vault Wrapped</div>
+      <div style="font-family:var(--mono);font-size:12px;color:var(--accent);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:16px;text-align:center;">Vault Wrapped</div>
 
       <!-- The card itself — this is the part meant to be screenshotted -->
       <div id="wrappedCard" style="background:linear-gradient(135deg, #1a1060, #2d1080);border:1px solid rgba(255,255,255,0.12);border-radius:20px;padding:40px;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
@@ -5861,19 +5900,19 @@ function renderWrapped() {
         <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:8px;">
           <div style="background:rgba(255,255,255,0.06);border-radius:12px;padding:16px 12px;text-align:center;">
             <div style="font-family:var(--serif);font-size:22px;color:#fff;">${w.capitalRatio != null ? w.capitalRatio.toFixed(1) + '%' : '—'}</div>
-            <div style="font-family:var(--mono);font-size:10px;color:rgba(255,255,255,0.55);margin-top:2px;">Capital Ratio</div>
+            <div style="font-family:var(--mono);font-size:12px;color:rgba(255,255,255,0.55);margin-top:2px;">Capital Ratio</div>
           </div>
           <div style="background:rgba(255,255,255,0.06);border-radius:12px;padding:16px 12px;text-align:center;">
             <div style="font-family:var(--serif);font-size:22px;color:#fff;">${w.roa != null ? w.roa.toFixed(2) + '%' : '—'}</div>
-            <div style="font-family:var(--mono);font-size:10px;color:rgba(255,255,255,0.55);margin-top:2px;">ROA</div>
+            <div style="font-family:var(--mono);font-size:12px;color:rgba(255,255,255,0.55);margin-top:2px;">ROA</div>
           </div>
           <div style="background:rgba(255,255,255,0.06);border-radius:12px;padding:16px 12px;text-align:center;">
             <div style="font-family:var(--serif);font-size:22px;color:#fff;">${w.delinq != null ? w.delinq.toFixed(2) + '%' : '—'}</div>
-            <div style="font-family:var(--mono);font-size:10px;color:rgba(255,255,255,0.55);margin-top:2px;">Noncurrent Loans</div>
+            <div style="font-family:var(--mono);font-size:12px;color:rgba(255,255,255,0.55);margin-top:2px;">Noncurrent Loans</div>
           </div>
           <div style="background:rgba(255,255,255,0.06);border-radius:12px;padding:16px 12px;text-align:center;">
             <div style="font-family:var(--serif);font-size:22px;color:${growthColor};">${w.assetGrowthPct != null ? growthSign + w.assetGrowthPct.toFixed(1) + '%' : '—'}</div>
-            <div style="font-family:var(--mono);font-size:10px;color:rgba(255,255,255,0.55);margin-top:2px;">Asset Growth</div>
+            <div style="font-family:var(--mono);font-size:12px;color:rgba(255,255,255,0.55);margin-top:2px;">Asset Growth</div>
           </div>
         </div>
 
@@ -5884,7 +5923,7 @@ function renderWrapped() {
 
         <div style="text-align:center;margin-top:28px;padding-top:20px;border-top:1px solid rgba(255,255,255,0.1);">
           <span style="font-family:var(--serif);font-size:14px;color:#fff;">Vault<span style="color:var(--accent);">.</span></span>
-          <span style="font-family:var(--mono);font-size:11px;color:rgba(255,255,255,0.4);"> · vaultbot.ai · Free FDIC data</span>
+          <span style="font-family:var(--mono);font-size:12px;color:rgba(255,255,255,0.4);"> · vaultbot.ai · Free FDIC data</span>
         </div>
       </div>
 
@@ -5908,11 +5947,11 @@ function renderWrapped() {
           Full Profile →
         </button>
       </div>
-      <p style="text-align:center;font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:12px;">
+      <p style="text-align:center;font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:12px;">
         Paste into a new LinkedIn post — the preview card will show up automatically.
       </p>
 
-      <p style="text-align:center;font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:20px;">
+      <p style="text-align:center;font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:20px;">
         Rankings compare capital ratio, profitability (ROA), and asset quality against other banks in the same state, using public FDIC financial data — not a regulatory rating.
       </p>
     </div>
@@ -5956,7 +5995,7 @@ function renderIndustry() {
     <div class="industry-section-header">
       <div class="industry-section-dot" style="background:#4db8ff"></div>
       <div>
-        <div class="industry-section-label">// Charter Reports</div>
+        <div class="industry-section-label">Charter Reports</div>
         <div class="industry-section-desc">New entrants, failures, and consolidation over time</div>
       </div>
     </div>
@@ -6003,7 +6042,7 @@ function renderIndustry() {
     <div class="industry-section-header" style="margin-top:48px">
       <div class="industry-section-dot" style="background:#3ddc97"></div>
       <div>
-        <div class="industry-section-label">// Branch Reports</div>
+        <div class="industry-section-label">Branch Reports</div>
         <div class="industry-section-desc">Physical footprint, concentration, and geographic distribution</div>
       </div>
     </div>
@@ -6041,7 +6080,7 @@ function renderIndustry() {
     <div class="industry-section-header" style="margin-top:48px">
       <div class="industry-section-dot" style="background:#b06ef3"></div>
       <div>
-        <div class="industry-section-label">// Deposit Reports</div>
+        <div class="industry-section-label">Deposit Reports</div>
         <div class="industry-section-desc">Where the money lives, how it moves, and what it tells us about the economy</div>
       </div>
     </div>
@@ -6057,7 +6096,7 @@ function renderIndustry() {
 
     <div class="industry-chart-full">
       <div class="industry-chart-card">
-        <div class="industry-chart-title">Deposit concentration <span id="depositConcTag" style="font-size:10px;color:#fbbf24;margin-left:8px;"></span></div>
+        <div class="industry-chart-title">Deposit concentration <span id="depositConcTag" style="font-size:12px;color:#fbbf24;margin-left:8px;"></span></div>
         <div class="industry-chart-sub">Just 25 banks — out of roughly 4,300 FDIC-insured institutions — hold <strong id="depositConcPct">—</strong> of every dollar deposited in the U.S. banking system. Scale concentrates deposits far faster than it concentrates institutions.</div>
         <div class="industry-chart-wrap" style="height:clamp(160px,22vw,220px)"><canvas id="depositConcentrationChart"></canvas></div>
         <div class="industry-source">Source: FDIC BankFind · live, current quarter · Top 25 by reported deposits</div>
@@ -6075,7 +6114,7 @@ function renderIndustry() {
 
     <div class="industry-chart-full">
       <div class="industry-chart-card">
-        <div class="industry-chart-title">Number of problem banks <span id="problemLiveTag" style="font-size:10px;color:#fbbf24;margin-left:8px;"></span></div>
+        <div class="industry-chart-title">Number of problem banks <span id="problemLiveTag" style="font-size:12px;color:#fbbf24;margin-left:8px;"></span></div>
         <div class="industry-chart-sub">Problem banks are institutions on the FDIC's confidential watch list — rated CAMELS 4 or 5, indicating serious financial weakness. At the GFC peak in 2010, <strong>884 banks</strong> were on the list, holding $390B in assets. Today's number is a key leading indicator of systemic stress.</div>
         <div class="industry-chart-wrap"><canvas id="problemChart"></canvas></div>
         <div class="industry-source">Source: FDIC Quarterly Banking Profile · PROBNUM · Live data</div>
@@ -6084,13 +6123,13 @@ function renderIndustry() {
 
     <div class="industry-chart-grid">
       <div class="industry-chart-card">
-        <div class="industry-chart-title">Industry net interest margin <span id="nimLiveTag" style="font-size:10px;color:#4ade80;margin-left:8px;"></span></div>
+        <div class="industry-chart-title">Industry net interest margin <span id="nimLiveTag" style="font-size:12px;color:#4ade80;margin-left:8px;"></span></div>
         <div class="industry-chart-sub">NIM measures the spread between what banks earn on loans and pay on deposits. The post-2022 rate hike cycle drove NIM to its highest level since 2019 — but rising deposit costs are compressing it again.</div>
         <div class="industry-chart-wrap"><canvas id="nimChart"></canvas></div>
         <div class="industry-source">Source: FDIC BankFind Aggregate · NIMY · Live data</div>
       </div>
       <div class="industry-chart-card">
-        <div class="industry-chart-title">Industry ROA &amp; ROE <span id="roaLiveTag" style="font-size:10px;color:#4ade80;margin-left:8px;"></span></div>
+        <div class="industry-chart-title">Industry ROA &amp; ROE <span id="roaLiveTag" style="font-size:12px;color:#4ade80;margin-left:8px;"></span></div>
         <div class="industry-chart-sub">Return on assets and equity — the two headline profitability benchmarks. ROA above 1% and ROE above 10% are the traditional "well-performing" thresholds for community banks.</div>
         <div class="industry-chart-wrap"><canvas id="roaChart"></canvas></div>
         <div class="industry-source">Source: FDIC BankFind Aggregate · ROA / ROE · Live data</div>
@@ -6102,7 +6141,7 @@ function renderIndustry() {
       <p>Total U.S. bank deposits grew from <strong>$2.9T in 1984 to $20T today</strong> — a 6.8× increase over 40 years. But the distribution of those deposits is increasingly uneven. The top 5 banks now control roughly 45% of all insured deposits. Meanwhile, real estate loans have grown to <strong>$6.0T — 30% of all bank assets</strong>. The banking system is simultaneously more deposit-rich and more concentrated in a single asset class than at any point in modern history. <strong>For community banks, this creates both opportunity and fragility depending on where you sit in the local economy.</strong></p>
     </div>
 
-    <div style="text-align:center;padding:40px 0 16px;font-family:var(--mono);font-size:11px;color:var(--muted);">
+    <div style="text-align:center;padding:40px 0 16px;font-family:var(--mono);font-size:12px;color:var(--muted);">
       // NCUA credit union data · peer benchmarks · economic indicators — coming soon
     </div>
     ${renderContactSection()}
@@ -6293,7 +6332,7 @@ function drawIndustryCharts() {
     }
 
     // Tag elements as live if we got data
-    const liveTag = liveRows ? '● LIVE' : '';
+    const liveTag = liveRows ? 'Live' : '';
     const tagEl = (id) => { const el = document.getElementById(id); if (el) el.textContent = liveTag; };
     tagEl('problemLiveTag');
     tagEl('nimLiveTag');
@@ -6388,7 +6427,7 @@ function drawIndustryCharts() {
     const pctEl = document.getElementById('depositConcPct');
     if (pctEl) pctEl.textContent = pct.toFixed(1) + '%';
     const tagEl2 = document.getElementById('depositConcTag');
-    if (tagEl2) tagEl2.textContent = '● LIVE';
+    if (tagEl2) tagEl2.textContent = 'Live';
 
     makeChart('depositConcentrationChart', {
       type: 'doughnut',
@@ -6470,19 +6509,19 @@ function renderAbout() {
 
     <div class="about-grid">
       <div class="about-card">
-        <h3>// Why we built this</h3>
+        <h3>Why we built this</h3>
         <p>We run <a href="https://goidentify.com" target="_blank" style="color:var(--accent);">iDENTIFY</a>, a data infrastructure and analytics company serving community banks and credit unions. Every day we'd go searching for basic financial info on a prospect and end up wading through clunky government portals. So we built the tool we wanted to exist.</p>
       </div>
       <div class="about-card">
-        <h3>// What it does</h3>
+        <h3>What it does</h3>
         <p>Search any FDIC-insured bank or NCUA-insured credit union. See assets, deposits, capital, ROA/ROE trends back to 1992, every branch back to 1994, county market share and peer comparisons, all from public regulatory filings. No login. No paywall. No nonsense.</p>
       </div>
       <div class="about-card">
-        <h3>// The data</h3>
+        <h3>The data</h3>
       <p>Sourced directly from public filings: the <a href="https://api.fdic.gov/banks/docs/" target="_blank" style="color:var(--accent);">FDIC</a> (call reports, Summary of Deposits, mergers), the <a href="https://mapping.ncua.gov/ResearchCreditUnion" target="_blank" style="color:var(--accent);">NCUA</a> (5300 call reports), CFPB mortgage data (HMDA) and the U.S. Census. Financial figures are in thousands of dollars as reported, updated with each filing cycle.</p>
       </div>
       <div class="about-card">
-        <h3>// What's coming</h3>
+        <h3>What's coming</h3>
         <p>Local bank pages for every city. Credit union branch history. Deposit trend alerts. Vault inside Microsoft 365 Copilot. And eventually, a way to build and export prospect lists, all without a subscription fee.</p>
       </div>
     </div>
@@ -6491,7 +6530,7 @@ function renderAbout() {
 
     <div class="about-ai-report">
       <div class="ai-report-header">
-        <div class="ai-report-eyebrow">// Built with AI · Project Status</div>
+        <div class="ai-report-eyebrow">Built with AI · Project Status</div>
         <h2 class="ai-report-title">Built entirely with Claude. Zero engineers.</h2>
         <p class="ai-report-sub">No dev team. No agency. No sprints. A founder, an AI, and a clear vision — from blank page to production in days.</p>
       </div>
@@ -6500,28 +6539,28 @@ function renderAbout() {
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin-bottom:32px;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);">
         <div style="padding:20px 16px;background:rgba(124,110,245,0.12);text-align:center;">
           <div style="font-family:var(--serif);font-size:36px;color:#7c6ef5;line-height:1;">55 days</div>
-          <div style="font-size:11px;color:var(--text);font-weight:600;margin-top:6px;">Build days</div>
-          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:3px;">13 Claude sessions</div>
+          <div style="font-size:12px;color:var(--text);font-weight:600;margin-top:6px;">Build days</div>
+          <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:3px;">13 Claude sessions</div>
         </div>
         <div style="padding:20px 16px;background:rgba(248,113,113,0.10);text-align:center;">
           <div style="font-family:var(--serif);font-size:36px;color:#f87171;line-height:1;">275</div>
-          <div style="font-size:11px;color:var(--text);font-weight:600;margin-top:6px;">Deploys</div>
-          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:3px;">Commits shipped to production</div>
+          <div style="font-size:12px;color:var(--text);font-weight:600;margin-top:6px;">Deploys</div>
+          <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:3px;">Commits shipped to production</div>
         </div>
         <div style="padding:20px 16px;background:rgba(52,211,153,0.10);text-align:center;">
           <div style="font-family:var(--serif);font-size:36px;color:#34d399;line-height:1;">59</div>
-          <div style="font-size:11px;color:var(--text);font-weight:600;margin-top:6px;">Features</div>
-          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:3px;">Major features shipped</div>
+          <div style="font-size:12px;color:var(--text);font-weight:600;margin-top:6px;">Features</div>
+          <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:3px;">Major features shipped</div>
         </div>
         <div style="padding:20px 16px;background:rgba(77,184,255,0.10);text-align:center;">
           <div style="font-family:var(--serif);font-size:36px;color:#4db8ff;line-height:1;">16,800</div>
-          <div style="font-size:11px;color:var(--text);font-weight:600;margin-top:6px;">Lines of Code</div>
-          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:3px;">16 serverless functions · 10 pages</div>
+          <div style="font-size:12px;color:var(--text);font-weight:600;margin-top:6px;">Lines of Code</div>
+          <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:3px;">16 serverless functions · 10 pages</div>
         </div>
       </div>
 
       <!-- Row 2: Technical workload -->
-      <div class="ai-section-label">// Claude's workload</div>
+      <div class="ai-section-label">Claude's workload</div>
       <div class="ai-stat-grid">
         <div class="ai-stat-card">
           <div class="ai-stat-val">2,600+</div>
@@ -6546,7 +6585,7 @@ function renderAbout() {
       </div>
 
       <!-- Row 3: Energy & carbon -->
-      <div class="ai-section-label">// Estimated energy &amp; carbon</div>
+      <div class="ai-section-label">Estimated energy &amp; carbon</div>
       <div class="ai-energy-row">
         <div class="ai-energy-card">
           <div class="ai-energy-val">~1.8 kWh</div>
@@ -6580,7 +6619,7 @@ function renderAbout() {
       </div>
 
       <!-- Row 4: Cost comparison -->
-      <div class="ai-section-label">// What would this have cost?</div>
+      <div class="ai-section-label">What would this have cost?</div>
       <div class="ai-cost-grid">
         <div class="ai-cost-card">
           <div class="ai-cost-type">Solo freelancer</div>
@@ -6603,7 +6642,7 @@ function renderAbout() {
       <hr class="ai-inner-divider">
 
       <!-- Live MCP Usage Stats -->
-      <div class="ai-feature-heading" style="margin-bottom:14px;">⚡ Vault MCP — Live Usage</div>
+      <div class="ai-feature-heading" style="margin-bottom:14px;">Vault MCP live usage</div>
       <p style="font-size:13px;color:var(--muted);margin:0 0 20px;line-height:1.7;">
         Vault MCP (<a href="/mcp" style="color:var(--accent);">vaultbot.ai/mcp</a>) is the first banking intelligence Model Context Protocol server.
         Any AI agent — Claude Desktop, Claude Code, Claude.ai web, or custom MCP clients — can call its 18 tools to query every U.S. bank and credit union live.
@@ -6613,30 +6652,30 @@ function renderAbout() {
       <!-- Headline KPIs -->
       <div id="mcp-stats-widget" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px;">
         <div class="mcp-stat" style="background:rgba(77,184,255,0.08);border:1px solid rgba(77,184,255,0.2);border-radius:10px;padding:16px;">
-          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Tool calls</div>
+          <div style="font-size:13px;font-weight:500;color:var(--muted);margin-bottom:6px;">Tool calls</div>
           <div id="mcp-stat-calls" style="font-size:32px;font-weight:700;font-family:var(--serif);color:var(--accent);line-height:1;">—</div>
-          <div style="font-size:10px;color:var(--muted);margin-top:6px;font-family:var(--mono);">by AI agents since May 11, 2026</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:6px;font-family:var(--mono);">by AI agents since May 11, 2026</div>
         </div>
         <div class="mcp-stat" style="background:rgba(74,222,128,0.08);border:1px solid rgba(74,222,128,0.2);border-radius:10px;padding:16px;">
-          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Active users</div>
+          <div style="font-size:13px;font-weight:500;color:var(--muted);margin-bottom:6px;">Active users</div>
           <div id="mcp-stat-users" style="font-size:32px;font-weight:700;font-family:var(--serif);color:#4ade80;line-height:1;">—</div>
-          <div style="font-size:10px;color:var(--muted);margin-top:6px;font-family:var(--mono);" id="mcp-stat-returning">ran at least one tool</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:6px;font-family:var(--mono);" id="mcp-stat-returning">ran at least one tool</div>
         </div>
         <div class="mcp-stat" style="background:rgba(176,110,243,0.08);border:1px solid rgba(176,110,243,0.2);border-radius:10px;padding:16px;">
-          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">AI apps connected</div>
+          <div style="font-size:13px;font-weight:500;color:var(--muted);margin-bottom:6px;">AI apps connected</div>
           <div id="mcp-stat-clients" style="font-size:32px;font-weight:700;font-family:var(--serif);color:#b06ef3;line-height:1;">—</div>
-          <div style="font-size:10px;color:var(--muted);margin-top:6px;font-family:var(--mono);">Claude, OpenAI Codex, n8n and more</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:6px;font-family:var(--mono);">Claude, OpenAI Codex, n8n and more</div>
         </div>
         <div class="mcp-stat" style="background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);border-radius:10px;padding:16px;">
-          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Uptime</div>
+          <div style="font-size:13px;font-weight:500;color:var(--muted);margin-bottom:6px;">Uptime</div>
           <div id="mcp-stat-uptime" style="font-size:32px;font-weight:700;font-family:var(--serif);color:#fbbf24;line-height:1;">—</div>
-          <div style="font-size:10px;color:var(--muted);margin-top:6px;font-family:var(--mono);">requests served successfully</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:6px;font-family:var(--mono);">requests served successfully</div>
         </div>
       </div>
 
       <!-- Weekly trend chart -->
       <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:14px;">
-        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:14px;">Weekly tool calls, last 30 days</div>
+        <div style="font-size:13px;font-weight:500;color:var(--muted);margin-bottom:14px;">Weekly tool calls, last 30 days</div>
         <div id="mcp-weekly-chart" style="min-height:180px;">
           <div style="color:var(--muted);font-size:12px;">Loading…</div>
         </div>
@@ -6644,7 +6683,7 @@ function renderAbout() {
 
       <!-- Tool usage breakdown -->
       <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:14px;">
-        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:14px;">Most-used tools</div>
+        <div style="font-size:13px;font-weight:500;color:var(--muted);margin-bottom:14px;">Most-used tools</div>
         <div id="mcp-tool-breakdown" style="display:flex;flex-direction:column;gap:8px;">
           <div style="color:var(--muted);font-size:12px;">Loading…</div>
         </div>
@@ -6652,14 +6691,14 @@ function renderAbout() {
 
       <!-- Client diversity callout -->
       <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:24px;">
-        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Who's connected</div>
+        <div style="font-size:13px;font-weight:500;color:var(--muted);margin-bottom:10px;">Who's connected</div>
         <div id="mcp-client-diversity" style="font-size:13px;color:var(--text);line-height:1.7;">
           <span style="color:var(--muted);">Loading…</span>
         </div>
       </div>
 
       <div style="margin-bottom:32px;">
-        <a href="/mcp" style="display:inline-block;padding:10px 22px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:white;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;font-family:var(--mono);letter-spacing:0.04em;">Try Vault MCP →</a>
+        <a href="/mcp" style="display:inline-block;padding:10px 22px;background:var(--action);color:var(--on-action);text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;font-family:var(--mono);letter-spacing:0.04em;">Try Vault MCP →</a>
         <a href="/mcp/stats" style="display:inline-block;padding:10px 22px;background:transparent;border:1px solid var(--border);color:var(--text);text-decoration:none;border-radius:8px;font-size:13px;font-weight:600;font-family:var(--mono);letter-spacing:0.04em;margin-left:8px;">Full dashboard →</a>
       </div>
 
@@ -6668,7 +6707,7 @@ function renderAbout() {
       <!-- Features + roadmap -->
       <div class="ai-feature-row">
         <div class="ai-feature-col">
-          <div class="ai-feature-heading">// Features shipped</div>
+          <div class="ai-feature-heading">Features shipped</div>
           <div class="ai-feature-list">
             <div class="ai-feature-item ai-done">FDIC BankFind API (4,212 active banks)</div>
             <div class="ai-feature-item ai-done">NCUA data integration (4,299 credit unions)</div>
@@ -6707,7 +6746,7 @@ function renderAbout() {
             <div class="ai-feature-item ai-done">Contact form on all pages → Netlify Forms</div>
             <div class="ai-feature-item ai-done">Side-by-side institution comparison</div>
             <div class="ai-feature-item ai-done">SEO-friendly slug URLs (/bank/name-city-state-cert)</div>
-            <div class="ai-feature-item ai-done">⚡ Vault MCP Server — 18 tools, JSON-RPC, live</div>
+            <div class="ai-feature-item ai-done">Vault MCP Server — 18 tools, JSON-RPC, live</div>
             <div class="ai-feature-item ai-done">Gated MCP install flow with branded welcome email</div>
             <div class="ai-feature-item ai-done">Live MCP usage analytics dashboard</div>
             <div class="ai-feature-item ai-done">MCP: asset quality detail (noncurrent, OREO, reserves, charge-offs)</div>
@@ -6732,7 +6771,7 @@ function renderAbout() {
           </div>
         </div>
         <div class="ai-feature-col">
-          <div class="ai-feature-heading">// Data coverage</div>
+          <div class="ai-feature-heading">Data coverage</div>
           <div class="ai-coverage-bars">
             <div class="ai-bar-row">
               <div class="ai-bar-label">FDIC banks</div>
@@ -6761,12 +6800,12 @@ function renderAbout() {
             </div>
           </div>
 
-          <div class="ai-feature-heading" style="margin-top:24px">// Roadmap</div>
+          <div class="ai-feature-heading" style="margin-top:24px">Roadmap</div>
           <div class="ai-feature-list">
-            <div class="ai-feature-item ai-soon">⭐ Microsoft 365 Copilot connector</div>
-            <div class="ai-feature-item ai-soon">⭐ Local bank pages for every city (banks in Tulsa, OKC and more)</div>
-            <div class="ai-feature-item ai-soon">⭐ Email updates + public update archive</div>
-            <div class="ai-feature-item ai-soon">⭐ Consumer product lines + HMDA lender ID in the MCP (examiner requests)</div>
+            <div class="ai-feature-item ai-soon">Microsoft 365 Copilot connector</div>
+            <div class="ai-feature-item ai-soon">Local bank pages for every city (banks in Tulsa, OKC and more)</div>
+            <div class="ai-feature-item ai-done">Email updates + public update archive</div>
+            <div class="ai-feature-item ai-soon">Consumer product lines + HMDA lender ID in the MCP (examiner requests)</div>
             <div class="ai-feature-item ai-soon">Credit union branch history chart</div>
             <div class="ai-feature-item ai-soon">Bank-within-county mortgage lending + applicant-group data</div>
             <div class="ai-feature-item ai-soon">CU M&amp;A data (NCUA merger reports)</div>

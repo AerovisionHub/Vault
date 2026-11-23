@@ -55,12 +55,19 @@ function resend(method, path, payload) {
   });
 }
 
+// Design System v1 chrome — byte-identical to scripts/site_chrome.py
+// (scripts/check_chrome.py enforces it).
+const HEADER = '<header class="vds-h"><div class="vds-in"><a class="vds-logo" href="/">Vault<span>.</span></a><nav class="vds-nav" aria-label="Main"><a href="/">Search</a><a href="/industry">Industry</a><a href="/lenders">Lenders</a><a href="/counties">Counties</a><a href="/ma">M&amp;A</a><a href="/charters">New charters</a><a href="/about">About</a></nav><a class="vds-btn vds-btn--p vds-btn--sm" href="/mcp">Connect MCP</a><details class="vds-menu"><summary aria-label="Menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></summary><div><a href="/">Search</a><a href="/industry">Industry</a><a href="/lenders">Lenders</a><a href="/counties">Counties</a><a href="/ma">M&amp;A</a><a href="/charters">New charters</a><a href="/about">About</a><a href="/mcp">Connect MCP</a></div></details></div></header>';
+const FOOTER = '<footer class="v-footer-wrap"><div class="v-foot"><div class="v-foot-top"><div class="v-foot-brand"><a href="/" class="vds-logo">Vault<span>.</span></a><span>Free bank and credit union intelligence from public FDIC, NCUA, HMDA and Census data.</span></div><nav class="v-foot-cols" aria-label="Footer"><div><b>Explore</b><a href="/">Search</a><a href="/industry">Industry</a><a href="/lenders">Find a lender</a><a href="/counties">County markets</a><a href="/ma">M&amp;A</a><a href="/charters">New charters</a></div><div><b>MCP</b><a href="/mcp/setup">Connect</a><a href="/mcp">All 18 tools</a><a href="/mcp/stats">Usage stats</a></div><div><b>Vault</b><a href="/about">About</a><a href="/updates">Updates</a><a href="/support">Support</a><a href="/privacy">Privacy</a></div></nav></div><div class="v-foot-legal"><span>Data: FDIC BankFind, FDIC Summary of Deposits, NCUA 5300, CFPB HMDA, U.S. Census.</span><span>© 2026 Built by <a href="https://goidentify.com" target="_blank" rel="noopener">iDENTIFY</a> in Tulsa, OK.</span></div></div></footer>';
 function page(title, text) {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${esc(title)} · Vault</title>
-<style>body{margin:0;background:#0f1240;color:#fff;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:24px;box-sizing:border-box}
-main{max-width:480px;display:flex;flex-direction:column;gap:16px}.w{font-family:Georgia,serif;font-size:26px}.w span{color:#3b82f6}h1{margin:0;font-size:28px;line-height:34px;letter-spacing:-.02em}p{margin:0;color:#b9bddb;line-height:1.6}
-a.b{display:inline-flex;align-items:center;height:48px;padding:0 24px;border-radius:8px;background:#4db8ff;color:#0f1240;font-weight:600;text-decoration:none;align-self:flex-start}</style></head>
-<body><main><div class="w">Vault<span>.</span></div><h1>${esc(title)}</h1><p>${text}</p><a class="b" href="/">Back to Vault</a></main></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+<title>${esc(title)} · Vault</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/vault-ds.css"></head>
+<body>${HEADER}
+<main><section class="vds-hero" style="padding:72px 0 64px"><div class="vds-wrap vds-narrow">
+<h1>${esc(title)}</h1><p>${text}</p>
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:28px"><a class="vds-btn vds-btn--p vds-btn--lg" href="/">Search a bank or credit union</a><a class="vds-btn vds-btn--s vds-btn--lg" href="/updates">See past updates</a></div>
+</div></section></main>
+${FOOTER}</body></html>`;
 }
 const html = (code, title, text) => ({ statusCode: code, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }, body: page(title, text) });
 
@@ -106,7 +113,8 @@ async function request(body, host) {
   const origin = /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host || '') ? `http://${host}` : 'https://vaultbot.ai';
   const link = `${origin}/.netlify/functions/newsletter-signup?e=${encodeURIComponent(email)}&t=${t}&s=${sign(email, t)}`;
   const sent = await resend('POST', '/emails', {
-    from: 'Lee from Vault <mcp@vaultbot.ai>',
+    from: 'Lee from Vault <lee@vaultbot.ai>',
+    reply_to: 'lee@goidentify.com',
     to: [email],
     subject: 'Confirm your Vault updates',
     html: `<div style="font-family:Inter,-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#0f1240">
