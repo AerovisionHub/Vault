@@ -719,7 +719,7 @@
     --code: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     --header-h: 64px;
   }
-  .v-hero { --bg: #1b2a78; --surface: #121a5c; --surface-hover: #1a246e; --border: #34409a; --border-strong: #7a82c8; --subtle: #a3a8d4; --neutral-tint: #24318a; --accent-tint: #22408f; --link: #7cccff; }
+  .v-hero { --bg: #1b2a78; --bg-subtle: #121a5c; --surface: #121a5c; --surface-hover: #1a246e; --border: #34409a; --border-strong: #7a82c8; --subtle: #a3a8d4; --neutral-tint: #24318a; --accent-tint: #22408f; --link: #7cccff; }
   .v-paper { --bg: #ffffff; --bg-subtle: #f6f7fb; --surface: #ffffff; --surface2: #ffffff; --surface-hover: #f6f7fb; --border: #e6e8f0; --border-strong: #8a8fb0;
     --text: #0f1240; --muted: #4f5373; --subtle: #62668a; --action: #0f1240; --on-action: #ffffff; --action-hover: #1c2160; --link: #0b6bb8; --focus: #0b6bb8; --accent: #0b6bb8;
     --accent-tint: #eef7ff; --purple-tint: #f1eafd; --purple-ink: #6d28d9; --neutral-tint: #f1f2f7; --positive: #047857; --positive-tint: #e7f8f0; --red: #b42318; --negative-tint: #fdecea;
@@ -895,8 +895,8 @@
   .v-msg.ok { color: var(--positive); } .v-msg.err { color: var(--red); }
 
   /* Footer (static, replaces the fixed bar) */
-  #siteFooter { position: static; display: block; padding: 64px 24px 40px; background: #0b0d30; border-top: 1px solid #262c6c; box-shadow: none; }
-  #siteFooter.scrolled { background: #0b0d30 !important; border-color: #262c6c !important; box-shadow: none; }
+  #siteFooter { position: static; display: block; padding: 64px 24px 40px; background: #1b2a78; border-top: 1px solid #34409a; box-shadow: none; }
+  #siteFooter.scrolled { background: #1b2a78 !important; border-color: #34409a !important; box-shadow: none; }
   .v-foot { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 40px; }
   .v-foot-top { display: flex; justify-content: space-between; gap: 48px; }
   .v-foot-brand { display: flex; flex-direction: column; gap: 12px; max-width: 320px; font-size: 14px; line-height: 22px; color: var(--muted); }
@@ -905,8 +905,9 @@
   .v-foot-cols b { font: 600 13px/18px var(--sans); color: #fff; }
   .v-foot-cols a { font-size: 14px; line-height: 20px; color: var(--muted); text-decoration: none; }
   .v-foot-cols a:hover { color: #fff; }
-  .v-foot-legal { border-top: 1px solid #262c6c; padding-top: 20px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 12px; line-height: 18px; color: var(--subtle); }
+  .v-foot-legal { border-top: 1px solid #34409a; padding-top: 20px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 12px; line-height: 18px; color: var(--subtle); }
   .v-foot-legal a { color: var(--muted); }
+  #siteFooter .v-foot-legal { color: #a3a8d4; }
 
 
   .industry-kpi { background: var(--surface); border-color: var(--border); }
@@ -2739,7 +2740,7 @@ function renderSearch() {
       </div>
     </section>
 
-    <section class="v-band v-section">
+    <section class="v-band v-hero v-section">
       <div class="v-split2">
         <div style="display:flex;flex-direction:column;gap:20px">
           <span class="v-overline">Vault MCP</span>

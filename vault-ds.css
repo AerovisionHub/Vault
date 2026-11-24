@@ -96,7 +96,7 @@ table { font-variant-numeric: tabular-nums; }
 .vds-section svg text { fill: var(--subtle); }
 
 /* Footer (same markup + look as the app's #siteFooter) */
-.v-footer-wrap, #siteFooter { display: block; padding: 64px 24px 40px; background: #0b0d30; border-top: 1px solid #262c6c; color: #b9bddb; font-family: var(--sans); }
+.v-footer-wrap, #siteFooter { display: block; padding: 64px 24px 40px; background: #1b2a78; border-top: 1px solid #34409a; color: #b9bddb; font-family: var(--sans); }
 .v-foot { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 40px; }
 .v-foot-top { display: flex; justify-content: space-between; gap: 48px; }
 .v-foot-brand { display: flex; flex-direction: column; gap: 12px; max-width: 320px; font-size: 14px; line-height: 22px; color: #b9bddb; }
@@ -106,7 +106,7 @@ table { font-variant-numeric: tabular-nums; }
 .v-foot-cols b { font: 600 13px/18px var(--sans); color: #fff; }
 .v-foot-cols a { font-size: 14px; line-height: 20px; color: #b9bddb !important; text-decoration: none !important; }
 .v-foot-cols a:hover { color: #fff !important; }
-.v-foot-legal { border-top: 1px solid #262c6c; padding-top: 20px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 12px; line-height: 18px; color: #9095c2; }
+.v-foot-legal { border-top: 1px solid #34409a; padding-top: 20px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 12px; line-height: 18px; color: #a3a8d4; }
 .v-foot-legal a { color: #b9bddb !important; }
 
 /* County picker */
