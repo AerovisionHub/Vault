@@ -838,6 +838,7 @@
   .v-chip--purple { background: var(--purple-tint); color: var(--purple-ink); }
   .v-pill { display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--muted); font: 500 14px/1 var(--sans); text-decoration: none; white-space: nowrap; cursor: pointer; }
   .v-pill:hover { color: var(--text); border-color: var(--border-strong); }
+  .v-try .v-pill { transition: opacity .18s ease; }
   .v-overline { display: block; font: 600 12px/16px var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--link); }
   .v-h2 { margin: 0; font: 600 36px/42px var(--sans); letter-spacing: -0.02em; color: var(--text); }
   .v-lead { margin: 0; font: 400 17px/28px var(--sans); color: var(--muted); }
@@ -2684,6 +2685,7 @@ const V_PLACES = ['Tulsa', 'Dallas', 'Denver', 'Atlanta', 'Austin', 'Boston', 'S
 
 function renderSearch() {
   setTimeout(vStartPlaceRotation, 0);
+  setTimeout(vStartTryRotation, 0);
   const tulsaRows = V_TULSA.map(r => `<tr${r[1] === 'Regent Bank' ? ' class="hl"' : ''}><td class="rk">${r[0]}</td><td class="nm">${r[1]}</td><td><span class="v-bar"><i style="width:${Math.max(4, Math.round(r[2] / 35.3 * 100))}%"></i></span>${r[2]}%</td><td><span class="v-chip${r[4] ? ' v-chip--' + r[4] : ''}">${r[3]}</span></td><td class="r v-hide-m">${r[5]}</td><td class="r v-hide-m">${r[6]}</td></tr>`).join('');
   const feat = (icon, title, desc, action) => `<button type="button" class="v-feat" onclick="${action}"><i>${vIcon(V_ICONS[icon])}</i><span style="display:flex;flex-direction:column;gap:4px"><b>${title}</b><span>${desc}</span></span></button>`;
   return `
@@ -2692,11 +2694,7 @@ function renderSearch() {
       <h1>Every U.S. bank and credit union, one search.</h1>
       <p class="v-lead">Financials, branch history, peers and M&amp;A for 8,500 institutions, straight from FDIC and NCUA filings. Free. No login.</p>
       <div class="v-home-search">${renderSearchBar()}</div>
-      <div class="v-try"><span>Try</span>
-        <button type="button" class="v-pill" onclick="vaultTry('Regent Bank')">Regent Bank</button>
-        <button type="button" class="v-pill" onclick="vaultTry('MSUFCU')">MSUFCU</button>
-        <button type="button" class="v-pill" onclick="vaultTry('Navy Federal')">Navy Federal</button>
-      </div>
+      <div class="v-try" id="vTry"><span>Try</span>${V_TRY.slice(0, 3).map(q => `<button type="button" class="v-pill" onclick="vaultTry(this.textContent)">${q}</button>`).join('')}</div>
       <div class="v-cov">
         <div><b>4,212</b><span>Banks</span></div>
         <div><b>4,299</b><span>Credit unions</span></div>
@@ -2782,6 +2780,34 @@ function vPageHero(app) {
   sec.style.setProperty('--hw', width + 'px');
   sec.appendChild(block);
   app.insertBefore(sec, app.firstChild);
+}
+
+// "Try" examples: 12 searches, shown three at a time, rotating every 3.5s.
+// Every one was checked against search_institutions (2026-11-24) and lands on
+// the right institution; the acronyms show off fuzzy/acronym matching.
+const V_TRY = ['Regent Bank', 'MSUFCU', 'Navy Federal', 'JPMorgan Chase', 'BOKF', 'PenFed', 'SchoolsFirst', 'Frost Bank', 'BECU', 'Ally Bank', 'First Horizon', 'America First'];
+let vTryTimer = null;
+function vStartTryRotation() {
+  if (vTryTimer) clearInterval(vTryTimer);
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  let start = 0, paused = false;
+  const row = document.getElementById('vTry');
+  if (!row) return;
+  row.addEventListener('mouseenter', () => { paused = true; });
+  row.addEventListener('mouseleave', () => { paused = false; });
+  row.addEventListener('focusin', () => { paused = true; });
+  row.addEventListener('focusout', () => { paused = false; });
+  vTryTimer = setInterval(() => {
+    const el = document.getElementById('vTry');
+    if (!el) { clearInterval(vTryTimer); vTryTimer = null; return; }
+    if (paused || document.hidden) return;
+    start = (start + 3) % V_TRY.length;
+    const btns = el.querySelectorAll('button.v-pill');
+    btns.forEach(b => { b.style.opacity = '0'; });
+    setTimeout(() => {
+      btns.forEach((b, i) => { b.textContent = V_TRY[(start + i) % V_TRY.length]; b.style.opacity = '1'; });
+    }, 180);
+  }, 3500);
 }
 
 let vPlaceTimer = null;
