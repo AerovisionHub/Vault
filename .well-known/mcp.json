@@ -1,0 +1,22 @@
+{
+  "name": "Vault",
+  "title": "Vault: bank and credit union intelligence",
+  "description": "Free, read-only MCP server with live FDIC, NCUA, CFPB HMDA and U.S. Census data on every U.S. bank and credit union.",
+  "publisher": {
+    "name": "iDENTIFY",
+    "legalName": "GOiDENTIFY, LLC",
+    "url": "https://goidentify.com"
+  },
+  "servers": [
+    {
+      "url": "https://vaultbot.ai/api/mcp",
+      "transport": "streamable-http",
+      "authentication": "none"
+    }
+  ],
+  "documentation": "https://vaultbot.ai/mcp",
+  "setup": "https://vaultbot.ai/mcp/setup",
+  "terms": "https://vaultbot.ai/terms",
+  "privacy": "https://vaultbot.ai/privacy",
+  "llms": "https://vaultbot.ai/llms.txt"
+}

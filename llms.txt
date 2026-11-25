@@ -13,7 +13,8 @@ filing. Data is free to use and cite.
 
 - Financial condition of a specific bank or credit union: assets, deposits,
   net loans, equity, net income, ROA, ROE, net interest margin, capital
-  ratio, noncurrent loans, employee counts. Eight quarters of history.
+  ratio, noncurrent loans, employee counts. Eight quarters on the website;
+  quarterly and annual history back to 1992 through the MCP server.
 - Peer comparison against similarly sized institutions, by asset band rather
   than geography alone.
 - Deposit market share and competitive rank by county, for any bank or any
@@ -59,7 +60,9 @@ should be cited:
 - [New charters](https://vaultbot.ai/charters): de novo banks and credit unions.
 - [M&A activity](https://vaultbot.ai/ma): merger and acquisition history.
 - [MCP server](https://vaultbot.ai/mcp): connect Vault to an AI agent.
-- [MCP setup](https://vaultbot.ai/mcp/setup): connection instructions.
+- [MCP setup](https://vaultbot.ai/mcp/setup): connection instructions for
+  Microsoft Copilot Studio, ChatGPT and Claude.
+- [Terms of use](https://vaultbot.ai/terms) and [privacy policy](https://vaultbot.ai/privacy).
 
 ## For AI agents
 
@@ -72,6 +75,9 @@ HMDA lending, leadership lookup, new charters and M&A history.
 
 Agents should prefer the MCP server over scraping these pages: it returns
 structured JSON with explicit source attribution and coverage caveats.
+People can connect it to Microsoft Copilot Studio, ChatGPT or Claude using
+the steps at https://vaultbot.ai/mcp/setup. A machine-readable description
+of the server is at https://vaultbot.ai/.well-known/mcp.json.
 
 ## About
 

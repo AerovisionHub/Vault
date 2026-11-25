@@ -961,6 +961,19 @@
     #siteFooter { padding: 48px 16px 32px !important; }
     body { padding-bottom: 0 !important; }
   }
+
+  /* AI assistant card + AI-referral banner (2026-11-26). Same visible text for people and crawlers. */
+  .ai-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin: 24px 0 8px; }
+  .ai-card h2 { font-size: 18px; line-height: 26px; margin: 0 0 6px; color: var(--text); }
+  .ai-card p { margin: 0 0 14px; color: var(--muted); font-size: 15px; line-height: 23px; }
+  .ai-card-prompt { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: rgba(77,184,255,0.08); border: 1px solid rgba(77,184,255,0.25); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; }
+  .ai-card-prompt code { flex: 1 1 260px; min-width: 0; font-family: var(--mono); font-size: 13px; line-height: 19px; color: var(--text); white-space: normal; overflow-wrap: anywhere; }
+  .ai-card-links { display: flex; gap: 8px; flex-wrap: wrap; }
+  .ai-card-links .v-btn { height: 36px; font-size: 14px; }
+  .ai-ref-banner { position: relative; z-index: 150; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; background: #1b2a78; color: #fff; border-radius: 10px; margin: 0 0 16px; padding: 12px 48px 12px 20px; font-size: 15px; line-height: 22px; }
+  .ai-ref-banner a { color: #fff; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+  .ai-ref-banner button { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: 0; color: #fff; font-size: 22px; line-height: 1; width: 36px; height: 36px; cursor: pointer; border-radius: 8px; }
+  .ai-ref-banner button:hover { background: rgba(255,255,255,0.12); }
 </style>
 </head>
 
@@ -3046,8 +3059,80 @@ function renderDetail() {
   return renderCUDetail(d);
 }
 
+// ── AI assistant card (Layer 1) ─────────────────────────────────────────────
+// Visible, identical content for people and crawlers; the edge function puts the
+// same wording in the server-rendered block (netlify/edge-functions/institution-seo.js).
+const AI_UTM = 'utm_source=vault-site&utm_medium=ai-card&utm_campaign=mcp';
+function aiPromptFor(kind, name) {
+  return kind === 'cu'
+    ? `Using Vault, show ${name}'s assets, loans, shares and net worth ratio over the last five years, and how it compares with similar credit unions.`
+    : `Using Vault, show ${name}'s deposit trend, loan mix and CRE concentration, and how it compares with similar banks.`;
+}
+function aiCardHTML(kind, name, id) {
+  if (!name) return '';
+  const src = kind === 'cu' ? 'NCUA' : 'FDIC';
+  const prompt = aiPromptFor(kind, name);
+  const link = (anchor, label, k) => `<a class="v-btn v-btn--secondary" href="/mcp/setup?${AI_UTM}#${anchor}" data-ai-card="${k}">${label}</a>`;
+  return `
+    <section class="ai-card" aria-labelledby="aiCardH">
+      <h2 id="aiCardH">Ask about ${escAttr(name)} in your AI assistant</h2>
+      <p>Vault's free MCP server gives Microsoft Copilot, ChatGPT and Claude live ${src} data on ${escAttr(name)} and every other U.S. bank and credit union. Connect it once, then ask in plain language.</p>
+      <div class="ai-card-prompt"><code>${escAttr(prompt)}</code><button type="button" class="v-btn v-btn--secondary" onclick="copyAIPrompt(this)" data-prompt="${escAttr(prompt)}">Copy prompt</button></div>
+      <div class="ai-card-links">${link('copilot', 'Add to Copilot', 'copilot')}${link('chatgpt', 'Add to ChatGPT', 'chatgpt')}${link('claude', 'Add to Claude', 'claude')}</div>
+    </section>`;
+}
+function copyAIPrompt(btn) {
+  const t = btn.getAttribute('data-prompt') || '';
+  const done = () => { const o = btn.textContent; btn.textContent = 'Copied'; setTimeout(() => { btn.textContent = o; }, 1600); };
+  if (navigator.clipboard) navigator.clipboard.writeText(t).then(done).catch(() => {}); 
+  if (window.gtag) gtag('event', 'ai_prompt_copy', { page_path: location.pathname });
+}
+document.addEventListener('click', e => {
+  const a = e.target.closest && e.target.closest('[data-ai-card]');
+  if (a && window.gtag) gtag('event', 'ai_card_click', { assistant: a.getAttribute('data-ai-card'), page_path: location.pathname });
+});
+// Fire once per institution page with the same IDs the MCP logs ("bank:3108", "cu:5536").
+function trackInstitutionView(kind, id, name, state) {
+  const key = `${kind}:${id}`;
+  if (!id || window.__vaultViewed === key) return;
+  window.__vaultViewed = key;
+  if (window.gtag) gtag('event', 'institution_view', { institution_id: key, institution_name: String(name || '').slice(0, 100), state: state || '' });
+}
+
+// ── AI-referral banner (Layer 2) ─────────────────────────────────────────────
+(function aiReferral() {
+  try {
+    const ref = (document.referrer || '').toLowerCase();
+    const utm = (new URLSearchParams(location.search).get('utm_source') || '').toLowerCase();
+    const map = [
+      [/copilot\.microsoft\.com|m365\.cloud\.microsoft|copilot\.cloud\.microsoft|bing\.com\/(chat|copilot)/, 'Copilot', 'copilot', 'Add Vault to Copilot Studio in 2 minutes'],
+      [/chatgpt\.com|chat\.openai\.com|openai/, 'ChatGPT', 'chatgpt', 'Connect Vault to ChatGPT for live bank data'],
+      [/claude\.ai|anthropic/, 'Claude', 'claude', 'Connect Vault to Claude in 30 seconds'],
+      [/perplexity\.ai/, 'Perplexity', 'claude', 'Use Vault in your AI assistant'],
+      [/gemini\.google\.com/, 'Gemini', 'claude', 'Use Vault in your AI assistant'],
+    ];
+    const hit = map.find(([re]) => re.test(ref) || re.test(utm));
+    if (!hit) return;
+    const [, label, anchor, cta] = hit;
+    if (window.gtag) gtag('event', 'ai_referral_landing', { assistant: label, page_path: location.pathname });
+    if (localStorage.getItem('vault_ai_banner_dismissed') === '1') return;
+    const show = () => {
+      if (document.getElementById('aiRefBanner')) return;
+      const b = document.createElement('div');
+      b.id = 'aiRefBanner'; b.className = 'ai-ref-banner'; b.setAttribute('role', 'region'); b.setAttribute('aria-label', 'Vault in your AI assistant');
+      b.innerHTML = `<span>Found Vault through ${label}? <a href="/mcp/setup?utm_source=vault-site&utm_medium=ai-banner&utm_campaign=mcp#${anchor}" data-ai-card="${anchor}">${cta}</a> and ask about any bank with live data.</span><button type="button" aria-label="Dismiss">&times;</button>`;
+      b.querySelector('button').addEventListener('click', () => { try { localStorage.setItem('vault_ai_banner_dismissed', '1'); } catch (e) {} b.remove(); });
+      // The header is position:fixed; #app's container already leaves room for it.
+      const app = document.getElementById('app');
+      if (app && app.parentNode) app.parentNode.insertBefore(b, app); else document.body.prepend(b);
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show); else show();
+  } catch (e) {}
+})();
+
 function renderBankDetail(d) {
   const { inst, history } = d;
+  if (inst) trackInstitutionView('bank', inst.CERT, inst.NAME, inst.STALP);
   // Defensive guard: if FDIC API failed/timed out, inst may be undefined
   if (!inst) {
     return `
@@ -3253,6 +3338,7 @@ function renderBankDetail(d) {
         </div>
       </div>
     </div>
+    ${aiCardHTML('bank', inst.NAME, inst.CERT)}
     ${renderNewsSection(inst.NAME, inst.CITY, inst.STALP)}
     ${renderLeadershipSection(inst, d.officers, d.stock)}
     ${d.peers && d.peers.length > 0 ? renderPeers(d.peers, inst, latest) : '<div class="peer-loading"><div class="spinner"></div> Loading market peers…</div>'}`;
@@ -3288,6 +3374,7 @@ function renderCUDetail(d) {
   const state = cu.state || '—';
   const zip = cu.zip || '';
   const charter = cu.charter || cu.id || d.id || '—';
+  if (cu.name) trackInstitutionView('cu', charter, cu.name, cu.state);
   const assets = cu.assets || 0;
   const members = cu.members || 0;
   // null (not 0) when NCUA's employee field wasn't located — renders "—".
@@ -3415,6 +3502,7 @@ function renderCUDetail(d) {
 
     <div id="cuPeersContainer"><div class="peer-loading"><div class="spinner"></div> Loading market peers…</div></div>
 
+    ${aiCardHTML('cu', name, charter)}
     ${renderNewsSection(name, city, state)}
 
     <div class="section">

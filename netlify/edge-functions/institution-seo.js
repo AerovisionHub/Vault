@@ -673,6 +673,17 @@ export default async (request, context) => {
   whether its performance is typical for its size — the two questions are different and both are
   worth asking.</p>` : ''}
 
+  <h2>Ask about ${esc(model.h1)} in your AI assistant</h2>
+  <p>Vault's free MCP server gives Microsoft Copilot, ChatGPT and Claude live ${esc(srcName)} data on
+  ${esc(model.h1)} and every other U.S. bank and credit union. Connect it once, then ask in plain
+  language, for example: "${esc(model.kind === 'cu'
+    ? `Using Vault, show ${model.h1}'s assets, loans, shares and net worth ratio over the last five years, and how it compares with similar credit unions.`
+    : `Using Vault, show ${model.h1}'s deposit trend, loan mix and CRE concentration, and how it compares with similar banks.`)}"
+  Setup takes about a minute: <a href="/mcp/setup?utm_source=vault-site&utm_medium=ai-card&utm_campaign=mcp#copilot">add Vault to Copilot</a>,
+  <a href="/mcp/setup?utm_source=vault-site&utm_medium=ai-card&utm_campaign=mcp#chatgpt">add Vault to ChatGPT</a> or
+  <a href="/mcp/setup?utm_source=vault-site&utm_medium=ai-card&utm_campaign=mcp#claude">add Vault to Claude</a>.
+  The server address is https://vaultbot.ai/api/mcp.</p>
+
   <h2>Where this data comes from</h2>
   <p>Every figure on this page traces to a public regulatory filing. ${esc(srcName)} data is free
   to access and free to cite, and it is the same source regulators, analysts and the institutions
@@ -685,7 +696,8 @@ export default async (request, context) => {
   Protocol server at vaultbot.ai/mcp.</p>
 </div>
 <script>(function(){var e=document.getElementById('seo-prerender');if(e&&e.parentNode){var i=document.getElementById('seo-insights');window.__vaultPrerender={path:location.pathname,id:${JSON.stringify(String(id))},html:e.innerHTML,insights:i?i.innerHTML:''};e.parentNode.removeChild(e);}})();</script>
-<script type="application/ld+json">${JSON.stringify(model.jsonld)}</script>`;
+<script type="application/ld+json">${JSON.stringify(model.jsonld)}</script>
+<script type="application/ld+json">${JSON.stringify({ '@context': 'https://schema.org', '@type': 'WebAPI', name: 'Vault MCP server', description: 'Free, read-only Model Context Protocol server with live FDIC, NCUA, CFPB HMDA and U.S. Census data on every U.S. bank and credit union.', url: 'https://vaultbot.ai/mcp', documentation: 'https://vaultbot.ai/mcp/setup', termsOfService: 'https://vaultbot.ai/terms', provider: { '@type': 'Organization', name: 'iDENTIFY', legalName: 'GOiDENTIFY, LLC', url: 'https://goidentify.com' }, potentialAction: { '@type': 'ConsumeAction', target: 'https://vaultbot.ai/api/mcp' } })}</script>`;
 
   // index.html has <head> but NO </head> and NO opening <body> tag — the
   // browser auto-closes them. A /<body[^>]*>/ anchor silently no-ops here,
