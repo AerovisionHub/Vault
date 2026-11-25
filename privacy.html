@@ -45,7 +45,7 @@
   
 
   <h1>Privacy Policy</h1>
-  <p class="lede">Effective November 23, 2026. This policy covers vaultbot.ai and the Vault MCP server at vaultbot.ai/api/mcp.</p>
+  <p class="lede">Effective November 26, 2026. This policy covers vaultbot.ai and the Vault MCP server at vaultbot.ai/api/mcp.</p>
 
   <h2>Who runs Vault</h2>
   <p>Vault is a free bank and credit union intelligence tool built and operated by GOiDENTIFY, LLC (“iDENTIFY”), a data and analytics company in Tulsa, Oklahoma. Questions or requests about this policy go to <a href="mailto:lee@goidentify.com">lee@goidentify.com</a>.</p>
@@ -54,7 +54,7 @@
   <ul>
     <li>You don’t need an account to use Vault, on the website or through the MCP server.</li>
     <li>Almost everything Vault shows comes from public government data: FDIC, NCUA, CFPB HMDA and U.S. Census.</li>
-    <li>We collect personal information only when you fill in a form, plus standard analytics and usage logs.</li>
+    <li>We collect personal information only when you fill in a form, plus standard analytics and usage logs, including counts of which institutions and places people look up.</li>
     <li>We don’t sell personal information, and we don’t share it for targeted advertising.</li>
   </ul>
 
@@ -69,8 +69,8 @@
 
   <h3>Information collected automatically</h3>
   <ul>
-    <li><strong>Website analytics:</strong> Google Analytics records pages viewed, device and browser type, approximate location and referring site, using cookies. You can block it with your browser settings or Google’s opt-out add-on.</li>
-    <li><strong>MCP usage records:</strong> for each request to the MCP server we record the time, the tool called, the MCP client’s name, the user agent, how long it took, whether it succeeded, and a one-way salted hash of the IP address. We don’t store raw IP addresses or the arguments of your tool calls in these records. We use them to count usage and find errors.</li>
+    <li><strong>Website analytics:</strong> Google Analytics records pages viewed, searches made on the site, device and browser type, approximate location and referring site, using cookies. You can block it with your browser settings or Google’s opt-out add-on.</li>
+    <li><strong>MCP usage records:</strong> for each request to the MCP server we record the time, the tool called, the MCP client’s name, the user agent, how long it took, whether it succeeded, and a one-way salted hash of the IP address. We don’t store raw IP addresses. We also count what’s looked up: the institutions (by FDIC certificate or NCUA charter number), states, counties or cities, and search terms in tool requests, kept as daily totals. Because Vault has no sign-in, these counts aren’t tied to your name. We never record the names of people looked up with the executive-matching tools.</li>
     <li><strong>Hosting logs:</strong> our host, Netlify, keeps standard server logs (such as IP address and request time) to operate and secure the service.</li>
     <li><strong>Browser storage:</strong> the website stores a small flag in your browser so it doesn’t ask you to fill in the same form twice. It isn’t used for tracking.</li>
   </ul>
@@ -86,6 +86,7 @@
   <ul>
     <li>To run Vault, send MCP setup instructions, answer your messages and fix problems.</li>
     <li>To understand which features are used so we can improve them.</li>
+    <li>To understand which institutions, markets and topics people research, so we can improve Vault and shape the data products and services iDENTIFY offers. We keep this detail private. We may publish overall figures, such as total usage, but never which institutions are being researched or by whom.</li>
     <li>To send occasional Vault updates. You can opt out at any time by replying or using the unsubscribe link.</li>
     <li>Vault is built by iDENTIFY, which provides data services to banks and credit unions. If you sign up or contact us, iDENTIFY may follow up about those services. Tell us if you’d rather not hear from us and we’ll stop.</li>
   </ul>
@@ -109,7 +110,7 @@
   <h2>How long we keep it</h2>
   <ul>
     <li>Form submissions: until you ask us to delete them.</li>
-    <li>MCP usage records: kept as usage statistics, with IP addresses stored only as a one-way hash.</li>
+    <li>MCP usage records: kept as usage statistics, with IP addresses stored only as a one-way hash. Lookup counts are kept as daily totals.</li>
     <li>Executive information: up to 90 days in cache, or sooner on request.</li>
   </ul>
 

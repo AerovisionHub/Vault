@@ -66,6 +66,7 @@ exports.handler = async (event) => {
       latency: {},
       errors_by_tool: {},
       ip_days: {},        // ip_hash -> count of distinct days it ran a tool
+      lookups: { inst: {}, names: {}, state: {}, place: {}, query: {} },
     };
 
     // Per-day tool_calls is derivable retroactively: by_tool has only ever been
@@ -98,6 +99,9 @@ exports.handler = async (event) => {
         cur.n += l.n || 0; cur.sum += l.sum || 0; cur.max = Math.max(cur.max, l.max || 0);
         totals.latency[t] = cur;
       });
+      // What people look up (aggregate counts; third-party clients only).
+      if (d.lookups) ['inst', 'state', 'place', 'query'].forEach(k => Object.entries(d.lookups[k] || {}).forEach(([key, n]) => { totals.lookups[k][key] = (totals.lookups[k][key] || 0) + n; }));
+      if (d.lookups && d.lookups.names) Object.assign(totals.lookups.names, d.lookups.names);
       // Retention: an ip_hash that ran a tool on 2+ distinct days came back.
       (d.tool_unique_ips || []).forEach(ip => { totals.ip_days[ip] = (totals.ip_days[ip] || 0) + 1; });
     });
@@ -108,10 +112,25 @@ exports.handler = async (event) => {
       Object.entries(totals.latency).map(([t, l]) => [t, { avg: l.n ? Math.round(l.sum / l.n) : null, max: l.max, samples: l.n }])
     );
 
+    // Lookup detail can reveal which institutions are being researched, so it is
+    // NOT public: it's returned only with ?key= matching the STATS_DETAIL_KEY env var.
+    const crypto = require('crypto');
+    const want = process.env.STATS_DETAIL_KEY || '';
+    const got = String((event.queryStringParameters || {}).key || '');
+    const detailOk = want.length >= 16 && got.length === want.length && crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want));
+    const top = (o, n) => Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, n);
+    const lookups = detailOk ? {
+      institutions: top(totals.lookups.inst, 100).map(([k, n]) => ({ id: k, name: totals.lookups.names[k] || null, lookups: n })),
+      states: top(totals.lookups.state, 60).map(([k, n]) => ({ state: k, lookups: n })),
+      places: top(totals.lookups.place, 100).map(([k, n]) => ({ place: k, lookups: n })),
+      searches: top(totals.lookups.query, 100).map(([k, n]) => ({ query: k, lookups: n })),
+    } : undefined;
+
     return {
       statusCode: 200,
-      headers: HEADERS,
+      headers: detailOk ? { ...HEADERS, 'Cache-Control': 'no-store' } : HEADERS,
       body: JSON.stringify({
+        ...(lookups ? { lookups } : {}),
         all_time: {
           // Headline metric: actual tools/call requests.
           tool_calls: totals.tool_calls,

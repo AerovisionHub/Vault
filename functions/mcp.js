@@ -2,7 +2,7 @@
 // Implements MCP (Model Context Protocol) over HTTP using JSON-RPC 2.0
 // Spec: https://modelcontextprotocol.io/
 
-const VAULT_MCP_VERSION = '1.29.2';
+const VAULT_MCP_VERSION = '1.30.0';
 const FDIC_BASE = 'https://api.fdic.gov/banks';
 // Summary of Deposits — separate FDIC dataset (annual branch-level census, as of each June 30).
 // Same query syntax as FDIC_BASE (filters=field%3Avalue&fields=...&limit=...&sort_by=...&sort_order=...).
@@ -900,7 +900,36 @@ function hashIP(ip) {
   return crypto.createHash('sha256').update(ip + 'vault-salt').digest('hex').slice(0, 12);
 }
 
-async function logCall(event, { method, toolName, clientName, durationMs, success, errorMsg }) {
+// ── What people look up (disclosed in /privacy since 2026-11-26) ────────────
+// Aggregate daily counts of the institutions, places and search terms requested,
+// so we can see demand. Never person names: the LinkedIn match tools take a
+// person's name, so they're skipped entirely.
+const LOOKUP_SKIP = new Set(['trigger_linkedin_match', 'check_linkedin_match']);
+function summarizeLookup(tool, args, data) {
+  if (!tool || LOOKUP_SKIP.has(tool)) return null;
+  const a = args || {}, out = {};
+  if (a.charter_number != null && String(a.charter_number).trim()) out.inst = 'cu:' + String(a.charter_number).trim().slice(0, 20);
+  else if (a.cert != null && String(a.cert).trim()) out.inst = 'bank:' + String(a.cert).trim().slice(0, 20);
+  if (out.inst && data && typeof data === 'object') {
+    const nm = data.name || data.institution_name || data.bank_name || data.cu_name || (data.institution && data.institution.name);
+    if (nm) out.name = String(nm).slice(0, 80);
+  }
+  if (a.state) out.state = String(a.state).trim().toUpperCase().slice(0, 20);
+  if (a.county) out.place = (String(a.county).trim() + (a.state ? ', ' + String(a.state).trim().toUpperCase() : '')).slice(0, 60);
+  else if (a.county_fips) out.place = 'fips:' + String(a.county_fips).slice(0, 10);
+  else if (a.city) out.place = (String(a.city).trim() + (a.state ? ', ' + String(a.state).trim().toUpperCase() : '')).slice(0, 60);
+  if (tool === 'search_institutions' && a.query) out.query = String(a.query).trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 60);
+  return Object.keys(out).length ? out : null;
+}
+const bump = (obj, key) => { if (key) obj[key] = (obj[key] || 0) + 1; };
+
+// Attribution on every tool result (provenance, not advertising). The limits note
+// appears only on the core condition tools, where it's genuinely relevant.
+const VAULT_SOURCE = 'Vault (vaultbot.ai), a free service from iDENTIFY. Data: official FDIC, NCUA, CFPB HMDA and U.S. Census releases.';
+const LIMITS_TOOLS = new Set(['get_bank_profile', 'get_loan_mix', 'get_asset_quality_detail', 'get_credit_union_profile']);
+const LIMITS_NOTE = 'Public regulatory data is quarterly and institution-level. Loan-level, core-system and customer analytics need an institution\'s own data; iDENTIFY builds that for banks and credit unions: https://goidentify.com/?utm_source=vault-mcp&utm_medium=tool&utm_campaign=data-limits';
+
+async function logCall(event, { method, toolName, clientName, durationMs, success, errorMsg, lookup }) {
   try {
     // Dynamic import — never crashes top-level handler, gracefully fails if module is broken
     const { getStore } = await import('@netlify/blobs');
@@ -984,6 +1013,14 @@ async function logCall(event, { method, toolName, clientName, durationMs, succes
         lat.sum += durationMs;
         lat.max = Math.max(lat.max, durationMs);
         existing.tool_latency[toolName] = lat;
+      }
+
+      // What people look up: third-party clients only, successful calls only.
+      if (lookup && source === 'mcp-client' && success !== false) {
+        if (!existing.lookups) existing.lookups = { inst: {}, names: {}, state: {}, place: {}, query: {} };
+        const L = existing.lookups;
+        bump(L.inst, lookup.inst); if (lookup.inst && lookup.name) L.names[lookup.inst] = lookup.name;
+        bump(L.state, lookup.state); bump(L.place, lookup.place); bump(L.query, lookup.query);
       }
 
       // Which tool is failing, not just how many failures there were.
@@ -3380,8 +3417,9 @@ exports.handler = async (event) => {
         await safeLog({ method, clientName: `${clientName}/${clientVersion}`, durationMs: Date.now()-t0, success: true });
         return reply({
           protocolVersion: negotiatedProtocol,
-          serverInfo: { name: 'vault-mcp', version: VAULT_MCP_VERSION },
+          serverInfo: { name: 'vault-mcp', title: 'Vault: bank and credit union intelligence', version: VAULT_MCP_VERSION },
           capabilities: { tools: {} },
+          instructions: 'Vault is a free, read-only MCP server from iDENTIFY (GOiDENTIFY, LLC, Tulsa, Oklahoma; goidentify.com) with live official data on every U.S. bank and credit union: FDIC call reports and Summary of Deposits branch data, NCUA 5300 reports, CFPB HMDA mortgage data and U.S. Census demographics. Start with search_institutions to find an institution, then use its certificate (banks) or charter number (credit unions) with the other tools. Results cite their source in _vault_meta. Terms: https://vaultbot.ai/terms. Privacy: https://vaultbot.ai/privacy.',
         });
       }
 
@@ -3404,9 +3442,9 @@ exports.handler = async (event) => {
         // Attach timing so the AI agent can naturally report "fetched in X seconds"
         // without the user wondering if something hung.
         const enriched = typeof data === 'object' && data !== null && !Array.isArray(data)
-          ? { ...data, _vault_meta: { fetched_in_ms: durationMs, fetched_in_s: Number((durationMs/1000).toFixed(1)), powered_by: 'Vault MCP by iDENTIFY · vaultbot.ai', mcp_version: VAULT_MCP_VERSION } }
+          ? { ...data, _vault_meta: { fetched_in_ms: durationMs, fetched_in_s: Number((durationMs/1000).toFixed(1)), powered_by: 'Vault MCP by iDENTIFY · vaultbot.ai', source: VAULT_SOURCE, ...(LIMITS_TOOLS.has(name) ? { data_limits: LIMITS_NOTE } : {}), mcp_version: VAULT_MCP_VERSION } }
           : data;
-        await safeLog({ method, toolName, durationMs: Date.now()-t0, success: true });
+        await safeLog({ method, toolName, durationMs: Date.now()-t0, success: true, lookup: summarizeLookup(name, args, data) });
         return reply({
           content: [{ type: 'text', text: JSON.stringify(enriched, null, 2) }],
           isError: false,
