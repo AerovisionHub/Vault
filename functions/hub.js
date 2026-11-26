@@ -60,14 +60,21 @@ function fmtUSD(thousands) {
   return `$${Math.round(v).toLocaleString()}`;
 }
 
+// Counts upstream failures (throttle, timeout, non-JSON) within one request.
+// A null from j() used to be indistinguishable from "no such county", so a
+// throttled FDIC call turned a real page into a hard 404 (Search Console
+// "Not found": McLennan County TX on 2026-11-22). The handler now returns
+// last-known-good HTML or a 503 when this is non-zero. Netlify handles one
+// request per instance at a time, so a module-level counter is safe.
+let upstreamFails = 0;
 async function j(url, ms = 8000) {
   const c = new AbortController();
   const t = setTimeout(() => c.abort(), ms);
   try {
     const r = await fetch(url, { signal: c.signal });
-    if (!r.ok) return null;
+    if (!r.ok) { upstreamFails++; return null; }
     return await r.json();
-  } catch { return null; } finally { clearTimeout(t); }
+  } catch { upstreamFails++; return null; } finally { clearTimeout(t); }
 }
 
 async function getStore() {
@@ -545,6 +552,7 @@ exports.handler = async (event) => {
   const m = path.match(/^banks-in-(.+)$/);
   if (!m) return { statusCode: 404, headers: { 'Content-Type': 'text/html' }, body: '<h1>Not found</h1>' };
 
+  upstreamFails = 0;
   const slug = m[1].toLowerCase();
   // v2 (2026-11-09): county pages gained trend/HHI/insights; bump so the
   // 12h Blobs cache can't keep serving the old thin markup.
@@ -599,6 +607,23 @@ exports.handler = async (event) => {
     };
   }
 
+  if (!html && upstreamFails > 0) {
+    // An upstream call failed, so we cannot tell "no such page" from "FDIC
+    // throttled us". Serve the last good copy if there is one; otherwise a
+    // retryable 503. Never a 404 for a page that may exist.
+    if (store) {
+      try {
+        const l = await store.get(`hub2-lkg-${slug}`, { type: 'json' });
+        if (l?.html) {
+          console.log(`[hub] lkg-fallback ${slug}`);
+          return { statusCode: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=300' }, body: l.html };
+        }
+      } catch { /* fall through */ }
+    }
+    console.log(`[hub] upstream failed, 503 for ${slug} (${upstreamFails} failed calls)`);
+    return { statusCode: 503, headers: { 'Content-Type': 'text/plain', 'Retry-After': '120', 'Cache-Control': 'no-store' }, body: 'Temporarily unavailable' };
+  }
+
   if (!html) {
     // A real 404, not a soft one: returning 200 with "not found" text teaches
     // search engines that every malformed hub URL is a valid thin page.
@@ -615,6 +640,9 @@ exports.handler = async (event) => {
     };
   }
 
-  if (store) store.setJSON(cacheKey, { html, _at: Date.now() }).catch(() => {});
+  if (store) {
+    store.setJSON(cacheKey, { html, _at: Date.now() }).catch(() => {});
+    store.setJSON(`hub2-lkg-${slug}`, { html, _at: Date.now() }).catch(() => {}); // no TTL: fallback when upstream fails
+  }
   return { statusCode: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' }, body: html };
 };

@@ -66,14 +66,25 @@ async function getStore() {
 
 async function fetchAllBanks() {
   // FDIC caps a single response well below the full roster, so page through.
+  // Never return a partial roster (2026-11-26): a throttled page used to
+  // `break` here, and the truncated list (lowest CERTs only) was cached for a
+  // day as if complete. Search Console read Minnesota at 138 URLs vs 302 live.
   const out = [];
   const pageSize = 1000;
   for (let offset = 0; offset < 8000; offset += pageSize) {
     const url = `${FDIC_BASE}/institutions?filters=ACTIVE%3A1&fields=CERT,NAME,CITY,STALP,REPDTE&limit=${pageSize}&offset=${offset}&sort_by=CERT&sort_order=ASC`;
-    const r = await fetch(url);
-    if (!r.ok) break;
-    const j = await r.json();
-    const rows = (j.data || []).map(d => d.data).filter(Boolean);
+    let rows = null;
+    for (let i = 0; i < 4 && !rows; i++) {
+      try {
+        const r = await fetch(url);
+        if (r.ok) {
+          const j = await r.json();
+          if (Array.isArray(j.data)) rows = j.data.map(d => d.data).filter(Boolean);
+        }
+      } catch (e) { /* retry */ }
+      if (!rows) await new Promise(res => setTimeout(res, 600 * (i + 1)));
+    }
+    if (!rows) throw new Error(`FDIC page at offset ${offset} failed after retries`);
     out.push(...rows);
     if (rows.length < pageSize) break;
   }
@@ -83,7 +94,7 @@ async function fetchAllBanks() {
 async function fetchAllCUs(origin) {
   // Reuse the site's own NCUA proxy rather than re-parsing the bulk 5300 zip.
   const r = await fetch(`${origin}/.netlify/functions/ncua?all=1&limit=6000`);
-  if (!r.ok) return [];
+  if (!r.ok) throw new Error(`ncua proxy HTTP ${r.status}`); // was `return []`: a CU-less sitemap looked valid
   const j = await r.json();
   return j.results || [];
 }
@@ -116,8 +127,10 @@ function urlset(rows) {
 }
 
 async function buildParts(origin) {
-  const banks = await fetchAllBanks().catch(e => { console.log('[sitemap] bank fetch failed:', e.message); return []; });
-  const cus = await fetchAllCUs(origin).catch(e => { console.log('[sitemap] cu fetch failed:', e.message); return []; });
+  // Failures propagate: the handler decides between a fresh build, the last
+  // good snapshot, or a 503. It must never get a half-built roster.
+  const banks = await fetchAllBanks();
+  const cus = await fetchAllCUs(origin);
   const bankDates = banks.map(b => isoDate(b.REPDTE)).filter(Boolean).sort();
   const latest = bankDates[bankDates.length - 1] || quarterStart();
   const parts = { core: STATIC_PATHS.map(p => [`${SITE}${p}`, latest]) };
@@ -138,17 +151,33 @@ exports.handler = async (event) => {
   const part = qs.part ? String(qs.part).replace(/\.xml$/i, '') : (/\/sitemaps\//.test(src) && pm ? pm[1] : null);
 
   const store = await getStore();
-  let data = null;
-  if (store && qs.refresh !== '1') {
+  let data = null, stale = null;
+  if (store) {
     try {
       const c = await store.get('sitemap-v2', { type: 'json' });
-      if (c && c._at && Date.now() - c._at < CACHE_TTL_MS) data = c;
+      if (c && c.parts) {
+        if (qs.refresh !== '1' && c._at && Date.now() - c._at < CACHE_TTL_MS) data = c;
+        else stale = c; // expired or forced refresh: keep as the last good snapshot
+      }
     } catch (e) { console.log('[sitemap] cache read failed:', e.message); }
   }
   if (!data) {
-    data = await buildParts(origin);
-    if (store && data.banks > 1000 && data.cus > 1000) {
-      store.setJSON('sitemap-v2', { ...data, _at: Date.now() }).catch(e => console.log('[sitemap] cache write failed:', e.message));
+    let built = null;
+    try { built = await buildParts(origin); } catch (e) { console.log('[sitemap] build failed:', e.message); }
+    // A rebuild must be roughly as complete as what we already have, and above
+    // an absolute floor (about 4,200 active banks and 4,300 CUs today).
+    const floorB = Math.max(3000, Math.floor((stale?.banks || 0) * 0.95));
+    const floorC = Math.max(3000, Math.floor((stale?.cus || 0) * 0.95));
+    if (built && built.banks >= floorB && built.cus >= floorC) {
+      data = built;
+      if (store) store.setJSON('sitemap-v2', { ...built, _at: Date.now() }).catch(e => console.log('[sitemap] cache write failed:', e.message));
+    } else if (stale) {
+      console.log(`[sitemap] degraded build (${built ? `${built.banks} banks, ${built.cus} CUs` : 'failed'}); serving last good snapshot`);
+      data = stale;
+      // Retry in ~15 minutes rather than rebuilding on every request.
+      if (store) store.setJSON('sitemap-v2', { ...stale, _at: Date.now() - CACHE_TTL_MS + 15 * 60 * 1000 }).catch(() => {});
+    } else {
+      return { statusCode: 503, headers: { 'Content-Type': 'text/plain', 'Retry-After': '300', 'Cache-Control': 'no-store' }, body: 'Sitemap temporarily unavailable' };
     }
   }
 
