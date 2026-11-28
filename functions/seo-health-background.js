@@ -178,7 +178,7 @@ async function checkInfra(f, store, otherStore) {
     else {
       const ageD = (Date.now() - w.at) / 864e5;
       const level = ageD > 3 ? 'fail' : (w.aborted || (w.estCycleNights && w.estCycleNights > 6)) ? 'warn' : 'ok';
-      out.push({ name: 'hub_prewarm', level, detail: `${ageD.toFixed(1)}d ago: ${w.ok} ok, ${w.failed} failed of ${w.processed}${w.aborted ? `, stopped early (${w.aborted})` : ''}; full cycle ~${w.estCycleNights} nights; ${w.cycles} cycles completed` });
+      out.push({ name: 'hub_prewarm', level, detail: `${ageD.toFixed(1)}d ago: ${w.ok} ok, ${w.failed} failed, ${w.notFound || 0} not found${w.notFoundSlugs?.length ? ` (${w.notFoundSlugs.slice(0, 4).join(', ')})` : ''} of ${w.processed}${w.aborted ? `, stopped early (${w.aborted})` : ''}; full cycle ~${w.estCycleNights} nights; ${w.cycles} cycles completed` });
     }
   } catch (e) { out.push({ name: 'hub_prewarm', level: 'warn', detail: `could not read: ${e.message}` }); }
   const rb = await http(f, `${BASE}/robots.txt`);

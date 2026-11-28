@@ -36,6 +36,7 @@ async function run(deps = {}) {
   let next = cur.i % list.length, taken = 0;
   const startIdx = next;
   const stats = { ok: 0, notFound: 0, failed: 0 };
+  const notFoundSlugs = []; // so a 404 hub can be diagnosed, not just counted
   const recent = []; let aborted = null;
 
   async function fetchOnce(slug) {
@@ -49,7 +50,7 @@ async function run(deps = {}) {
       let st = await fetchOnce(list[idx]);
       if (st !== 200 && st !== 404) { await sleep(retryWait); st = await fetchOnce(list[idx]); }
       const good = st === 200 || st === 404;
-      if (st === 200) stats.ok++; else if (st === 404) stats.notFound++; else stats.failed++;
+      if (st === 200) stats.ok++; else if (st === 404) { stats.notFound++; if (notFoundSlugs.length < 25) notFoundSlugs.push(list[idx]); } else stats.failed++;
       recent.push(good ? 0 : 1); if (recent.length > 20) recent.shift();
       if (recent.length >= 12 && recent.reduce((a, b) => a + b, 0) >= 8) aborted = 'circuit breaker: 8 of the last 20 requests failed (FDIC likely throttling)';
       await sleep(gap);
@@ -59,7 +60,7 @@ async function run(deps = {}) {
 
   const wrapped = startIdx + taken >= list.length;
   const meta = {
-    at: Date.now(), total: list.length, processed: taken, ...stats, aborted, cursor: next, wrappedCycle: wrapped,
+    at: Date.now(), total: list.length, processed: taken, ...stats, notFoundSlugs, aborted, cursor: next, wrappedCycle: wrapped,
     cycles: (cur.cycles || 0) + (wrapped ? 1 : 0), secs: Math.round((Date.now() - t0) / 1000),
     estCycleNights: taken ? Math.ceil(list.length / taken) : null,
   };
