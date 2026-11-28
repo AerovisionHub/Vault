@@ -518,6 +518,20 @@ function buildCU(c) {
            ].filter(([,v]) => v) };
 }
 
+// Nightly snapshot (2026-11-29, functions/seo-snapshot-background.js). Pages are
+// served from it first, so a normal crawl makes ZERO FDIC/NCUA calls; live
+// fetch is only the fallback for a missing or stale record. The snapshot
+// stores peers as {lo, hi, list}; the band label needs fmtUSD, so it is
+// derived here.
+const SNAPSHOT_MAX_AGE_MS = 72 * 60 * 60 * 1000;
+function withBand(x) {
+  if (x?.peers && !x.peers.band) {
+    const { lo, hi } = x.peers;
+    x.peers.band = hi >= 1e10 ? `over ${fmtUSD(lo)}` : lo === 0 ? `under ${fmtUSD(hi)}` : `${fmtUSD(lo)}–${fmtUSD(hi)}`;
+  }
+  return x;
+}
+
 export default async (request, context) => {
   const response = await context.next();
 
@@ -536,7 +550,22 @@ export default async (request, context) => {
   let found = null;
   const lkgKey = `${kind}-${id}`;
   let pendingSave = null;
+
+  let fromSnapshot = false;
   try {
+    const snap = await lkgRead(lkgKey);
+    const age = snap?.savedAt ? Date.now() - Date.parse(snap.savedAt) : Infinity;
+    if (snap?.source === 'snapshot' && snap.found && age < SNAPSHOT_MAX_AGE_MS && (kind === 'cu' || snap.x)) {
+      found = kind === 'cu' && snap.found.raw ? { ...snap.found, name: titleCaseName(snap.found.name) } : snap.found;
+      model = kind === 'bank' ? buildBank(found) : buildCU(found);
+      if (kind === 'bank') { model.extraHtml = bankExtraHtml(found, withBand(snap.x)); }
+      model.enrichComplete = true;
+      fromSnapshot = true;
+      console.log(`[vault-seo] snapshot-hit ${lkgKey}`);
+    }
+  } catch { model = null; found = null; fromSnapshot = false; }
+
+  if (!fromSnapshot) try {
     found = kind === 'bank' ? await getBank(id) : await getCU(id, url.origin);
     if (found && found !== MISSING) model = kind === 'bank' ? buildBank(found) : buildCU(found);
     if (model && kind === 'bank') {
@@ -568,7 +597,7 @@ export default async (request, context) => {
     if (saved?.found) {
       try {
         model = kind === 'bank' ? buildBank(saved.found) : buildCU(saved.found);
-        if (kind === 'bank' && saved.x) model.extraHtml = bankExtraHtml(saved.found, saved.x);
+        if (kind === 'bank' && saved.x) model.extraHtml = bankExtraHtml(saved.found, withBand(saved.x));
         model.enrichComplete = false; // short CDN cache, so a fresh render replaces it soon
         console.log(`[vault-seo] lkg-fallback ${lkgKey} savedAt=${saved.savedAt}`);
       } catch { model = null; }

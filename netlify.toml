@@ -154,9 +154,13 @@
 # whole point of its existence: the ~26s ceiling above is a hard platform
 # limit for synchronous functions that no timeout config can raise further.
 
-# Weekly last-known-good backfill for /bank/* prerender fallback (2026-11-21).
-[functions."seo-lkg-schedule"]
-  schedule = "@weekly"
+# Nightly data snapshot (2026-11-29): replaces the weekly LKG backfill. 08:30 UTC = 2:30 AM Central.
+[functions."seo-snapshot-schedule"]
+  schedule = "30 8 * * *"
+
+# Nightly hub pre-warm (2026-11-29). 10:00 UTC, after the snapshot publishes the slug list.
+[functions."seo-hub-warm-schedule"]
+  schedule = "0 10 * * *"
 
 # Daily site self-check (2026-11-26). 13:00 UTC = 7 AM Central, before the usual Search Console emails.
 [functions."seo-health-schedule"]

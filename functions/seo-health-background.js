@@ -162,19 +162,25 @@ async function checkInfra(f, store, otherStore) {
     await store.delete?.(k);
   } catch (e) { out.push({ name: 'blobs_read_write', level: 'fail', detail: e.message }); }
   try {
-    const snap = await otherStore('vault-snapshot'); const meta = snap ? await snap.get('_meta', { type: 'json' }) : null;
+    const lkg = await otherStore('vault-seo-lkg');
+    const meta = lkg ? await lkg.get('_snapshot-meta', { type: 'json' }) : null;
     if (meta) {
-      const ageH = (Date.now() - meta.builtAt) / 3.6e6;
-      const bad = !meta.ok || ageH > 36 || meta.banks < 4000 || meta.cus < 4000;
-      out.push({ name: 'data_snapshot', level: bad ? 'fail' : 'ok', detail: `built ${ageH.toFixed(1)}h ago, ${meta.banks} banks, ${meta.cus} CUs, ${meta.complete ?? '?'} complete, ok=${meta.ok}` });
+      const ageH = meta.builtAt ? (Date.now() - meta.builtAt) / 3.6e6 : Infinity;
+      const bad = !meta.ok || ageH > 36 || meta.banks < 4000 || meta.cus < 4000 || meta.failed > 0;
+      out.push({ name: 'data_snapshot', level: bad ? 'fail' : 'ok', detail: `built ${Number.isFinite(ageH) ? ageH.toFixed(1) + 'h ago' : 'never'}, ${meta.banks} banks (${meta.complete} fully enriched), ${meta.cus} CUs, ${meta.failed ?? 0} write failures${meta.lastError ? `, last error: ${meta.lastError}` : ''}` });
     } else {
-      const lkg = await otherStore('vault-seo-lkg'); const g = lkg ? await lkg.get('_backfill-lastrun', { type: 'json' }) : null;
-      const ageD = g?.at ? (Date.now() - g.at) / 864e5 : null;
-      const stale = g?.at && ageD > 9; // clearly stale = fail; anything merely odd = warn
-      const odd = !g || g.status !== 'done' || g.banks < 4000 || g.failed > 0;
-      out.push({ name: 'data_snapshot', level: stale ? 'fail' : odd ? 'warn' : 'ok', detail: g ? `backfill ${ageD.toFixed(1)}d ago, status ${g.status}, ${g.banks} banks, ${g.failed} failed (no nightly snapshot yet)` : 'no backfill record' });
+      out.push({ name: 'data_snapshot', level: 'warn', detail: 'no nightly snapshot recorded yet' });
     }
   } catch (e) { out.push({ name: 'data_snapshot', level: 'warn', detail: `could not read: ${e.message}` }); }
+  try {
+    const lkg = await otherStore('vault-seo-lkg'); const w = lkg ? await lkg.get('_hub-warm-meta', { type: 'json' }) : null;
+    if (!w) out.push({ name: 'hub_prewarm', level: 'warn', detail: 'hub pre-warm has not run yet' });
+    else {
+      const ageD = (Date.now() - w.at) / 864e5;
+      const level = ageD > 3 ? 'fail' : (w.aborted || (w.estCycleNights && w.estCycleNights > 6)) ? 'warn' : 'ok';
+      out.push({ name: 'hub_prewarm', level, detail: `${ageD.toFixed(1)}d ago: ${w.ok} ok, ${w.failed} failed of ${w.processed}${w.aborted ? `, stopped early (${w.aborted})` : ''}; full cycle ~${w.estCycleNights} nights; ${w.cycles} cycles completed` });
+    }
+  } catch (e) { out.push({ name: 'hub_prewarm', level: 'warn', detail: `could not read: ${e.message}` }); }
   const rb = await http(f, `${BASE}/robots.txt`);
   out.push({ name: 'robots_txt', level: rb.status === 200 && /Sitemap:\s*https:\/\/vaultbot\.ai\/sitemap\.xml/i.test(rb.body) ? 'ok' : 'fail', detail: `HTTP ${rb.status}${/Sitemap:/i.test(rb.body) ? '' : ', no Sitemap line'}` });
   return out;

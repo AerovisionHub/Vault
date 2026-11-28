@@ -764,10 +764,11 @@ exports.handler = async function(event, context) {
     return {
       statusCode: 200,
       headers: corsHeaders,
-      // all=1 returns only what a sitemap URL needs. The full CU record is
+      // all=1 returns only what a sitemap URL needs; all=1&full=1 returns the
+      // full records (used once a night by seo-snapshot-background). The full CU record is
       // ~20 fields; across ~4,900 credit unions that payload is large enough
       // to matter, and none of it is used for building a slug.
-      body: JSON.stringify(allMode
+      body: JSON.stringify(allMode && params.full !== '1'
         ? { results: matched.slice(0, limit).map(c => ({ id: c.id, name: c.name, city: c.city, state: c.state })), totalResultCount: matched.length, asOf: periodEnd(dataPeriod) }
         : { results: matched.slice(0, limit), totalResultCount: matched.length, asOf: periodEnd(dataPeriod), accountSources: lastAccountSources })
     };

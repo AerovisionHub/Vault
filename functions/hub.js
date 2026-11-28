@@ -563,12 +563,18 @@ exports.handler = async (event) => {
   // precisely what happened when a structured-data fix shipped and the hub
   // kept serving the pre-fix cached HTML. The sitemap function already
   // learned this lesson; the hub had not.
-  const refresh = (event.queryStringParameters || {}).refresh === '1';
+  const qsp = event.queryStringParameters || {};
+  const refresh = qsp.refresh === '1';
+  // 7 days (was 12h, 2026-11-29): call report data moves quarterly and SOD
+  // annually, and a short window meant crawlers rebuilt hubs live against a
+  // throttling FDIC. The nightly seo-hub-warm job refreshes pages ahead of
+  // crawlers using ?warm=1, which only rebuilds copies older than 2 days, so
+  // it is harmless if anyone else calls it.
+  const ttlMs = (qsp.warm === '1' ? 2 : 7) * 24 * 3600 * 1000;
   if (store && !refresh) {
     try {
       const c = await store.get(cacheKey, { type: 'json' });
-      // 12h: call report data moves quarterly, SOD annually.
-      if (c && c._at && Date.now() - c._at < 12 * 3600 * 1000) {
+      if (c && c._at && Date.now() - c._at < ttlMs) {
         return { statusCode: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' }, body: reskin(c.html) };
       }
     } catch { /* fall through to live build */ }

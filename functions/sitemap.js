@@ -131,6 +131,12 @@ async function buildParts(origin) {
   // good snapshot, or a 503. It must never get a half-built roster.
   const banks = await fetchAllBanks();
   const cus = await fetchAllCUs(origin);
+  return buildPartsFrom(banks, cus);
+}
+
+// Pure: also used by seo-snapshot-background.js to write the cached sitemap
+// from the nightly roster, so the sitemap needs no live FDIC/NCUA call.
+function buildPartsFrom(banks, cus) {
   const bankDates = banks.map(b => isoDate(b.REPDTE)).filter(Boolean).sort();
   const latest = bankDates[bankDates.length - 1] || quarterStart();
   const parts = { core: STATIC_PATHS.map(p => [`${SITE}${p}`, latest]) };
@@ -142,6 +148,7 @@ async function buildParts(origin) {
   console.log(`[sitemap] built ${Object.keys(parts).length} parts (${banks.length} banks, ${cus.length} CUs), latest ${latest}`);
   return { parts, banks: banks.length, cus: cus.length };
 }
+exports.buildPartsFrom = buildPartsFrom;
 
 exports.handler = async (event) => {
   const origin = `https://${event.headers.host || 'vaultbot.ai'}`;
@@ -196,3 +203,4 @@ exports.handler = async (event) => {
     }).join('\n') + `\n</sitemapindex>\n`;
   return { statusCode: 200, headers: XML_HDR, body };
 };
+exports.ABBR = ABBR;
